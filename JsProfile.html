@@ -1,0 +1,276 @@
+<script>
+/* ═══════════════════════════════════════════════════
+   Student Profile Modal — JsProfile.html
+   ═══════════════════════════════════════════════════ */
+
+(function() {
+  'use strict';
+
+  var currentStudentNumber = 0;
+  var currentMonth = '';
+
+  function esc(str) {
+    if (!str) return '';
+    var div = document.createElement('div'); div.textContent = String(str); return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function formatPercentLabel(value) {
+    if (value === null || value === undefined || value === '') return '-';
+    var num = Number(value);
+    return isFinite(num) ? String(num) + '%' : '-';
+  }
+
+  function renderProfileIcon(kind) {
+    var svg = '';
+    if (kind === 'user') {
+      svg = '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle>';
+    } else if (kind === 'flag') {
+      svg = '<path d="M4 21V4"></path><path d="M4 4h12l-2.5 4L16 12H4"></path>';
+    } else if (kind === 'chart') {
+      svg = '<path d="M3 3v18h18"></path><path d="M8 14v4"></path><path d="M12 10v8"></path><path d="M16 6v12"></path>';
+    } else if (kind === 'list') {
+      svg = '<path d="M8 6h12"></path><path d="M8 12h12"></path><path d="M8 18h12"></path><path d="M4 6h.01"></path><path d="M4 12h.01"></path><path d="M4 18h.01"></path>';
+    } else if (kind === 'calendar' || kind === 'personal_leave') {
+      svg = '<path d="M8 2v4"></path><path d="M16 2v4"></path><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M3 10h18"></path>';
+    } else if (kind === 'note') {
+      svg = '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>';
+    } else if (kind === 'present') {
+      svg = '<circle cx="12" cy="12" r="9"></circle><path d="m8.5 12 2.5 2.5 4.5-5"></path>';
+    } else if (kind === 'late') {
+      svg = '<circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path>';
+    } else if (kind === 'absent') {
+      svg = '<circle cx="12" cy="12" r="9"></circle><path d="m9 9 6 6"></path><path d="m15 9-6 6"></path>';
+    } else if (kind === 'sick_leave') {
+      svg = '<circle cx="12" cy="12" r="9"></circle><path d="M12 8v8"></path><path d="M8 12h8"></path>';
+    }
+    if (!svg) return '';
+    return '<span class="inline-ui-icon" aria-hidden="true"><svg viewBox="0 0 24 24">' + svg + '</svg></span>';
+  }
+
+  function renderProfileState(title, description, nextStep, primaryHtml, secondaryHtml, tone) {
+    var toneClass = tone === 'warning' ? 'alert-warning' : (tone === 'danger' ? 'alert-danger' : 'alert-info');
+    var html = '<div class="alert ' + toneClass + '" style="display:flex;flex-direction:column;gap:.85rem">';
+    html += '<div><div style="font-weight:800;margin-bottom:.35rem">' + esc(title) + '</div><div>' + esc(description) + '</div></div>';
+    if (nextStep) {
+      html += '<div class="empty-next-step" style="margin:0"><div class="empty-next-step-title">สิ่งที่ควรทำต่อ</div><div class="empty-next-step-text">' + esc(nextStep) + '</div></div>';
+    }
+    if (primaryHtml || secondaryHtml) {
+      html += '<div class="students-empty-actions">';
+      if (primaryHtml) html += primaryHtml;
+      if (secondaryHtml) html += secondaryHtml;
+      html += '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function getProfileErrorCopy(message) {
+    var text = String(message || '');
+    if (/not found|not_found|ไม่พบนักเรียน/i.test(text)) {
+      return {
+        title: 'ไม่พบข้อมูลนักเรียนที่เลือก',
+        description: 'รายการนี้อาจถูกลบ ย้ายห้อง หรือเปิดจากข้อมูลเดิมที่ไม่ตรงกับรายชื่อล่าสุด',
+        nextStep: 'กลับไปเลือกรายชื่อนักเรียนใหม่จากหน้ารายชื่อ แล้วเปิดโปรไฟล์อีกครั้ง',
+        tone: 'warning'
+      };
+    }
+    if (/deleted|inactive|ไม่มีข้อมูล/i.test(text)) {
+      return {
+        title: 'ยังเปิดโปรไฟล์นักเรียนรายการนี้ไม่ได้',
+        description: text || 'ยังไม่มีข้อมูลของนักเรียนในช่วงที่เลือก',
+        nextStep: 'ลองกลับไปเลือกนักเรียนหรือเลือกเดือนอื่น แล้วเปิดโปรไฟล์ใหม่อีกครั้ง',
+        tone: 'warning'
+      };
+    }
+    return {
+      title: 'ยังโหลดโปรไฟล์นักเรียนไม่สำเร็จ',
+      description: 'ระบบยังดึงสถิติและประวัติของนักเรียนคนนี้ไม่สำเร็จในตอนนี้',
+      nextStep: 'ลองเปิดโปรไฟล์ใหม่อีกครั้ง ถ้ายังไม่ได้ ให้กลับไปหน้ารายชื่อนักเรียนแล้วเลือกใหม่',
+      tone: 'danger'
+    };
+  }
+
+  function open(studentNumber, month) {
+    currentStudentNumber = parseInt(studentNumber, 10);
+    currentMonth = month || '';
+    var overlay = document.getElementById('profile-overlay');
+    var dialogEl = document.getElementById('profile-box');
+    var shared = window.AppShared || {};
+    var wasOpen = !!(overlay && overlay.style.display === 'flex');
+    
+    document.getElementById('profile-body').innerHTML = '<div class="text-center" style="padding:2rem"><div class="spinner"></div><p class="text-xs" style="color:var(--stone-500)">กำลังโหลด...</p></div>';
+    if (overlay) {
+      overlay.style.display = 'flex';
+      overlay.onclick = function(e) {
+        if (e.target === overlay) close();
+      };
+    }
+    if (!wasOpen && shared.activateOverlayFocus_) {
+      shared.activateOverlayFocus_(overlay, dialogEl, close, {
+        allowEscape: true,
+        initialFocusSelector: '.modal-close'
+      });
+    }
+    
+    window.AppShared.serverCall('getStudentProfile', [currentStudentNumber, currentMonth], function(result) {
+        if (result.success) {
+          renderProfile(result.data);
+        } else {
+          var copy = getProfileErrorCopy(result && result.message);
+          document.getElementById('profile-body').innerHTML = renderProfileState(
+            copy.title,
+            copy.description,
+            copy.nextStep,
+            '<button class="btn btn-primary btn-sm" onclick="ProfilePage.open(' + currentStudentNumber + ', \'' + esc(currentMonth) + '\')">ลองใหม่</button>',
+            '<button class="btn btn-ghost btn-sm" onclick="window.AppShared.loadPage(\'students\')">กลับไปหน้ารายชื่อนักเรียน</button>',
+            copy.tone
+          );
+        }
+      }, function() {
+        var copy = getProfileErrorCopy('');
+        document.getElementById('profile-body').innerHTML = renderProfileState(
+          copy.title,
+          copy.description,
+          copy.nextStep,
+          '<button class="btn btn-primary btn-sm" onclick="ProfilePage.open(' + currentStudentNumber + ', \'' + esc(currentMonth) + '\')">ลองใหม่</button>',
+          '<button class="btn btn-ghost btn-sm" onclick="window.AppShared.loadPage(\'students\')">กลับไปหน้ารายชื่อนักเรียน</button>',
+          copy.tone
+        );
+      });
+  }
+
+  function close() {
+    var overlay = document.getElementById('profile-overlay');
+    var shared = window.AppShared || {};
+    if (overlay) {
+      overlay.style.display = 'none';
+      overlay.onclick = null;
+    }
+    if (shared.deactivateOverlayFocus_) shared.deactivateOverlayFocus_(true);
+  }
+
+  function renderProfile(data) {
+    var s = data.student;
+    var st = data.stats;
+    var cal = data.calendar;
+    var allSt = data.all_stats;
+    var html = '';
+
+    // ── Header ──
+    html += '<div class="profile-header-card">';
+    html += '<div class="profile-avatar">' + renderProfileIcon('user') + '</div>';
+    html += '<div>';
+    html += '<div class="profile-name">เลขที่ ' + s.student_number + ' · ' + esc(s.full_name) + '</div>';
+    html += '<div class="profile-meta">';
+    if (s.nickname) html += esc(s.nickname) + ' · ';
+    html += esc(s.gender_label || 'ไม่ระบุ');
+    if (s.group_name) html += ' · ' + esc(s.group_name);
+    if (s.is_flagged) html += ' · ' + renderProfileIcon('flag') + ' จับตา';
+    html += '</div>';
+    html += '</div></div>';
+
+    // ── Monthly Stats ──
+    html += '<h3 style="font-size:.85rem;font-weight:700;margin-bottom:.5rem;display:flex;align-items:center;gap:.35rem">' + renderProfileIcon('chart') + '<span>สถิติ ' + esc(data.month_th) + '</span></h3>';
+    html += '<div class="profile-stats-bar">';
+    html += profileStat(st.present, 'วันมา', 'var(--green-700)');
+    html += profileStat(st.late, 'สาย', 'var(--amber-700)');
+    html += profileStat(st.absent, 'ขาด', 'var(--red-700)');
+    html += profileStat(st.sick_leave, 'ลาป่วย', 'var(--blue-700)');
+    html += profileStat(st.personal_leave, 'ลากิจ', 'var(--indigo-700)');
+    html += profileStat(formatPercentLabel(st.attendance_percent), '% มาเรียน', 'var(--brown-700)');
+    html += '</div>';
+
+    // ── Calendar ──
+    html += '<div class="profile-cal">';
+    html += '<div class="profile-cal-nav">';
+    html += '<button class="btn btn-ghost btn-xs" onclick="ProfilePage.shiftMonth(-1)">◀</button>';
+    html += '<span style="font-size:.8rem;font-weight:700">' + esc(data.month_th) + '</span>';
+    html += '<button class="btn btn-ghost btn-xs" onclick="ProfilePage.shiftMonth(1)">▶</button>';
+    html += '</div>';
+    
+    html += '<div class="profile-cal-grid">';
+    // Weekday headers
+    var weekdays = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+    weekdays.forEach(function(w) {
+      html += '<div class="profile-cal-header">' + w + '</div>';
+    });
+    
+    // Empty cells before first day
+    for (var e = 0; e < cal.first_weekday; e++) {
+      html += '<div class="profile-cal-day empty"></div>';
+    }
+    
+    // Day cells
+    var monthStr = cal.month;
+    for (var d = 1; d <= cal.days_in_month; d++) {
+      var dateStr = monthStr + '-' + ('0' + d).slice(-2);
+      var rec = cal.records[dateStr];
+      var dayClass = 'profile-cal-day';
+      var tooltip = d + '';
+      
+      if (rec) {
+        dayClass += ' has-record profile-cal-' + rec.color;
+        tooltip = rec.label;
+        if (rec.note) tooltip += ': ' + rec.note;
+        html += '<div class="' + dayClass + '" title="' + esc(tooltip) + '">' + renderProfileIcon(rec.status_code) + '</div>';
+      } else {
+        dayClass += ' profile-cal-none';
+        html += '<div class="' + dayClass + '">' + d + '</div>';
+      }
+    }
+    html += '</div></div>';
+
+    // ── Overall Stats ──
+    html += '<h3 style="font-size:.85rem;font-weight:700;margin-bottom:.5rem;display:flex;align-items:center;gap:.35rem">' + renderProfileIcon('list') + '<span>สถิติรวม (' + esc(data.summary_scope_label || 'ทั้งหมด') + ')</span></h3>';
+    html += '<div class="profile-stats-bar mb-3">';
+    html += profileStat(allSt.total, 'วันที่บันทึก', 'var(--stone-700)');
+    html += profileStat(allSt.present, 'วันมา', 'var(--green-700)');
+    html += profileStat(formatPercentLabel(allSt.attendance_percent), '% มาเรียน', 'var(--brown-700)');
+    html += '</div>';
+
+    // ── History ──
+    if (data.history && data.history.length > 0) {
+      html += '<h3 style="font-size:.85rem;font-weight:700;margin-bottom:.5rem;display:flex;align-items:center;gap:.35rem">' + renderProfileIcon('calendar') + '<span>ประวัติล่าสุด</span></h3>';
+      html += '<div style="max-height:240px;overflow-y:auto;border:1px solid var(--stone-200);border-radius:.75rem">';
+      data.history.forEach(function(h) {
+        html += '<div class="profile-history-item">';
+        html += '<span class="profile-history-date">' + esc(h.date_th) + '</span>';
+        html += '<span class="student-badge badge-' + h.color + '">' + renderProfileIcon(h.status_code) + ' ' + esc(h.label) + '</span>';
+        if (h.note) html += '<span class="profile-history-note">' + renderProfileIcon('note') + ' ' + esc(h.note) + '</span>';
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+
+    document.getElementById('profile-body').innerHTML = html;
+  }
+
+  function profileStat(value, label, color) {
+    return '<div class="profile-stat">' +
+      '<div class="profile-stat-num" style="color:' + color + '">' + esc(value) + '</div>' +
+      '<div class="profile-stat-label">' + esc(label) + '</div></div>';
+  }
+
+  function shiftMonth(offset) {
+    var shared = window.AppShared || {};
+    var baseMonth = currentMonth || (shared.todayMonthStr ? String(shared.todayMonthStr() || '') : (shared.todayStr ? String(shared.todayStr() || '').slice(0, 7) : ''));
+    if (shared.shiftMonthString) {
+      currentMonth = shared.shiftMonthString(baseMonth, offset);
+    } else {
+      var parts = String(baseMonth || '').split('-');
+      if (parts.length < 2) return;
+      var year = parseInt(parts[0], 10);
+      var month = parseInt(parts[1], 10);
+      var totalMonths = (year * 12) + (month - 1) + (parseInt(offset, 10) || 0);
+      currentMonth = Math.floor(totalMonths / 12) + '-' + ('0' + ((totalMonths % 12) + 1)).slice(-2);
+    }
+    open(currentStudentNumber, currentMonth);
+  }
+
+  window.ProfilePage = {
+    open: open,
+    close: close,
+    shiftMonth: shiftMonth
+  };
+})();
+</script>

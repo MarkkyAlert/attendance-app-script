@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700;800&display=swap"
+    rel="stylesheet">
+  <style>
+    #page-loading {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background:
+        radial-gradient(circle at 50% 38%, rgba(255,255,255,.7), rgba(255,255,255,0) 52%),
+        linear-gradient(135deg, #faf8f5 0%, #f3ece3 50%, #ede4d9 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Kanit', sans-serif;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    #page-loading.page-loading-state {
+      justify-content: flex-start;
+      padding: max(2rem, env(safe-area-inset-top, 0px)) 1rem calc(3rem + env(safe-area-inset-bottom, 0px));
+    }
+
+    .branded-loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.1rem;
+      animation: brandedFadeIn .5s ease;
+      text-align: center;
+      padding: 1rem;
+    }
+
+    .branded-loading-logo {
+      width: 3.6rem;
+      height: 3.6rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 1.1rem;
+      background: linear-gradient(135deg, #7a624f, #5b4a3f);
+      box-shadow: 0 12px 28px rgba(91,74,63,.28);
+    }
+
+    .branded-loading-logo svg {
+      width: 1.8rem;
+      height: 1.8rem;
+      stroke: #fff;
+      fill: none;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .branded-loading-kicker {
+      font-size: .72rem;
+      font-weight: 800;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: #a88e72;
+    }
+
+    .branded-loading-title {
+      font-size: 1.5rem;
+      font-weight: 800;
+      line-height: 1.1;
+      color: #3d322b;
+      margin-top: -.25rem;
+    }
+
+    .branded-loading-bar-track {
+      width: 180px;
+      height: 4px;
+      border-radius: 2px;
+      background: #e8dfd6;
+      overflow: hidden;
+      margin-top: .25rem;
+    }
+
+    .branded-loading-bar-fill {
+      height: 100%;
+      border-radius: 2px;
+      background: linear-gradient(90deg, #a88e72, #7a624f);
+      animation: brandedProgress 2.2s cubic-bezier(.4,0,.2,1) infinite;
+    }
+
+    .branded-loading-text {
+      font-size: .86rem;
+      font-weight: 600;
+      color: #78716c;
+      line-height: 1.5;
+    }
+
+    @keyframes brandedFadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes brandedProgress {
+      0%   { width: 0; }
+      50%  { width: 80%; }
+      100% { width: 100%; }
+    }
+
+    @keyframes spin {
+      100% {
+        transform: rotate(360deg);
+      }
+    }
+  </style>
+  <?!= include_('Stylesheet') ?>
+  <?!= include_('StyleReport') ?>
+  <?!= include_('StylePhase3') ?>
+  <?!= include_('StylePhase4') ?>
+  <?!= include_('StylePin') ?>
+</head>
+
+<body>
+
+  <!-- ─── PIN Lock Overlay ───────────────────── -->
+  <div id="pin-overlay" class="pin-overlay" style="display:none">
+    <div class="pin-box">
+      <div class="pin-logo"><span class="inline-ui-icon" aria-hidden="true"><svg viewBox="0 0 24 24">
+            <rect x="4" y="11" width="16" height="10" rx="2"></rect>
+            <path d="M8 11V8a4 4 0 0 1 8 0v3"></path>
+          </svg></span></div>
+      <h2 class="pin-title">หน้าจอถูกล็อก</h2>
+      <p class="pin-subtitle">กรุณากรอก PIN เพื่อปลดล็อก</p>
+      <div class="pin-dots" id="pin-dots"></div>
+      <div class="pin-pad" id="pin-pad"></div>
+      <p id="pin-error" class="pin-error"></p>
+    </div>
+  </div>
+
+  <!-- ─── Navigation ─────────────────────────── -->
+  <nav id="main-nav" class="nav-bar">
+    <div class="nav-inner">
+      <div class="nav-brand">
+        <span class="nav-logo"><svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 10.5 12 5l9 5.5"></path>
+            <path d="M5 9.5V19h14V9.5"></path>
+            <path d="M9 19v-5h6v5"></path>
+          </svg></span>
+        <span class="nav-brand-copy">
+          <span class="nav-product-kicker">เช็คชื่อประจำชั้น</span>
+          <span class="nav-title">ระบบเช็คชื่อนักเรียน</span>
+          <span class="nav-brand-meta">
+            <span class="nav-context" id="nav-school-name">พร้อมใช้งาน</span>
+            <span class="nav-page-pill" id="nav-active-page">หน้าหลัก</span>
+          </span>
+        </span>
+      </div>
+      <div class="nav-links" id="nav-links">
+        <a href="#" data-page="dashboard" class="nav-link"><span class="nav-link-icon"><svg viewBox="0 0 24 24"
+              aria-hidden="true">
+              <path d="M3 10.5 12 3l9 7.5"></path>
+              <path d="M5 9.5V21h14V9.5"></path>
+            </svg></span><span>หน้าหลัก</span></a>
+        <a href="#" data-page="attendance" class="nav-link"><span class="nav-link-icon"><svg viewBox="0 0 24 24"
+              aria-hidden="true">
+              <rect x="7" y="3" width="10" height="4" rx="1"></rect>
+              <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"></path>
+              <path d="m9 13 2 2 4-4"></path>
+            </svg></span><span>เช็คชื่อ</span></a>
+        <a href="#" data-page="reports" class="nav-link"><span class="nav-link-icon"><svg viewBox="0 0 24 24"
+              aria-hidden="true">
+              <path d="M4 20V10"></path>
+              <path d="M10 20V4"></path>
+              <path d="M16 20v-7"></path>
+              <path d="M22 20V8"></path>
+            </svg></span><span>รายงาน</span></a>
+        <a href="#" data-page="analytics" class="nav-link"><span class="nav-link-icon"><svg viewBox="0 0 24 24"
+              aria-hidden="true">
+              <circle cx="12" cy="12" r="8"></circle>
+              <circle cx="12" cy="12" r="4"></circle>
+              <path d="M12 2v2"></path>
+              <path d="M22 12h-2"></path>
+              <path d="M12 22v-2"></path>
+              <path d="M2 12h2"></path>
+            </svg></span><span>ติดตาม</span></a>
+        <a href="#" data-page="students" class="nav-link"><span class="nav-link-icon"><svg viewBox="0 0 24 24"
+              aria-hidden="true">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9.5" cy="7" r="3"></circle>
+              <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
+              <path d="M16 4.13a4 4 0 0 1 0 7.75"></path>
+            </svg></span><span>นักเรียน</span></a>
+        <a href="#" data-page="import" class="nav-link"><span class="nav-link-icon"><svg viewBox="0 0 24 24"
+              aria-hidden="true">
+              <path d="M12 16V6"></path>
+              <path d="m8 10 4-4 4 4"></path>
+              <path d="M4 18v1a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1"></path>
+            </svg></span><span>นำเข้า</span></a>
+        <a href="#" data-page="settings" class="nav-link"><span class="nav-link-icon"><svg viewBox="0 0 24 24"
+              aria-hidden="true">
+              <path d="M4 21v-7"></path>
+              <path d="M4 10V3"></path>
+              <path d="M12 21v-10"></path>
+              <path d="M12 8V3"></path>
+              <path d="M20 21v-4"></path>
+              <path d="M20 14V3"></path>
+              <path d="M2 10h4"></path>
+              <path d="M10 8h4"></path>
+              <path d="M18 14h4"></path>
+            </svg></span><span>ตั้งค่า</span></a>
+      </div>
+      <button class="nav-menu-btn" id="nav-menu-btn" aria-label="เมนู"><svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 7h16"></path>
+          <path d="M4 12h16"></path>
+          <path d="M4 17h16"></path>
+        </svg></button>
+    </div>
+  </nav>
+
+  <!-- ─── Mobile Nav Drawer ────────────────── -->
+  <div class="nav-drawer-backdrop" id="nav-drawer-backdrop"></div>
+  <aside class="nav-drawer" id="nav-drawer">
+    <div class="nav-drawer-head">
+      <span class="nav-drawer-title">เมนูเพิ่มเติม</span>
+      <button class="nav-drawer-close" id="nav-drawer-close" aria-label="ปิดเมนู"><svg viewBox="0 0 24 24"
+          aria-hidden="true">
+          <path d="m6 6 12 12"></path>
+          <path d="M18 6 6 18"></path>
+        </svg></button>
+    </div>
+    <div class="nav-drawer-links" id="nav-drawer-links">
+      <a href="#" data-page="import" class="nav-drawer-link"><span class="nav-drawer-link-icon"><svg
+            viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 16V6"></path>
+            <path d="m8 10 4-4 4 4"></path>
+            <path d="M4 18v1a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1"></path>
+          </svg></span><span>นำเข้า</span></a>
+      <a href="#" data-page="analytics" class="nav-drawer-link"><span class="nav-drawer-link-icon"><svg
+            viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="8"></circle>
+            <circle cx="12" cy="12" r="4"></circle>
+            <path d="M12 2v2"></path>
+            <path d="M22 12h-2"></path>
+            <path d="M12 22v-2"></path>
+            <path d="M2 12h2"></path>
+          </svg></span><span>ติดตาม</span></a>
+      <a href="#" data-page="settings" class="nav-drawer-link"><span class="nav-drawer-link-icon"><svg
+            viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 21v-7"></path>
+            <path d="M4 10V3"></path>
+            <path d="M12 21v-10"></path>
+            <path d="M12 8V3"></path>
+            <path d="M20 21v-4"></path>
+            <path d="M20 14V3"></path>
+            <path d="M2 10h4"></path>
+            <path d="M10 8h4"></path>
+            <path d="M18 14h4"></path>
+          </svg></span><span>ตั้งค่า</span></a>
+    </div>
+    <div class="nav-drawer-footer">ระบบเช็คชื่อนักเรียน</div>
+  </aside>
+
+  <!-- ─── Mobile Bottom Nav ──────────────────── -->
+  <nav class="mobile-bottom-nav" id="mobile-nav">
+    <a href="#" data-page="dashboard" class="mobile-nav-item"><span class="mobile-nav-icon"><svg viewBox="0 0 24 24"
+          aria-hidden="true">
+          <path d="M3 10.5 12 3l9 7.5"></path>
+          <path d="M5 9.5V21h14V9.5"></path>
+        </svg></span><span class="mobile-nav-label">หน้าหลัก</span></a>
+    <a href="#" data-page="attendance" class="mobile-nav-item"><span class="mobile-nav-icon"><svg viewBox="0 0 24 24"
+          aria-hidden="true">
+          <rect x="7" y="3" width="10" height="4" rx="1"></rect>
+          <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"></path>
+          <path d="m9 13 2 2 4-4"></path>
+        </svg></span><span class="mobile-nav-label">เช็คชื่อ</span></a>
+    <a href="#" data-page="students" class="mobile-nav-item"><span class="mobile-nav-icon"><svg viewBox="0 0 24 24"
+          aria-hidden="true">
+          <path d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"></path>
+          <circle cx="9.5" cy="7" r="3"></circle>
+          <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
+          <path d="M16 4.13a4 4 0 0 1 0 7.75"></path>
+        </svg></span><span class="mobile-nav-label">นักเรียน</span></a>
+    <a href="#" data-page="reports" class="mobile-nav-item"><span class="mobile-nav-icon"><svg viewBox="0 0 24 24"
+          aria-hidden="true">
+          <path d="M4 20V10"></path>
+          <path d="M10 20V4"></path>
+          <path d="M16 20v-7"></path>
+          <path d="M22 20V8"></path>
+        </svg></span><span class="mobile-nav-label">รายงาน</span></a>
+    <button type="button" class="mobile-nav-item" id="mobile-nav-more-btn" aria-label="เมนูเพิ่มเติม">
+      <span class="mobile-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="5" cy="12" r="1.6"></circle>
+          <circle cx="12" cy="12" r="1.6"></circle>
+          <circle cx="19" cy="12" r="1.6"></circle>
+        </svg></span><span class="mobile-nav-label">เพิ่มเติม</span>
+    </button>
+  </nav>
+
+  <!-- ─── Main Content ───────────────────────── -->
+  <main class="main-content" id="main-content">
+    <div id="page-loading" class="page-loading">
+      <div class="branded-loading">
+        <div class="branded-loading-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 5l9 5.5"></path><path d="M5 9.5V19h14V9.5"></path><path d="M9 19v-5h6v5"></path></svg></div>
+        <p class="branded-loading-kicker">เช็คชื่อประจำชั้น</p>
+        <p class="branded-loading-title">ระบบเช็คชื่อนักเรียน</p>
+        <div class="branded-loading-bar-track"><div class="branded-loading-bar-fill"></div></div>
+        <p class="branded-loading-text">กำลังเตรียมข้อมูลให้คุณ...</p>
+      </div>
+    </div>
+    <div id="page-dashboard" class="page-panel" style="display:none"></div>
+    <div id="page-attendance" class="page-panel" style="display:none"></div>
+    <div id="page-reports" class="page-panel" style="display:none"></div>
+    <div id="page-analytics" class="page-panel" style="display:none"></div>
+    <div id="page-students" class="page-panel" style="display:none"></div>
+    <div id="page-import" class="page-panel" style="display:none"></div>
+    <div id="page-settings" class="page-panel" style="display:none"></div>
+  </main>
+
+  <!-- ─── Toast ──────────────────────────────── -->
+  <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+  <!-- ─── Modal ──────────────────────────────── -->
+  <div id="modal-overlay" class="modal-overlay" style="display:none" aria-hidden="true">
+    <div class="modal-box" id="modal-box" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1">
+      <div class="modal-header">
+        <h3 id="modal-title"></h3><button class="modal-close" id="modal-close" type="button" aria-label="ปิดหน้าต่าง"><svg viewBox="0 0 24 24"
+            aria-hidden="true">
+            <path d="m6 6 12 12"></path>
+            <path d="M18 6 6 18"></path>
+          </svg></button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+      <div class="modal-footer" id="modal-footer"></div>
+    </div>
+  </div>
+
+  <!-- ─── Profile Modal (wide) ───────────────── -->
+  <div id="profile-overlay" class="modal-overlay" style="display:none" aria-hidden="true">
+    <div class="modal-box profile-modal" id="profile-box" role="dialog" aria-modal="true" aria-labelledby="profile-title" tabindex="-1">
+      <div class="modal-header">
+        <h3 id="profile-title">ประวัตินักเรียน</h3><button class="modal-close" type="button" aria-label="ปิดหน้าต่าง" onclick="ProfilePage.close()"><svg
+            viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m6 6 12 12"></path>
+            <path d="M18 6 6 18"></path>
+          </svg></button>
+      </div>
+      <div class="modal-body" id="profile-body"></div>
+    </div>
+  </div>
+
+  <!-- ─── Confirm Dialog ─────────────────────── -->
+  <div id="confirm-overlay" class="modal-overlay" style="display:none" aria-hidden="true">
+    <div class="modal-box modal-sm confirm-dialog" id="confirm-box" role="dialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-message" tabindex="-1">
+      <div class="modal-body">
+        <div class="confirm-dialog-body">
+          <div class="confirm-dialog-icon"><svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 8v5"></path>
+              <path d="M12 16h.01"></path>
+              <circle cx="12" cy="12" r="9"></circle>
+            </svg></div>
+          <p class="confirm-dialog-kicker" id="confirm-title">ยืนยันการทำรายการ</p>
+          <p id="confirm-message" class="confirm-dialog-message"></p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" id="confirm-cancel" type="button">ยกเลิก</button>
+        <button class="btn btn-primary" id="confirm-ok" type="button">ตกลง</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    var INITIAL_PAGE = '<?= currentPage ?>';
+    var SCRIPT_URL = '<?!= getScriptUrl_() ?>';
+  </script>
+  <?!= include_('JavaScript') ?>
+  <?!= include_('JsPin') ?>
+</body>
+
+</html>

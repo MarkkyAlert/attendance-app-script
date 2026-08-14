@@ -1,0 +1,1722 @@
+/**
+ * Attendance reads, writes, and derived day summaries.
+ */
+
+var ATTENDANCE_ARCHIVE_SHEET_PREFIX = '_att_archive_';
+var ATTENDANCE_DAY_ARCHIVE_SHEET_PREFIX = '_att_day_archive_';
+var ATTENDANCE_DAY_STATUS_MAP_MEMO_ = {};
+var ATTENDANCE_CONFIRMED_DATE_MAP_MEMO_ = {};
+var CACHED_STUDENT_LIST_MEMO_ = null;
+
+function withAttendanceMutationLock_(callback) {
+  var lock = LockService.getDocumentLock();
+  lock.waitLock(30000);
+  try {
+    return callback();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function attachAttendanceTimingDetail_(data, detail) {
+  if (!data) return data;
+  try {
+    Object.defineProperty(data, '__timing_detail', {
+      value: String(detail || ''),
+      writable: true,
+      configurable: true,
+      enumerable: false
+    });
+  } catch (e) {
+    data.__timing_detail = String(detail || '');
+  }
+  return data;
+}
+
+function buildAttendanceRosterContext_(students, date, existingContext) {
+  existingContext = existingContext || {};
+  var rosterStudents = Array.isArray(existingContext.students) ? existingContext.students : (students || []);
+  var studentIndex = existingContext.student_index && existingContext.student_index.byId && existingContext.student_index.byNumber
+    ? existingContext.student_index
+    : buildStudentIdentityIndex_(rosterStudents);
+  var preferredStudentByNumber = existingContext.preferred_student_by_number || null;
+  if (!preferredStudentByNumber) {
+    preferredStudentByNumber = {};
+    Object.keys(studentIndex.byNumber || {}).forEach(function(studentNumberKey) {
+      var candidates = studentIndex.byNumber[studentNumberKey] || [];
+      if (!candidates.length) return;
+      preferredStudentByNumber[studentNumberKey] = candidates.length === 1
+        ? candidates[0]
+        : pickBestStudentCandidate_(candidates, date);
+    });
+  }
+  return {
+    students: rosterStudents,
+    student_index: studentIndex,
+    preferred_student_by_number: preferredStudentByNumber
+  };
+}
+
+function doesAttendanceRecordMatchStudent_(record, studentId, studentNumber, studentsOrIndex) {
+  record = record || {};
+  studentId = parseInt(studentId, 10) || 0;
+  studentNumber = parseInt(studentNumber, 10) || 0;
+
+  var recordStudentId = parseInt(record.student_id, 10) || 0;
+  if (studentId > 0 && recordStudentId > 0) {
+    return recordStudentId === studentId;
+  }
+
+  if (studentId > 0) {
+    return getResolvedRecordStudentKey_(record, studentsOrIndex || (getCachedStudentList_().all_students || [])) === ('id:' + studentId);
+  }
+
+  return studentNumber > 0 && (parseInt(record.student_number, 10) || 0) === studentNumber;
+}
+
+function deleteAttendanceDuplicateRows_(sheet, rowIndexes) {
+  if (!sheet) return 0;
+  var uniqueRows = {};
+  (rowIndexes || []).forEach(function(rowIndex) {
+    rowIndex = parseInt(rowIndex, 10) || 0;
+    if (rowIndex > 1) uniqueRows[rowIndex] = true;
+  });
+
+  var rows = Object.keys(uniqueRows).map(function(rowIndex) {
+    return parseInt(rowIndex, 10) || 0;
+  }).filter(function(rowIndex) {
+    return rowIndex > 1;
+  }).sort(function(a, b) {
+    return b - a;
+  });
+
+  rows.forEach(function(rowIndex) {
+    sheet.deleteRow(rowIndex);
+  });
+
+  return rows.length;
+}
+
+ function buildAttendanceDailyPayload_(date, options) {
+  options = options || {};
+  var stepTimings = {};
+  var stepStartedAt = new Date().getTime();
+  var sourceInfo = options.source_info || null;
+  var activeSemester = options.active_semester || (sourceInfo && sourceInfo.semester) || null;
+  ensureStudentIdentityMigration_();
+  stepTimings.preflight_migration_ms = new Date().getTime() - stepStartedAt;
+
+  stepStartedAt = new Date().getTime();
+  date = normalizeAttendanceDate_(date, false);
+  if (!date) throw new Error('วันที่ไม่ถูกต้อง');
+  sourceInfo = sourceInfo || getCurrentAttendanceSourceInfo_();
+  var settings = options.settings || getCachedSettings_();
+  var threshold = normalizeAbsenceAlertDays_(options.alert_threshold !== undefined ? options.alert_threshold : settings.absence_alert_days);
+  primeAttendanceDailyCalendarEntries_(date, threshold);
+  ensureAttendanceActionDate_(date, 'วันที่เช็คชื่อ', {
+    active_semester: activeSemester,
+    source_info: sourceInfo
+  });
+  stepTimings.preflight_validate_ms = new Date().getTime() - stepStartedAt;
+  stepTimings.preflight_ms = stepTimings.preflight_migration_ms + stepTimings.preflight_validate_ms;
+
+  stepStartedAt = new Date().getTime();
+  var students = getStudentsForAttendanceDate_(date);
+  stepTimings.students_ms = new Date().getTime() - stepStartedAt;
+
+  stepStartedAt = new Date().getTime();
+  var rosterContext = buildAttendanceRosterContext_(students, date, options.roster_context);
+  var daySnapshot = getCachedAttendanceDailySnapshot_(date, sourceInfo, {
+    students: students,
+    roster_context: rosterContext,
+    capture_timing_detail: true
+  });
+  stepTimings.records_snapshot_ms = new Date().getTime() - stepStartedAt;
+
+  stepStartedAt = new Date().getTime();
+  var recordMap = daySnapshot.record_map || {};
+  var dayStatus = getDayStatus_(date, sourceInfo);
+  stepTimings.records_day_status_ms = new Date().getTime() - stepStartedAt;
+  var batchInfo = daySnapshot.batch_info || null;
+  stepTimings.records_ms = stepTimings.records_snapshot_ms + stepTimings.records_day_status_ms;
+  if (daySnapshot && daySnapshot.__timing_detail) {
+    stepTimings.records_snapshot_detail = daySnapshot.__timing_detail;
+  }
+
+  stepStartedAt = new Date().getTime();
+  var summary = { present: 0, late: 0, absent: 0, sick_leave: 0, personal_leave: 0, unchecked: 0, total: students.length };
+  var groupSet = {};
+  var studentRows = [];
+  for (var studentIndex = 0; studentIndex < students.length; studentIndex++) {
+    var student = students[studentIndex] || {};
+    var studentKey = student && student.__student_key ? student.__student_key : getStudentKey_(student);
+    var record = recordMap[studentKey];
+    var statusCode = record ? record.status_code : null;
+    var statusInfo = statusCode ? STATUS_MAP[statusCode] : null;
+    var groupName = String(student.group_name || '');
+
+    if (statusCode && summary.hasOwnProperty(statusCode)) summary[statusCode]++;
+    else summary.unchecked++;
+    if (groupName) groupSet[groupName] = true;
+
+    studentRows.push({
+      id: student && student.__student_id_num || 0,
+      student_number: student.student_number,
+      full_name: student.full_name,
+      nickname: student.nickname,
+      gender: student.gender,
+      group_name: groupName,
+      is_flagged: !!student.is_flagged,
+      attendance: statusCode ? {
+        status_code: statusCode,
+        status_label: statusInfo ? statusInfo.label : statusCode,
+        status_icon: statusInfo ? statusInfo.icon : '?',
+        status_color: statusInfo ? statusInfo.color : 'stone',
+        note: record ? (record.note || '') : ''
+      } : null
+    });
+  }
+  summary.checked = summary.total - summary.unchecked;
+  var groups = Object.keys(groupSet).sort();
+  stepTimings.rows_ms = new Date().getTime() - stepStartedAt;
+
+  stepStartedAt = new Date().getTime();
+  var alerts = getCachedAlerts_(students, date, threshold, sourceInfo, {
+    roster_context: rosterContext
+  });
+  stepTimings.alerts_ms = new Date().getTime() - stepStartedAt;
+
+  var detail = Object.keys(stepTimings).map(function(key) {
+    return key + '=' + stepTimings[key];
+  }).join(';');
+
+  var payload = {
+    date: date,
+    date_th: thaiDate(date, 'long', true),
+    summary: summary,
+    statuses: STATUSES,
+    students: studentRows,
+    groups: groups,
+    day_status: dayStatus,
+    active_batch: batchInfo,
+    alerts: alerts,
+    alert_threshold: threshold
+  };
+
+  return options.capture_timing_detail ? attachAttendanceTimingDetail_(payload, detail) : payload;
+}
+
+function getAttendanceDaily(date, auth, options) {
+  options = options || {};
+  return runAsTeacher_(auth, {
+    rate_limit_key: 'get_attendance_daily',
+    rate_limit_limit: 120,
+    rate_limit_window_sec: 60
+  }, function() {
+    var activeSemester = null;
+    try { activeSemester = getActiveSemesterRow_(); } catch (eSemester) {}
+    var timingContext = String(options.timing_context || '').trim();
+    var sourceInfo = activeSemester ? getAttendanceSourceInfoForSemester_(activeSemester) : buildDefaultAttendanceSourceInfo_();
+    var payloadOptions = Object.assign({}, options, {
+      active_semester: activeSemester,
+      source_info: sourceInfo
+    });
+    if (timingContext) payloadOptions.capture_timing_detail = true;
+    var timingMeta = {
+      page: 'attendance',
+      fn_name: 'getAttendanceDaily',
+      date: String(date || ''),
+      semester_id: activeSemester ? String(activeSemester.id || '') : '',
+      semester_name: activeSemester ? String(activeSemester.name || '') : ''
+    };
+    if (timingContext) timingMeta.detail = 'context=' + timingContext;
+    return measureTiming_('attendance_load_ms', timingMeta, function() {
+      var payload = buildAttendanceDailyPayload_(date, payloadOptions);
+      if (payload && payload.__timing_detail) {
+        timingMeta.detail = (timingContext ? ('context=' + timingContext + ';') : '') + payload.__timing_detail;
+      }
+      return payload;
+    });
+  });
+}
+
+function recordAttendance(payload, auth) {
+  return runAsTeacher_(auth, {
+    require_csrf: true,
+    rate_limit_key: 'record_attendance'
+  }, function() {
+    ensureStudentIdentityMigration_();
+    payload = payload || {};
+
+    var requestedStudentId = parseInt(payload.student_id, 10) || 0;
+    var studentNumber = parseInt(payload.student_number, 10);
+    var date = normalizeAttendanceDate_(payload.date, false);
+    if (!date) return { success: false, message: 'วันที่ไม่ถูกต้อง' };
+    try {
+      ensureAttendanceActionDate_(date, 'วันที่เช็คชื่อ');
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+    var statusCode = String(payload.status_code || '').trim();
+    var note = '';
+    try {
+      note = normalizeLimitedText_(payload.note, 300, 'หมายเหตุ');
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+    var student = getStudentForAttendanceDate_(date, requestedStudentId, studentNumber);
+    var studentId = parseInt(student && student.id, 10) || 0;
+    studentNumber = parseInt(student && student.student_number, 10) || studentNumber;
+
+    if (!studentNumber) return { success: false, message: 'ไม่พบเลขที่นักเรียน' };
+    if (!student) return { success: false, message: 'ไม่พบนักเรียนในวันที่เลือก' };
+    if (!STATUS_MAP[statusCode]) return { success: false, message: 'สถานะไม่ถูกต้อง' };
+    if (['late', 'absent', 'sick_leave', 'personal_leave'].indexOf(statusCode) < 0) note = '';
+    if (false && hasDayNotificationActivity_(date)) {
+      return { success: false, message: 'วันนี้มีการแจ้งผู้ปกครองแล้ว จึงล้างข้อมูลวันหยุดนี้ไม่ได้' };
+    }
+
+    return withAttendanceMutationLock_(function() {
+      if (isDayConfirmed_(date)) return { success: false, message: 'วันนี้ถูกยืนยันแล้ว แก้ไขไม่ได้' };
+
+      var sourceInfo = getCurrentAttendanceSourceInfo_();
+      var sheet = getAttendanceSourceSheet_(sourceInfo);
+      var rowIndex = -1;
+      var oldStatus = '';
+      var oldNote = '';
+      var matches = getRecordsByDate_(date).filter(function(record) {
+        return doesAttendanceRecordMatchStudent_(record, studentId, studentNumber);
+      });
+      if (matches.length) {
+        rowIndex = matches[matches.length - 1].row_index;
+        oldStatus = String(matches[matches.length - 1].status_code || '');
+        oldNote = String(matches[matches.length - 1].note || '');
+        deleteAttendanceDuplicateRows_(sheet, matches.slice(0, -1).map(function(record) {
+          return record.row_index;
+        }));
+        rowIndex -= Math.max(0, matches.length - 1);
+      }
+
+      var now = nowString_();
+      if (rowIndex > 0) {
+        sheet.getRange(rowIndex, COL.ATTENDANCE.STATUS_CODE, 1, 3).setValues([[statusCode, note, '']]);
+        sheet.getRange(rowIndex, COL.ATTENDANCE.UPDATED_AT).setValue(now);
+        sheet.getRange(rowIndex, COL.ATTENDANCE.STUDENT_ID).setValue(studentId);
+      } else {
+        sheet.appendRow([getNextIdForSheet_(sheet), studentNumber, date, statusCode, note, '', now, now, studentId]);
+      }
+
+      invalidateAttendanceCaches_(date);
+      try { warmLikelyDerivedCachesForDate_(date, { mode: 'record' }); } catch (eWarm) { Logger.log('warmLikelyDerivedCachesForDate_ record failed: ' + eWarm.message); }
+      logAsync_(studentNumber, studentId, date, oldStatus, statusCode, oldNote, note, rowIndex > 0 ? 'update' : 'create');
+
+      var statusInfo = STATUS_MAP[statusCode];
+      return {
+        success: true,
+        message: statusInfo.icon + ' ' + statusInfo.label,
+        data: { action: rowIndex > 0 ? 'update' : 'create' }
+      };
+    });
+  });
+}
+
+function undoAttendance(payload, auth) {
+  return runAsTeacher_(auth, {
+    require_csrf: true,
+    rate_limit_key: 'undo_attendance'
+  }, function() {
+    ensureStudentIdentityMigration_();
+    payload = payload || {};
+
+    var requestedStudentId = parseInt(payload.student_id, 10) || 0;
+    var studentNumber = parseInt(payload.student_number, 10);
+    var date = normalizeAttendanceDate_(payload.date, false);
+    if (!date) return { success: false, message: 'วันที่ไม่ถูกต้อง' };
+    try {
+      ensureAttendanceActionDate_(date, 'วันที่เช็คชื่อ');
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+    var student = getStudentForAttendanceDate_(date, requestedStudentId, studentNumber);
+    var studentId = parseInt(student && student.id, 10) || 0;
+    studentNumber = parseInt(student && student.student_number, 10) || studentNumber;
+
+    if (!studentNumber) return { success: false, message: 'ไม่พบเลขที่นักเรียน' };
+    if (!student) return { success: false, message: 'ไม่พบนักเรียนในวันที่เลือก' };
+    return withAttendanceMutationLock_(function() {
+      if (isDayConfirmed_(date)) return { success: false, message: 'วันนี้ถูกยืนยันแล้ว' };
+
+      var sourceInfo = getCurrentAttendanceSourceInfo_();
+      var sheet = getAttendanceSourceSheet_(sourceInfo);
+      var matches = getRecordsByDate_(date).filter(function(record) {
+        return doesAttendanceRecordMatchStudent_(record, studentId, studentNumber);
+      });
+      if (!matches.length) return { success: false, message: 'ไม่พบรายการ' };
+
+      var latestMatch = matches[matches.length - 1];
+      deleteAttendanceDuplicateRows_(sheet, matches.map(function(record) {
+        return record.row_index;
+      }));
+      invalidateAttendanceCaches_(date);
+      try { warmLikelyDerivedCachesForDate_(date, { mode: 'undo' }); } catch (eWarm) { Logger.log('warmLikelyDerivedCachesForDate_ undo failed: ' + eWarm.message); }
+      logAsync_(studentNumber, studentId, date, String(latestMatch.status_code || ''), '', String(latestMatch.note || ''), '', 'undo');
+      return { success: true, message: 'ยกเลิกแล้ว' };
+    });
+  });
+}
+
+function bulkMarkPresent(date, auth) {
+  return runAsTeacher_(auth, {
+    require_csrf: true,
+    rate_limit_key: 'bulk_present'
+  }, function() {
+    ensureStudentIdentityMigration_();
+    date = normalizeAttendanceDate_(date, false);
+    if (!date) return { success: false, message: 'วันที่ไม่ถูกต้อง' };
+    try {
+      ensureAttendanceActionDate_(date, 'วันที่เช็คชื่อ');
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+    return withAttendanceMutationLock_(function() {
+      if (isDayConfirmed_(date)) return { success: false, message: 'วันนี้ถูกยืนยันแล้ว' };
+
+      var students = getStudentsForAttendanceDate_(date);
+      if (!students.length) return { success: false, message: 'ไม่มีนักเรียนในวันที่เลือก' };
+
+      var studentIndex = buildStudentIdentityIndex_(students);
+      var dayMap = buildRecordMapForStudents_(getUniqueLatestRecordsByDate_(date), studentIndex, { records_are_unique: true });
+
+      var unchecked = students.filter(function(student) {
+        return !dayMap[getStudentKey_(student)];
+      });
+      if (!unchecked.length) return { success: false, message: 'เช็คครบแล้ว' };
+
+      var sourceInfo = getCurrentAttendanceSourceInfo_();
+      var sheet = getAttendanceSourceSheet_(sourceInfo);
+      var now = nowString_();
+      var batchId = 'bulk_' + Utilities.getUuid();
+      var baseId = getNextIdForSheet_(sheet);
+
+      var rows = unchecked.map(function(student, index) {
+        return [baseId + index, student.student_number, date, 'present', '', batchId, now, now, parseInt(student.id, 10) || ''];
+      });
+
+      sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, COL.ATTENDANCE.STUDENT_ID).setValues(rows);
+      invalidateAttendanceCaches_(date);
+      try { warmLikelyDerivedCachesForDate_(date, { mode: 'bulk' }); } catch (eWarm) { Logger.log('warmLikelyDerivedCachesForDate_ bulk failed: ' + eWarm.message); }
+      logDayEvent_(date, 'bulk_present', '', 'present', 'batch=' + batchId, 'count=' + rows.length);
+
+      return {
+        success: true,
+        message: 'เช็คมาทั้งหมด ' + rows.length + ' คน',
+        data: { batch_id: batchId, count: rows.length }
+      };
+    });
+  });
+}
+
+function undoBulkPresent(date, batchId, auth) {
+  return runAsTeacher_(auth, {
+    require_csrf: true,
+    rate_limit_key: 'undo_bulk_present'
+  }, function() {
+    date = normalizeAttendanceDate_(date, false);
+    if (!date) return { success: false, message: 'วันที่ไม่ถูกต้อง' };
+    batchId = String(batchId || '').trim();
+    if (!batchId || batchId === '__all__') {
+      return { success: false, message: 'ไม่พบรหัสชุดรายการที่ต้องการยกเลิก' };
+    }
+    try {
+      ensureAttendanceActionDate_(date, 'วันที่เช็คชื่อ');
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+
+    return withAttendanceMutationLock_(function() {
+      if (isDayConfirmed_(date)) return { success: false, message: 'วันนี้ถูกยืนยันแล้ว' };
+
+      var sourceInfo = getCurrentAttendanceSourceInfo_();
+      var sheet = getAttendanceSourceSheet_(sourceInfo);
+      var rowIndexes = getRecordsByDate_(date).filter(function(record) {
+        return String(record.batch_id || '').trim() === batchId;
+      }).map(function(record) {
+        return record.row_index;
+      });
+      var deleted = rowIndexes.length;
+
+      deleteAttendanceDuplicateRows_(sheet, rowIndexes);
+
+      if (!deleted) {
+        return { success: false, message: 'ไม่พบรายการเช็คมาทั้งหมดที่ยกเลิกได้' };
+      }
+      invalidateAttendanceCaches_(date);
+      try { warmLikelyDerivedCachesForDate_(date, { mode: 'undo_bulk' }); } catch (eWarm) { Logger.log('warmLikelyDerivedCachesForDate_ undo bulk failed: ' + eWarm.message); }
+      logDayEvent_(date, 'undo_bulk_present', 'present', '', 'requested_batch=' + batchId, 'count=' + deleted);
+      return { success: true, message: 'ยกเลิก ' + deleted + ' คน' };
+    });
+  });
+}
+
+function confirmDay(date, auth) {
+  return runAsTeacher_(auth, {
+    require_csrf: true,
+    rate_limit_key: 'confirm_day'
+  }, function() {
+    ensureStudentIdentityMigration_();
+    date = normalizeAttendanceDate_(date, false);
+    if (!date) return { success: false, message: 'วันที่ไม่ถูกต้อง' };
+    try {
+      ensureAttendanceActionDate_(date, 'วันที่เช็คชื่อ');
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+    return withAttendanceMutationLock_(function() {
+      if (isDayConfirmed_(date)) return { success: false, message: 'วันนี้ถูกยืนยันแล้ว' };
+
+      var students = getStudentsForAttendanceDate_(date);
+      var dayRecords = getRecordsByDate_(date);
+      if (!students.length) return { success: false, message: 'ยังไม่มีนักเรียนในวันที่เลือก' };
+      if (!dayRecords.length) return { success: false, message: 'ยังไม่มีข้อมูลเช็คชื่อ' };
+
+      var studentIndex = buildStudentIdentityIndex_(students);
+      var recordMap = buildRecordMapForStudents_(getUniqueLatestRecordsByDate_(date), studentIndex, { records_are_unique: true });
+
+      var invalidStudents = students.filter(function(student) {
+        var record = recordMap[getStudentKey_(student)];
+        return !record || !isValidAttendanceStatusCode_(record.status_code);
+      });
+      if (invalidStudents.length > 0) {
+        return { success: false, message: 'ยังเช็คชื่อไม่ครบหรือมีสถานะไม่ถูกต้อง เหลือ ' + invalidStudents.length + ' คน' };
+      }
+
+      saveDayStatus_(date, 'confirmed', nowString_());
+      invalidateAttendanceCaches_(date);
+      try { warmLikelyDerivedCachesForDate_(date, { mode: 'confirm' }); } catch (eWarm) { Logger.log('warmLikelyDerivedCachesForDate_ confirm failed: ' + eWarm.message); }
+      logDayEvent_(date, 'confirm_day', 'draft', 'confirmed', '', '');
+      return { success: true, message: 'ยืนยันแล้ว' };
+    });
+  });
+}
+
+function unconfirmDay(date, auth) {
+  return runAsTeacher_(auth, {
+    require_csrf: true,
+    rate_limit_key: 'unconfirm_day'
+  }, function() {
+    ensureStudentIdentityMigration_();
+    date = normalizeAttendanceDate_(date, false);
+    if (!date) return { success: false, message: 'วันที่ไม่ถูกต้อง' };
+    try {
+      ensureAttendanceActionDate_(date, 'วันที่เช็คชื่อ');
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+    return withAttendanceMutationLock_(function() {
+      var dayStatus = getDayStatus_(date);
+      if (hasDayNotificationActivity_(date)) return { success: false, message: 'วันนี้มีการแจ้งผู้ปกครองแล้ว จึงยกเลิกการยืนยันไม่ได้' };
+      if (dayStatus.status !== 'confirmed') return { success: false, message: 'วันนี้ยังไม่ได้ยืนยัน' };
+      saveDayStatus_(date, 'draft', '');
+      invalidateAttendanceCaches_(date);
+      try { warmLikelyDerivedCachesForDate_(date, { mode: 'draft' }); } catch (eWarm) { Logger.log('warmLikelyDerivedCachesForDate_ unconfirm failed: ' + eWarm.message); }
+      logDayEvent_(date, 'unconfirm_day', 'confirmed', 'draft', '', '');
+      return { success: true, message: 'เปิดแก้ไขได้แล้ว' };
+    });
+  });
+}
+
+function getAttendanceAuditTrail(date, auth) {
+  return runAsTeacher_(auth, {
+    rate_limit_key: 'get_attendance_audit_trail',
+    rate_limit_limit: 60,
+    rate_limit_window_sec: 60
+  }, function() {
+    ensureStudentIdentityMigration_();
+    date = normalizeAttendanceDate_(date, false);
+    if (!date) return { success: false, message: 'วันที่ไม่ถูกต้อง' };
+    return {
+      success: true,
+      date: date,
+      date_th: thaiDate(date, 'long', true),
+      entries: getAttendanceAuditTrailEntries_(date)
+    };
+  });
+}
+
+function repairParentEmailNotifications(date, mode, auth) {
+  return runAsTeacher_(auth, {
+    require_csrf: true,
+    rate_limit_key: 'repair_parent_email_notifications',
+    rate_limit_limit: 20,
+    rate_limit_window_sec: 300
+  }, function() {
+    date = normalizeAttendanceDate_(date, false);
+    if (!date) return { success: false, message: 'วันที่ไม่ถูกต้อง' };
+    mode = String(mode || '').trim().toLowerCase();
+    if (['migrate', 'reset'].indexOf(mode) < 0) return { success: false, message: 'รูปแบบการซ่อมข้อมูลไม่ถูกต้อง' };
+    try {
+      ensureAttendanceActionDate_(date, 'วันที่เช็คชื่อ', {
+        allow_holiday: true
+      });
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+
+    var dayStatus = getDayStatus_(date);
+    var sentStudentKeys = getDayNotifiedStudentKeys_(date);
+    var eligibleStudentKeys = getEligibleParentNotificationStudentKeys_(date);
+    var isLegacyFullyNotified = !!dayStatus.notified_at && sentStudentKeys.length === 0;
+
+    if (mode === 'migrate') {
+      if (!isLegacyFullyNotified) {
+        return { success: false, message: 'วันนี้ไม่มีสถานะแจ้งผู้ปกครองแบบเก่าที่ต้องย้าย' };
+      }
+      if (!eligibleStudentKeys.length) {
+        return { success: false, message: 'ไม่พบผู้ปกครองที่พร้อมรับอีเมลสำหรับย้ายสถานะเดิม' };
+      }
+      saveDayNotifiedStudentKeys_(date, eligibleStudentKeys);
+      logDayEvent_(date, 'migrate_notifications', '', '', 'legacy_notified_at=' + String(dayStatus.notified_at || ''), 'migrated=' + eligibleStudentKeys.length);
+      return {
+        success: true,
+        message: 'ย้ายสถานะแจ้งผู้ปกครองเดิมแล้ว ' + eligibleStudentKeys.length + ' ราย',
+        data: {
+          migrated_count: eligibleStudentKeys.length,
+          legacy_fully_notified: false
+        }
+      };
+    }
+
+    if (!isLegacyFullyNotified && !sentStudentKeys.length && !dayStatus.notified_at) {
+      return { success: false, message: 'วันนี้ยังไม่มีสถานะแจ้งผู้ปกครองให้รีเซ็ต' };
+    }
+
+    clearDayNotificationState_(date);
+    logDayEvent_(date, 'reset_notifications', '', '', 'previous_sent=' + sentStudentKeys.length + ';legacy=' + (isLegacyFullyNotified ? '1' : '0'), 'reset');
+    return {
+      success: true,
+      message: 'รีเซ็ตสถานะแจ้งผู้ปกครองของวันนี้แล้ว',
+      data: {
+        reset: true,
+        eligible_count: eligibleStudentKeys.length
+      }
+    };
+  });
+}
+
+function getCachedStudentList_() {
+  if (CACHED_STUDENT_LIST_MEMO_) return CACHED_STUDENT_LIST_MEMO_;
+  var cache = CacheService.getScriptCache();
+  var cached = cache.get('sl');
+  if (cached) {
+    try {
+      CACHED_STUDENT_LIST_MEMO_ = rehydrateStudentListRuntimeFields_(JSON.parse(cached));
+      return CACHED_STUDENT_LIST_MEMO_;
+    } catch (e) {}
+  }
+
+  var data = rehydrateStudentListRuntimeFields_(getStudentListData_());
+  try { cache.put('sl', JSON.stringify(data), 300); } catch (e) {}
+  CACHED_STUDENT_LIST_MEMO_ = data;
+  return CACHED_STUDENT_LIST_MEMO_;
+}
+
+function invalidateStudentCache_() {
+  CACHED_STUDENT_LIST_MEMO_ = null;
+  if (typeof STUDENTS_FOR_ATTENDANCE_DATE_MEMO_ !== 'undefined') STUDENTS_FOR_ATTENDANCE_DATE_MEMO_ = {};
+  try { CacheService.getScriptCache().remove('sl'); } catch (e) {}
+  bumpDerivedDataCacheVersion_();
+}
+
+function getCachedSettings_() {
+  var cache = CacheService.getScriptCache();
+  var cached = cache.get('st');
+  if (cached) {
+    try { return JSON.parse(cached); } catch (e) {}
+  }
+
+  var data = getSettings_();
+  try { cache.put('st', JSON.stringify(data), 300); } catch (e) {}
+  return data;
+}
+
+function getActiveBatchInfo_(records) {
+  records = Array.isArray(records) ? records : [];
+  var latestBatchId = '';
+  for (var i = records.length - 1; i >= 0; i--) {
+    var candidateBatchId = String(records[i] && records[i].batch_id || '').trim();
+    if (!candidateBatchId) continue;
+    latestBatchId = candidateBatchId;
+    break;
+  }
+  if (!latestBatchId) return null;
+
+  var count = 0;
+  records.forEach(function(record) {
+    if (String(record && record.batch_id || '').trim() === latestBatchId) {
+      count++;
+    }
+  });
+
+  return {
+    batch_id: latestBatchId,
+    count: count,
+    pending: false
+  };
+}
+
+function getAttendanceArchiveSheetName_(semester) {
+  var semesterId = parseInt(semester && semester.id, 10) || 0;
+  if (!(semesterId > 0)) throw new Error('ไม่พบภาคเรียนสำหรับข้อมูลเช็คชื่อย้อนหลัง');
+  return ATTENDANCE_ARCHIVE_SHEET_PREFIX + String(semesterId);
+}
+
+function getAttendanceArchiveDaySheetName_(semester) {
+  var semesterId = parseInt(semester && semester.id, 10) || 0;
+  if (!(semesterId > 0)) throw new Error('ไม่พบภาคเรียนสำหรับข้อมูลสถานะวันย้อนหลัง');
+  return ATTENDANCE_DAY_ARCHIVE_SHEET_PREFIX + String(semesterId);
+}
+
+function ensureAttendanceArchiveSheetSchema_(sheet) {
+  if (sheet.getLastColumn() < COL.ATTENDANCE.STUDENT_ID) {
+    sheet.insertColumnsAfter(sheet.getLastColumn(), COL.ATTENDANCE.STUDENT_ID - sheet.getLastColumn());
+  }
+  sheet.getRange(1, 1, 1, COL.ATTENDANCE.STUDENT_ID).setValues([[
+    'ID', 'เลขที่', 'วันที่', 'สถานะ', 'หมายเหตุ', 'Batch ID', 'บันทึกเมื่อ', 'แก้ไขเมื่อ', 'student_id'
+  ]]);
+  sheet.getRange(1, 1, 1, COL.ATTENDANCE.STUDENT_ID).setFontWeight('bold').setBackground('#f5f0eb');
+  sheet.setFrozenRows(1);
+  try { sheet.hideSheet(); } catch (e) {}
+  return sheet;
+}
+
+function ensureAttendanceArchiveDaySheetSchema_(sheet) {
+  if (sheet.getLastColumn() < COL.ATT_DAYS.CONFIRMED_AT) {
+    sheet.insertColumnsAfter(sheet.getLastColumn(), COL.ATT_DAYS.CONFIRMED_AT - sheet.getLastColumn());
+  }
+  sheet.getRange(1, 1, 1, COL.ATT_DAYS.CONFIRMED_AT).setValues([[
+    'วันที่', 'สถานะ', 'ยืนยันเมื่อ'
+  ]]);
+  sheet.getRange(1, 1, 1, COL.ATT_DAYS.CONFIRMED_AT).setFontWeight('bold').setBackground('#f5f0eb');
+  sheet.setFrozenRows(1);
+  try { sheet.hideSheet(); } catch (e) {}
+  return sheet;
+}
+
+function getOrCreateAttendanceArchiveSheet_(semester) {
+  var name = getAttendanceArchiveSheetName_(semester);
+  var sheet = getSheetByNameOrNull_(name);
+  if (!sheet) sheet = getSpreadsheet_().insertSheet(name);
+  return ensureAttendanceArchiveSheetSchema_(sheet);
+}
+
+function getOrCreateAttendanceArchiveDaySheet_(semester) {
+  var name = getAttendanceArchiveDaySheetName_(semester);
+  var sheet = getSheetByNameOrNull_(name);
+  if (!sheet) sheet = getSpreadsheet_().insertSheet(name);
+  return ensureAttendanceArchiveDaySheetSchema_(sheet);
+}
+
+function isSemesterAttendanceArchived_(semester) {
+  if (!semester || !(parseInt(semester.id, 10) || 0)) return false;
+  var archiveSheet = getSheetByNameOrNull_(getAttendanceArchiveSheetName_(semester));
+  var archiveDaySheet = getSheetByNameOrNull_(getAttendanceArchiveDaySheetName_(semester));
+  return !!((archiveSheet && archiveSheet.getLastRow() > 1) || (archiveDaySheet && archiveDaySheet.getLastRow() > 1));
+}
+
+function getAttendanceSourceInfoForSemester_(semester) {
+  var semesterId = parseInt(semester && semester.id, 10) || 0;
+  var startDate = String(semester && semester.start_date || '');
+  var endDate = String(semester && semester.end_date || '');
+  var isArchived = !!(semester && !semester.is_active && isSemesterAttendanceArchived_(semester));
+  return {
+    key: (isArchived ? 'archive|' : 'live|') + String(semesterId || 'current'),
+    semester: semester || null,
+    semester_id: semesterId,
+    from: startDate,
+    to: endDate,
+    is_archived: isArchived,
+    attendance_sheet_name: isArchived ? getAttendanceArchiveSheetName_(semester) : SHEET.ATTENDANCE,
+    attendance_day_sheet_name: isArchived ? getAttendanceArchiveDaySheetName_(semester) : SHEET.ATTENDANCE_DAYS
+  };
+}
+
+function buildDefaultAttendanceSourceInfo_() {
+  return {
+    key: 'live',
+    semester: null,
+    semester_id: 0,
+    from: '',
+    to: '',
+    is_archived: false,
+    attendance_sheet_name: SHEET.ATTENDANCE,
+    attendance_day_sheet_name: SHEET.ATTENDANCE_DAYS
+  };
+}
+
+function getCurrentAttendanceSourceInfo_() {
+  var activeSemester = null;
+  try { activeSemester = getActiveSemesterRow_(); } catch (e) {}
+  if (activeSemester) return getAttendanceSourceInfoForSemester_(activeSemester);
+  return buildDefaultAttendanceSourceInfo_();
+}
+
+function getAttendanceSourceSheet_(sourceInfo) {
+  sourceInfo = sourceInfo || getCurrentAttendanceSourceInfo_();
+  return getSheet_(sourceInfo.attendance_sheet_name || SHEET.ATTENDANCE);
+}
+
+function getAttendanceDaySourceSheet_(sourceInfo) {
+  sourceInfo = sourceInfo || getCurrentAttendanceSourceInfo_();
+  return getSheet_(sourceInfo.attendance_day_sheet_name || SHEET.ATTENDANCE_DAYS);
+}
+
+function isDateWithinAttendanceSource_(date, sourceInfo) {
+  date = String(date || '').slice(0, 10);
+  sourceInfo = sourceInfo || getCurrentAttendanceSourceInfo_();
+  if (!date) return false;
+  if (sourceInfo.from && date < sourceInfo.from) return false;
+  if (sourceInfo.to && date > sourceInfo.to) return false;
+  return true;
+}
+
+function getCachedAttendanceDateBuckets_(sourceInfo) {
+  sourceInfo = sourceInfo || getCurrentAttendanceSourceInfo_();
+  return getOrBuildLargeCachedJson_('attendance_date_buckets', [String(sourceInfo.key || 'live')], 180, function() {
+    var buckets = {};
+    getAllAttendanceRecords_(sourceInfo).forEach(function(record) {
+      var date = String(record && record.date || '').slice(0, 10);
+      if (!date) return;
+      if (!buckets[date]) buckets[date] = [];
+      buckets[date].push(record);
+    });
+    return buckets;
+  });
+}
+
+ function primeAttendanceDailyCalendarEntries_(date, threshold) {
+  date = String(date || '').slice(0, 10);
+  if (!date) return;
+  var thresholdDays = Math.max(1, parseInt(threshold, 10) || 0);
+  var calendarDaysToPrime = Math.max(35, thresholdDays * 3);
+  primeSchoolCalendarEntriesForRange_(shiftDate_(date, -calendarDaysToPrime), date);
+ }
+
+function ensureAttendanceActionDate_(date, label, options) {
+  options = options || {};
+  date = normalizeDateStringStrict_(date, label || 'วันที่');
+  var activeSemester = options.active_semester || null;
+  var allowHoliday = options.allow_holiday === true;
+  if (activeSemester) {
+    var semesterStart = String(activeSemester.start_date || activeSemester.from || '');
+    var semesterEnd = String(activeSemester.end_date || activeSemester.to || '');
+    if (!semesterStart || !semesterEnd) {
+      ensureDateInActiveSemester_(date, label || 'วันที่');
+    } else if (date < semesterStart || date > semesterEnd) {
+      throw new Error((label || 'วันที่') + ' อยู่นอกภาคเรียนที่เปิดใช้งานอยู่ (' + semesterStart + ' - ' + semesterEnd + ')');
+    }
+  } else {
+    ensureDateInActiveSemester_(date, label || 'วันที่');
+  }
+  var calendarEntry = getSchoolCalendarEntryByDate_(date);
+  if (!allowHoliday && calendarEntry && calendarEntry.type === 'holiday') {
+    throw new Error((label || 'วันที่') + ' ตรงกับวันหยุดในปฏิทินวันเรียน');
+  }
+  return date;
+}
+
+function getAttendanceAlertLookbackDates_(date, threshold) {
+  date = String(date || '').slice(0, 10);
+  if (!date) return [];
+  var thresholdDays = Math.max(1, parseInt(threshold, 10) || 0);
+  var maxLookbackDays = Math.max(15, thresholdDays);
+  var lookbackDates = [];
+  var currentDate = date;
+
+  while (lookbackDates.length < maxLookbackDays) {
+    var calendarEntry = getSchoolCalendarEntryByDate_(currentDate);
+    var isWeekend = getIsoWeekday_(currentDate) === 0 || getIsoWeekday_(currentDate) === 6;
+    var isSchoolDay = calendarEntry
+      ? calendarEntry.type === 'school_day'
+      : !isWeekend;
+
+    if (isSchoolDay) {
+      lookbackDates.push(currentDate);
+    }
+    currentDate = shiftDate_(currentDate, -1);
+  }
+  return lookbackDates;
+}
+
+function getCachedAlertLookbackRecords_(date, threshold, sourceInfo) {
+  sourceInfo = sourceInfo || getCurrentAttendanceSourceInfo_();
+  date = String(date || '').slice(0, 10);
+  if (!date) return [];
+  var lookbackDates = getAttendanceAlertLookbackDates_(date, threshold);
+  if (!lookbackDates.length) return [];
+  return getOrBuildLargeCachedJson_('attendance_alert_lookback_records', [
+    String(sourceInfo.key || 'live'),
+    String(date || ''),
+    String(threshold || '')
+  ], 120, function() {
+    var confirmedDates = getConfirmedAttendanceDateMap_(sourceInfo);
+    var records = [];
+    lookbackDates.forEach(function(cursorDate) {
+      if (!confirmedDates[cursorDate]) return;
+      var dayRecords = getUniqueLatestRecordsByDateFromSource_(cursorDate, sourceInfo);
+      if (dayRecords && dayRecords.length) {
+        records = records.concat(dayRecords);
+      }
+    });
+    return records;
+  });
+}
+
+function getCachedAlerts_(students, date, threshold, sourceInfo) {
+  sourceInfo = sourceInfo || getCurrentAttendanceSourceInfo_();
+  var alertOptions = arguments[4] || {};
+  return getOrBuildCachedJson_('attendance_alerts', [
+    String(sourceInfo.key || 'live'),
+    String(date || ''),
+    String(threshold || '')
+  ], 120, function() {
+    return buildAlerts_(students, date, threshold, sourceInfo, alertOptions);
+  });
+}
+
+ function buildAlertStatusByDateAndStudentKey_(records, rosterContext) {
+   var statusByDate = {};
+   var studentIndex = rosterContext && rosterContext.student_index ? rosterContext.student_index : { byId: {}, byNumber: {} };
+   var preferredStudentByNumber = rosterContext && rosterContext.preferred_student_by_number ? rosterContext.preferred_student_by_number : {};
+   (records || []).forEach(function(record) {
+     var recordDate = String(record && record.date || '').slice(0, 10);
+     if (!recordDate) return;
+     var studentId = parseInt(record && record.student_id, 10) || 0;
+     var studentNumber = parseInt(record && record.student_number, 10) || 0;
+     var student = studentId > 0 && studentIndex.byId[studentId]
+       ? studentIndex.byId[studentId]
+       : (studentNumber > 0 ? (preferredStudentByNumber[studentNumber] || null) : null);
+     var studentKey = student
+       ? getStudentKey_(student)
+       : ((record && record.student_key) || (studentId > 0 ? ('id:' + studentId) : (studentNumber > 0 ? ('num:' + studentNumber) : '')));
+     if (!studentKey) return;
+     if (!statusByDate[recordDate]) statusByDate[recordDate] = {};
+     statusByDate[recordDate][studentKey] = String(record && record.status_code || '');
+   });
+   return statusByDate;
+ }
+
+function clearAttendanceDayStatusExecutionCache_(sourceInfo) {
+  var sourceKey = sourceInfo && sourceInfo.key ? String(sourceInfo.key) : '';
+  if (sourceKey) {
+    try { delete ATTENDANCE_DAY_STATUS_MAP_MEMO_[sourceKey]; } catch (e) {}
+    try { delete ATTENDANCE_CONFIRMED_DATE_MAP_MEMO_[sourceKey]; } catch (e2) {}
+    return;
+  }
+  ATTENDANCE_DAY_STATUS_MAP_MEMO_ = {};
+  ATTENDANCE_CONFIRMED_DATE_MAP_MEMO_ = {};
+}
+
+function invalidateAttendanceCaches_(date) {
+  clearAttendanceDayStatusExecutionCache_();
+  bumpDerivedDataCacheVersion_();
+}
+
+function normalizeAttendanceDate_(date, fallbackInvalid) {
+  if (!date) return fallbackInvalid === false ? '' : todayString_();
+  try {
+    return normalizeDateStringStrict_(date, 'วันที่');
+  } catch (e) {
+    return fallbackInvalid ? todayString_() : '';
+  }
+}
+
+function getRecordsByDate_(date) {
+  ensureStudentIdentityMigration_();
+  date = String(date || '').slice(0, 10);
+  if (!date) return [];
+  var sourceInfo = getCurrentAttendanceSourceInfo_();
+  if (!isDateWithinAttendanceSource_(date, sourceInfo)) return [];
+  var records = getCachedRawAttendanceRecordsByDate_(date, sourceInfo);
+  return Array.isArray(records) ? records.slice() : [];
+}
+
+function readAttendanceRecordsByDate_(date, sourceInfo) {
+  sourceInfo = sourceInfo || getCurrentAttendanceSourceInfo_();
+  var sheet = getAttendanceSourceSheet_(sourceInfo);
+  if (!sheet) return [];
+  var lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return [];
+
+  var matchedRanges = sheet.getRange(2, COL.ATTENDANCE.DATE, lastRow - 1, 1)
+    .createTextFinder(String(date || ''))
+    .matchEntireCell(true)
+    .findAll();
+  if (!matchedRanges.length) return [];
+
+  var rowIndexes = matchedRanges.map(function(range) {
+    return range.getRow();
+  }).sort(function(a, b) {
+    return a - b;
+  });
+  var records = [];
+
+  function appendRowBlock_(fromRow, toRow) {
+    var values = sheet.getRange(fromRow, 1, toRow - fromRow + 1, COL.ATTENDANCE.STUDENT_ID).getValues();
+    values.forEach(function(row, index) {
+      var studentNumber = parseInt(row[COL.ATTENDANCE.STUDENT_NUMBER - 1], 10) || 0;
+      var studentId = parseInt(row[COL.ATTENDANCE.STUDENT_ID - 1], 10) || 0;
+      var batchId = String(row[COL.ATTENDANCE.BATCH_ID - 1] || '').trim();
+      records.push({
+        id: row[COL.ATTENDANCE.ID - 1],
+        student_number: studentNumber,
+        student_id: studentId,
+        student_key: studentId > 0 ? ('id:' + studentId) : ('num:' + studentNumber),
+        date: date,
+        status_code: String(row[COL.ATTENDANCE.STATUS_CODE - 1] || ''),
+        note: String(row[COL.ATTENDANCE.NOTE - 1] || ''),
+        batch_id: batchId,
+        row_index: fromRow + index
+      });
+    });
+  }
+
+  var blockStart = rowIndexes[0];
+  var blockEnd = rowIndexes[0];
+  for (var i = 1; i < rowIndexes.length; i++) {
+    if (rowIndexes[i] === blockEnd + 1) {
+      blockEnd = rowIndexes[i];
+      continue;
+    }
+    appendRowBlock_(blockStart, blockEnd);
+    blockStart = rowIndexes[i];
+    blockEnd = rowIndexes[i];
+  }
+  appendRowBlock_(blockStart, blockEnd);
+  return records;
+}
+
+function getCachedRawAttendanceRecordsByDate_(date, sourceInfo) {
+  ensureStudentIdentityMigration_();
+  date = String(date || '').slice(0, 10);
+  sourceInfo = sourceInfo || getCurrentAttendanceSourceInfo_();
+  if (!date || !isDateWithinAttendanceSource_(date, sourceInfo)) return [];
+  return getOrBuildCachedJson_('attendance_raw_date_records', [String(sourceInfo.key || 'live'), date], 180, function() {
+    return readAttendanceRecordsByDate_(date, sourceInfo);
+  });
+}
+
+function getUniqueLatestRecordsByDateFromSource_(date, sourceInfo) {
+  ensureStudentIdentityMigration_();
+  date = String(date || '').slice(0, 10);
+  sourceInfo = sourceInfo || getCurrentAttendanceSourceInfo_();
+  if (!isDateWithinAttendanceSource_(date, sourceInfo)) return [];
+  return getOrBuildCachedJson_('attendance_unique_date_records', [String(sourceInfo.key || 'live'), date], 180, function() {
+    return getUniqueLatestRecords_(getCachedRawAttendanceRecordsByDate_(date, sourceInfo));
+  });
+}
+
+function getUniqueLatestRecordsByDate_(date) {
+  date = String(date || '').slice(0, 10);
+  if (!date) return [];
+  return getUniqueLatestRecordsByDateFromSource_(date);
+}
+
+function getCachedAttendanceDailySnapshot_(date, sourceInfo) {
+  ensureStudentIdentityMigration_();
+  date = String(date || '').slice(0, 10);
+  sourceInfo = sourceInfo || getCurrentAttendanceSourceInfo_();
+  if (!date || !isDateWithinAttendanceSource_(date, sourceInfo)) {
+    return { record_map: {}, batch_info: null };
+  }
+  var snapshotOptions = arguments[2] || {};
+  var builtTimingDetail = '';
+  var snapshot = getOrBuildCachedJson_('attendance_daily_snapshot', [String(sourceInfo.key || 'live'), date], 180, function() {
+    var snapshotTimings = {};
+    var snapshotStartedAt = new Date().getTime();
+    var rawDayRecords = getCachedRawAttendanceRecordsByDate_(date, sourceInfo);
+    snapshotTimings.raw_records_ms = new Date().getTime() - snapshotStartedAt;
+
+    snapshotStartedAt = new Date().getTime();
+    var rosterContext = buildAttendanceRosterContext_(
+      Array.isArray(snapshotOptions.students) ? snapshotOptions.students : getStudentsForAttendanceDate_(date),
+      date,
+      snapshotOptions.roster_context
+    );
+    var studentIndex = rosterContext.student_index;
+    var preferredStudentByNumber = rosterContext.preferred_student_by_number || {};
+    var recordMap = {};
+    var seenStudentKeys = {};
+    var latestBatchId = '';
+    var latestBatchCount = 0;
+    for (var rawIndex = rawDayRecords.length - 1; rawIndex >= 0; rawIndex--) {
+      var record = rawDayRecords[rawIndex];
+      var batchId = record && record.batch_id ? record.batch_id : '';
+      if (batchId) {
+        if (!latestBatchId) latestBatchId = batchId;
+        if (batchId === latestBatchId) latestBatchCount++;
+      }
+
+      var studentId = record && typeof record.student_id === 'number'
+        ? record.student_id
+        : (parseInt(record && record.student_id, 10) || 0);
+      var studentNumber = record && typeof record.student_number === 'number'
+        ? record.student_number
+        : (parseInt(record && record.student_number, 10) || 0);
+      var student = studentId > 0 && studentIndex.byId[studentId]
+        ? studentIndex.byId[studentId]
+        : (studentNumber > 0 ? (preferredStudentByNumber[studentNumber] || null) : null);
+      var studentKey = student
+        ? getStudentKey_(student)
+        : ((record && record.student_key) || (studentId > 0 ? ('id:' + studentId) : (studentNumber > 0 ? ('num:' + studentNumber) : '')));
+      if (!studentKey || seenStudentKeys[studentKey]) continue;
+      seenStudentKeys[studentKey] = true;
+      if (!student) continue;
+      recordMap[studentKey] = record;
+    }
+    snapshotTimings.record_map_ms = new Date().getTime() - snapshotStartedAt;
+
+    snapshotStartedAt = new Date().getTime();
+    var batchInfo = latestBatchId ? {
+      batch_id: latestBatchId,
+      count: latestBatchCount,
+      pending: false
+    } : null;
+    snapshotTimings.batch_info_ms = new Date().getTime() - snapshotStartedAt;
+    builtTimingDetail = Object.keys(snapshotTimings).map(function(key) {
+      return key + '=' + snapshotTimings[key];
+    }).join(';');
+    return {
+      record_map: recordMap,
+      batch_info: batchInfo
+    };
+  });
+  if (snapshotOptions.capture_timing_detail && builtTimingDetail) {
+    attachAttendanceTimingDetail_(snapshot, builtTimingDetail);
+  }
+  return snapshot;
+}
+
+function getDayStatus_(date, sourceInfo) {
+  sourceInfo = sourceInfo || getCurrentAttendanceSourceInfo_();
+  if (!isDateWithinAttendanceSource_(date, sourceInfo)) {
+    return { date: date, status: 'draft', confirmed_at: '', notified_at: getDayNotifiedAt_(date) };
+  }
+  var notifiedAt = getDayNotifiedAt_(date);
+  var dayStatus = getCachedAttendanceDayStatusByDate_(date, sourceInfo);
+  if (dayStatus) {
+    return {
+      date: date,
+      status: String(dayStatus.status || 'draft'),
+      confirmed_at: String(dayStatus.confirmed_at || ''),
+      notified_at: notifiedAt
+    };
+  }
+  return { date: date, status: 'draft', confirmed_at: '', notified_at: notifiedAt };
+}
+
+function isDayConfirmed_(date) {
+  return getDayStatus_(date).status === 'confirmed';
+}
+
+function saveDayStatus_(date, status, confirmedAt) {
+  var sourceInfo = getCurrentAttendanceSourceInfo_();
+  var sheet = getAttendanceDaySourceSheet_(sourceInfo);
+  var lastRow = sheet.getLastRow();
+
+  if (lastRow > 1) {
+    var data = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (var i = 0; i < data.length; i++) {
+      var rowDate = data[i][0] instanceof Date ? formatDate_(data[i][0]) : String(data[i][0] || '');
+      if (rowDate === date) {
+        sheet.getRange(i + 2, COL.ATT_DAYS.STATUS, 1, 2).setValues([[status, confirmedAt || '']]);
+        clearAttendanceDayStatusExecutionCache_(sourceInfo);
+        return;
+      }
+    }
+  }
+
+  sheet.appendRow([date, status, confirmedAt || '']);
+  clearAttendanceDayStatusExecutionCache_(sourceInfo);
+}
+
+ function buildAlerts_(students, date, threshold, sourceInfo) {
+  var absentCodeSet = { absent: true, sick_leave: true, personal_leave: true };
+  sourceInfo = sourceInfo || getCurrentAttendanceSourceInfo_();
+  var alertOptions = arguments[4] || {};
+  var studentList = students || [];
+  var rosterContext = buildAttendanceRosterContext_(studentList, date, alertOptions.roster_context);
+  var activeStudentKeys = [];
+  var consecutiveByKey = {};
+  threshold = Math.max(1, parseInt(threshold, 10) || 0);
+  var lookbackDates = getAttendanceAlertLookbackDates_(date, threshold);
+  var confirmedDates = getConfirmedAttendanceDateMap_(sourceInfo);
+  var statusByDate = buildAlertStatusByDateAndStudentKey_(getCachedAlertLookbackRecords_(date, threshold, sourceInfo), rosterContext);
+
+  studentList.forEach(function(student) {
+    var studentKey = getStudentKey_(student);
+    activeStudentKeys.push(studentKey);
+    consecutiveByKey[studentKey] = 0;
+  });
+
+  for (var lookbackIndex = 0; lookbackIndex < lookbackDates.length; lookbackIndex++) {
+    var cursorDate = lookbackDates[lookbackIndex];
+    if (!activeStudentKeys.length) break;
+    if (cursorDate === date && !confirmedDates[cursorDate]) continue;
+
+    var statusByKey = confirmedDates[cursorDate] ? (statusByDate[cursorDate] || {}) : {};
+    var nextActiveStudentKeys = [];
+    for (var activeIndex = 0; activeIndex < activeStudentKeys.length; activeIndex++) {
+      var studentKey = activeStudentKeys[activeIndex];
+      var status = statusByKey[studentKey];
+      if (absentCodeSet[status]) {
+        consecutiveByKey[studentKey] = (consecutiveByKey[studentKey] || 0) + 1;
+        nextActiveStudentKeys.push(studentKey);
+      }
+    }
+    activeStudentKeys = nextActiveStudentKeys;
+  }
+
+  var alerts = [];
+  studentList.forEach(function(student) {
+    var studentKey = getStudentKey_(student);
+    var consecutive = consecutiveByKey[studentKey] || 0;
+    if (consecutive >= threshold) {
+      alerts.push({
+        student_number: student.student_number,
+        full_name: student.full_name,
+        nickname: student.nickname,
+        consecutive_days: consecutive
+      });
+    }
+  });
+
+  alerts.sort(function(a, b) { return b.consecutive_days - a.consecutive_days; });
+  return alerts;
+}
+
+function logAsync_(studentNumber, studentId, date, oldStatus, newStatus, oldNote, newNote, action) {
+  try {
+    appendRow_(SHEET.CHANGE_LOG, [
+      getNextId_(SHEET.CHANGE_LOG),
+      studentNumber,
+      date,
+      oldStatus || '',
+      newStatus || '',
+      oldNote || '',
+      newNote || '',
+      action || '',
+      nowString_(),
+      studentId || ''
+    ]);
+  } catch (e) {}
+}
+
+function logDayEvent_(date, action, oldStatus, newStatus, oldNote, newNote) {
+  logAsync_('', '', date, oldStatus, newStatus, oldNote, newNote, action);
+}
+
+function getAttendanceAuditTrailEntries_(date) {
+  var sheet = getSheet_(SHEET.CHANGE_LOG);
+  var lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return [];
+
+  var rows = sheet.getRange(2, 1, lastRow - 1, COL.LOG.STUDENT_ID).getValues();
+  var studentIndex = buildStudentIdentityIndex_(getStudentListData_().all_students || []);
+  var entries = [];
+
+  rows.forEach(function(row) {
+    var rowDate = row[COL.LOG.DATE - 1] instanceof Date ? formatDate_(row[COL.LOG.DATE - 1]) : String(row[COL.LOG.DATE - 1] || '');
+    if (rowDate !== date) return;
+
+    var studentNumber = parseInt(row[COL.LOG.STUDENT_NUMBER - 1], 10) || 0;
+    var studentId = parseInt(row[COL.LOG.STUDENT_ID - 1], 10) || 0;
+    var student = studentId > 0 && studentIndex.byId[studentId]
+      ? studentIndex.byId[studentId]
+      : (studentNumber > 0 ? studentIndex.byNumber[studentNumber] : null);
+    var oldStatus = String(row[COL.LOG.OLD_STATUS - 1] || '');
+    var newStatus = String(row[COL.LOG.NEW_STATUS - 1] || '');
+    var action = String(row[COL.LOG.ACTION - 1] || '');
+
+    entries.push({
+      id: parseInt(row[COL.LOG.ID - 1], 10) || 0,
+      student_number: studentNumber,
+      student_id: studentId,
+      full_name: student ? String(student.full_name || '') : '',
+      nickname: student ? String(student.nickname || '') : '',
+      action: action,
+      action_label: getAttendanceAuditActionLabel_(action),
+      old_status: oldStatus,
+      old_status_label: oldStatus && STATUS_MAP[oldStatus] ? STATUS_MAP[oldStatus].label : '',
+      new_status: newStatus,
+      new_status_label: newStatus && STATUS_MAP[newStatus] ? STATUS_MAP[newStatus].label : '',
+      old_note: String(row[COL.LOG.OLD_NOTE - 1] || ''),
+      new_note: String(row[COL.LOG.NEW_NOTE - 1] || ''),
+      changed_at: String(row[COL.LOG.CHANGED_AT - 1] || ''),
+      is_day_event: studentNumber <= 0 && studentId <= 0
+    });
+  });
+
+  entries.sort(function(a, b) {
+    return String(b.changed_at || '').localeCompare(String(a.changed_at || '')) || ((b.id || 0) - (a.id || 0));
+  });
+  return entries.slice(0, 120);
+}
+
+function getAttendanceAuditActionLabel_(action) {
+  var map = {
+    create: 'บันทึกสถานะ',
+    update: 'แก้ไขสถานะ',
+    undo: 'ยกเลิกสถานะ',
+    bulk_present: 'เช็คมาทั้งหมด',
+    undo_bulk_present: 'ยกเลิกเช็คมาทั้งหมด',
+    confirm_day: 'ยืนยันวัน',
+    unconfirm_day: 'ยกเลิกการยืนยัน',
+    migrate_notifications: 'ย้ายสถานะแจ้งผู้ปกครองเดิม',
+    reset_notifications: 'รีเซ็ตการแจ้งผู้ปกครอง'
+  };
+  return map[action] || action || 'แก้ไขข้อมูล';
+}
+
+function getCachedAttendanceDayStatusMap_(sourceInfo) {
+  sourceInfo = sourceInfo || getCurrentAttendanceSourceInfo_();
+  var sourceKey = String(sourceInfo.key || 'live');
+  if (ATTENDANCE_DAY_STATUS_MAP_MEMO_.hasOwnProperty(sourceKey)) {
+    return ATTENDANCE_DAY_STATUS_MAP_MEMO_[sourceKey];
+  }
+  var dayStatusMap = getOrBuildCachedJson_('attendance_day_status_map', [sourceKey], 300, function() {
+    var sheet = getAttendanceDaySourceSheet_(sourceInfo);
+    var lastRow = sheet ? sheet.getLastRow() : 0;
+    var dayStatusMap = {};
+    if (lastRow <= 1) return dayStatusMap;
+
+    var data = sheet.getRange(2, 1, lastRow - 1, 3).getValues();
+    for (var i = 0; i < data.length; i++) {
+      var rowDate = data[i][0];
+      rowDate = rowDate instanceof Date ? formatDate_(rowDate) : String(rowDate || '').slice(0, 10);
+      if (!rowDate) continue;
+      dayStatusMap[rowDate] = {
+        status: String(data[i][1] || 'draft'),
+        confirmed_at: String(data[i][2] || '')
+      };
+    }
+    return dayStatusMap;
+  });
+  ATTENDANCE_DAY_STATUS_MAP_MEMO_[sourceKey] = dayStatusMap;
+  return dayStatusMap;
+}
+
+function readAttendanceDayStatusByDate_(date, sourceInfo) {
+  var sheet = getAttendanceDaySourceSheet_(sourceInfo);
+  var lastRow = sheet ? sheet.getLastRow() : 0;
+  if (lastRow <= 1) return null;
+
+  var matches = sheet.getRange(2, COL.ATT_DAYS.DATE, lastRow - 1, 1)
+    .createTextFinder(String(date || ''))
+    .matchEntireCell(true)
+    .findAll();
+  if (!matches.length) return null;
+
+  var selected = null;
+  matches.forEach(function(range) {
+    var row = sheet.getRange(range.getRow(), COL.ATT_DAYS.DATE, 1, COL.ATT_DAYS.CONFIRMED_AT).getValues()[0];
+    var rowDate = row[COL.ATT_DAYS.DATE - 1] instanceof Date
+      ? formatDate_(row[COL.ATT_DAYS.DATE - 1])
+      : String(row[COL.ATT_DAYS.DATE - 1] || '').slice(0, 10);
+    if (rowDate !== date) return;
+    selected = {
+      status: String(row[COL.ATT_DAYS.STATUS - 1] || 'draft'),
+      confirmed_at: String(row[COL.ATT_DAYS.CONFIRMED_AT - 1] || '')
+    };
+  });
+  return selected;
+}
+
+function getCachedAttendanceDayStatusByDate_(date, sourceInfo) {
+  sourceInfo = sourceInfo || getCurrentAttendanceSourceInfo_();
+  date = String(date || '').slice(0, 10);
+  if (!date) return null;
+  var dayStatusMap = getCachedAttendanceDayStatusMap_(sourceInfo);
+  var dayStatus = dayStatusMap && dayStatusMap[date] ? dayStatusMap[date] : null;
+  return dayStatus ? {
+    status: String(dayStatus.status || 'draft'),
+    confirmed_at: String(dayStatus.confirmed_at || '')
+  } : null;
+}
+
+function getConfirmedAttendanceDateMap_(sourceInfo) {
+  sourceInfo = sourceInfo || getCurrentAttendanceSourceInfo_();
+  var sourceKey = String(sourceInfo.key || 'live');
+  if (ATTENDANCE_CONFIRMED_DATE_MAP_MEMO_.hasOwnProperty(sourceKey)) {
+    return ATTENDANCE_CONFIRMED_DATE_MAP_MEMO_[sourceKey];
+  }
+  var dayStatusMap = getCachedAttendanceDayStatusMap_(sourceInfo);
+  var confirmedDates = {};
+  Object.keys(dayStatusMap || {}).forEach(function(date) {
+    if (String(dayStatusMap[date] && dayStatusMap[date].status || '').trim() === 'confirmed') {
+      confirmedDates[date] = true;
+    }
+  });
+  ATTENDANCE_CONFIRMED_DATE_MAP_MEMO_[sourceKey] = confirmedDates;
+  return confirmedDates;
+}
+
+function getCachedConfirmedAttendanceRecords_() {
+  var sourceInfo = arguments[0] || getCurrentAttendanceSourceInfo_();
+  return getOrBuildLargeCachedJson_('attendance_confirmed_records', [String(sourceInfo.key || 'live')], 180, function() {
+    var confirmedDates = getConfirmedAttendanceDateMap_(sourceInfo);
+    var dateBuckets = getCachedAttendanceDateBuckets_(sourceInfo);
+    var dates = Object.keys(confirmedDates).sort();
+    if (!dates.length) return [];
+    var records = [];
+    dates.forEach(function(date) {
+      if (dateBuckets[date] && dateBuckets[date].length) {
+        records = records.concat(dateBuckets[date]);
+      }
+    });
+    return getUniqueLatestRecords_(records);
+  });
+}
+
+function getCachedConfirmedAttendanceRange_(from, to, sourceInfo) {
+  sourceInfo = sourceInfo || getCurrentAttendanceSourceInfo_();
+  from = String(from || '').slice(0, 10);
+  to = String(to || '').slice(0, 10);
+  if (!from || !to || to < from) return [];
+  return getOrBuildLargeCachedJson_('attendance_confirmed_range', [String(sourceInfo.key || 'live'), from, to], 180, function() {
+    var confirmedDates = getConfirmedAttendanceDateMap_(sourceInfo);
+    var dateBuckets = getCachedAttendanceDateBuckets_(sourceInfo);
+    var dates = generateDateList_(from, to);
+    var records = [];
+    dates.forEach(function(date) {
+      if (!confirmedDates[date]) return;
+      if (dateBuckets[date] && dateBuckets[date].length) {
+        records = records.concat(dateBuckets[date]);
+      }
+    });
+    return getUniqueLatestRecords_(records);
+  });
+}
+
+function getConfirmedAttendanceRecords_() {
+  var sourceInfo = getCurrentAttendanceSourceInfo_();
+  var confirmedDates = getConfirmedAttendanceDateMap_(sourceInfo);
+  if (!Object.keys(confirmedDates).length) return [];
+  return getCachedConfirmedAttendanceRecords_(sourceInfo);
+}
+
+function getAttendanceBasisDays_(totalDays, excusedLeaveDays) {
+  totalDays = parseInt(totalDays, 10) || 0;
+  excusedLeaveDays = parseInt(excusedLeaveDays, 10) || 0;
+  return Math.max(0, totalDays - excusedLeaveDays);
+}
+
+function buildAttendanceComputationContext_(range, records, studentsOrIndex, options) {
+  range = range || {};
+  var normalizedRecords = options && options.records_are_unique && Array.isArray(records)
+    ? records
+    : getUniqueLatestRecords_(records || [], studentsOrIndex, options);
+  var confirmedDateSet = {};
+  var recordCountsByDate = {};
+  normalizedRecords.forEach(function(record) {
+    if (record && record.date) {
+      var recordDate = String(record.date);
+      confirmedDateSet[recordDate] = true;
+      recordCountsByDate[recordDate] = (recordCountsByDate[recordDate] || 0) + 1;
+    }
+  });
+
+  var calendarEntries = getSchoolCalendarEntriesForRange_(range);
+  var calendarSchoolDaySet = {};
+  var holidaySet = {};
+  calendarEntries.forEach(function(entry) {
+    if (!entry || !entry.date) return;
+    if (entry.type === 'holiday') holidaySet[entry.date] = true;
+    if (entry.type === 'school_day') calendarSchoolDaySet[entry.date] = true;
+  });
+
+  var confirmedDates = Object.keys(confirmedDateSet).sort();
+  var calendarSchoolDays = Object.keys(calendarSchoolDaySet).sort();
+  var usesCalendar = calendarSchoolDays.length > 0;
+  var effectiveSchoolDays = usesCalendar ? calendarSchoolDays.slice() : confirmedDates.slice();
+  var effectiveSchoolDaySet = {};
+  var measurementDayDates = usesCalendar
+    ? calendarSchoolDays.filter(function(date) { return !!confirmedDateSet[date]; })
+    : confirmedDates.slice();
+  var measurementDaySet = {};
+  effectiveSchoolDays.forEach(function(date) {
+    effectiveSchoolDaySet[date] = true;
+  });
+  measurementDayDates.forEach(function(date) {
+    measurementDaySet[date] = true;
+  });
+
+  var filteredRecords = normalizedRecords.filter(function(record) {
+    return !!effectiveSchoolDaySet[String(record.date || '')];
+  });
+
+  var missingConfirmedDates = [];
+  var extraConfirmedDates = [];
+  if (usesCalendar) {
+    calendarSchoolDays.forEach(function(date) {
+      if (!confirmedDateSet[date]) missingConfirmedDates.push(date);
+    });
+    confirmedDates.forEach(function(date) {
+      if (!calendarSchoolDaySet[date]) extraConfirmedDates.push(date);
+    });
+  }
+
+  return {
+    uses_calendar: usesCalendar,
+    confirmed_dates: confirmedDates,
+    confirmed_dates_count: confirmedDates.length,
+    school_day_dates: effectiveSchoolDays,
+    school_day_dates_count: effectiveSchoolDays.length,
+    school_day_map: effectiveSchoolDaySet,
+    measurement_day_dates: measurementDayDates,
+    measurement_day_dates_count: measurementDayDates.length,
+    measurement_day_map: measurementDaySet,
+    holiday_count: Object.keys(holidaySet).length,
+    record_counts_by_date: recordCountsByDate,
+    filtered_records: filteredRecords,
+    missing_confirmed_dates: missingConfirmedDates,
+    extra_confirmed_dates: extraConfirmedDates,
+    has_calendar_mismatch: usesCalendar && (missingConfirmedDates.length > 0 || extraConfirmedDates.length > 0),
+    warning_message: buildAttendanceCalendarWarningMessage_(usesCalendar, missingConfirmedDates, extraConfirmedDates)
+  };
+}
+
+function buildAttendanceCalendarWarningMessage_(usesCalendar, missingConfirmedDates, extraConfirmedDates) {
+  if (!usesCalendar) return '';
+  var parts = [];
+  if ((missingConfirmedDates || []).length > 0) {
+    parts.push('ยังมีวันเรียนตามปฏิทินที่ยังไม่ได้ยืนยัน ' + missingConfirmedDates.length + ' วัน');
+  }
+  if ((extraConfirmedDates || []).length > 0) {
+    parts.push('มีข้อมูลเช็คชื่อที่ยืนยันแล้วในวันที่ไม่ใช่วันเรียน ' + extraConfirmedDates.length + ' วัน');
+  }
+  return parts.join(' และ ');
+}
+
+function findSortedDateInsertionIndex_(dates, target) {
+  var low = 0;
+  var high = (dates && dates.length) || 0;
+  while (low < high) {
+    var mid = Math.floor((low + high) / 2);
+    if (String(dates[mid] || '') < target) low = mid + 1;
+    else high = mid;
+  }
+  return low;
+}
+
+function getStudentSchoolDayCountForContext_(student, context) {
+  var dates = (context && context.measurement_day_dates) || (context && context.school_day_dates) || [];
+  if (!student || !dates.length) return 0;
+  var cache = context && context.__student_school_day_count_by_key;
+  var studentKey = getStudentKey_(student);
+  if (cache && cache.hasOwnProperty(studentKey)) return cache[studentKey];
+
+  var bounds = getStudentRosterBounds_(student);
+  var startIndex = bounds.start ? findSortedDateInsertionIndex_(dates, bounds.start) : 0;
+  var endIndex = bounds.end ? findSortedDateInsertionIndex_(dates, bounds.end) : dates.length;
+  var count = Math.max(0, endIndex - startIndex);
+
+  if (context) {
+    if (!cache) {
+      cache = {};
+      try {
+        Object.defineProperty(context, '__student_school_day_count_by_key', {
+          value: cache,
+          writable: true,
+          configurable: true,
+          enumerable: false
+        });
+      } catch (e) {
+        context.__student_school_day_count_by_key = cache;
+      }
+    }
+    cache[studentKey] = count;
+  }
+  return count;
+}
+
+function buildStudentAttendanceStatsForContext_(student, recordBuckets, context) {
+  var counts = { present: 0, late: 0, absent: 0, sick_leave: 0, personal_leave: 0 };
+  var schoolDays = getStudentSchoolDayCountForContext_(student, context);
+  var rawStudentRecords = getRecordsForStudent_(recordBuckets, student);
+  var studentRecords = recordBuckets && recordBuckets.__filtered_to_school_days
+    ? rawStudentRecords
+    : rawStudentRecords.filter(function(record) {
+        return !!(context && context.measurement_day_map && context.measurement_day_map[record.date]);
+      });
+
+  studentRecords.forEach(function(record) {
+    if (counts.hasOwnProperty(record.status_code)) counts[record.status_code]++;
+  });
+
+  var excusedLeaveDays = counts.sick_leave + counts.personal_leave;
+  var basisDays = getAttendanceBasisDays_(schoolDays, excusedLeaveDays);
+  var attendancePercent = calculateAttendancePercent_(counts.present, counts.late, schoolDays, excusedLeaveDays);
+
+  return {
+    counts: counts,
+    school_days: schoolDays,
+    recorded_days: studentRecords.length,
+    excused_leave_days: excusedLeaveDays,
+    basis_days: basisDays,
+    attend_days: counts.present + counts.late,
+    attendance_percent: attendancePercent,
+    records: studentRecords
+  };
+}
+
+function isValidAttendanceStatusCode_(statusCode) {
+  return !!STATUS_MAP[String(statusCode || '').trim()];
+}
+
+function calculateAttendancePercent_(presentCount, lateCount, totalDays, excusedLeaveDays) {
+  var basisDays = getAttendanceBasisDays_(totalDays, excusedLeaveDays);
+  if (basisDays <= 0) return null;
+
+  var attendDays = (parseInt(presentCount, 10) || 0) + (parseInt(lateCount, 10) || 0);
+  if (attendDays > basisDays) attendDays = basisDays;
+  return Math.round((attendDays / basisDays) * 1000) / 10;
+}
+
+function getDayNotificationKey_(date) {
+  return 'attendance_day_notified_' + String(date || '');
+}
+
+function getDayNotificationRecipientsKey_(date) {
+  return 'attendance_day_notified_students_' + String(date || '');
+}
+
+function getDayNotifiedAt_(date) {
+  return String(getCachedSettings_()[getDayNotificationKey_(date)] || '');
+}
+
+function getDayNotifiedStudentKeys_(date) {
+  var raw = getCachedSettings_()[getDayNotificationRecipientsKey_(date)] || '[]';
+  try {
+    var items = JSON.parse(raw);
+    if (!items || !items.forEach) return [];
+    var seen = {};
+    var keys = [];
+    items.forEach(function(item) {
+      var key = String(item || '').trim();
+      if (!key || seen[key]) return;
+      seen[key] = true;
+      keys.push(key);
+    });
+    return keys;
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveDayNotifiedStudentKeys_(date, studentKeys) {
+  var unique = [];
+  var seen = {};
+  (studentKeys || []).forEach(function(item) {
+    var key = String(item || '').trim();
+    if (!key || seen[key]) return;
+    seen[key] = true;
+    unique.push(key);
+  });
+  if (!unique.length) {
+    try { removeSetting_(getDayNotificationRecipientsKey_(date)); } catch (e) {}
+    return;
+  }
+  saveSetting_(getDayNotificationRecipientsKey_(date), JSON.stringify(unique));
+}
+
+function markDayStudentsNotified_(date, studentKeys) {
+  var merged = getDayNotifiedStudentKeys_(date).concat(studentKeys || []);
+  saveDayNotifiedStudentKeys_(date, merged);
+}
+
+function clearDayNotificationState_(date) {
+  try { removeSetting_(getDayNotificationKey_(date)); } catch (e) {}
+  try { removeSetting_(getDayNotificationRecipientsKey_(date)); } catch (e2) {}
+}
+
+function getEligibleParentNotificationStudentKeys_(date) {
+  var notifyCodes = ['absent', 'late', 'sick_leave', 'personal_leave'];
+  var records = getCachedConfirmedAttendanceRange_(date, date);
+  var students = getOfficialStudentsForRange_({ from: date, to: date }, records);
+  var studentIndex = buildStudentIdentityIndex_(students);
+  var recordMap = buildRecordMapForStudents_(records, studentIndex, { records_are_unique: true });
+  var keys = [];
+  students.forEach(function(student) {
+    var record = recordMap[getStudentKey_(student)];
+    if (!record || notifyCodes.indexOf(record.status_code) < 0) return;
+    if (!isValidEmailValue_(student.parent_email)) return;
+    keys.push(getStudentKey_(student));
+  });
+  return keys;
+}
+
+function clearHolidayAttendance(date, auth) {
+  return runAsTeacher_(auth, {
+    require_csrf: true,
+    rate_limit_key: 'clear_holiday_attendance'
+  }, function() {
+    date = normalizeAttendanceDate_(date, false);
+    if (!date) return { success: false, message: 'วันที่ไม่ถูกต้อง' };
+
+    var calendarEntry = getSchoolCalendarEntryByDate_(date);
+    if (!calendarEntry || calendarEntry.type !== 'holiday') {
+      return { success: false, message: 'วันที่เลือกไม่ได้ถูกตั้งเป็นวันหยุด จึงไม่สามารถล้างข้อมูลด้วยคำสั่งนี้ได้' };
+    }
+
+    if (hasDayNotificationActivity_(date)) {
+      return { success: false, message: 'วันนี้มีการแจ้งผู้ปกครองแล้ว จึงล้างข้อมูลวันหยุดนี้ไม่ได้' };
+    }
+
+    return withAttendanceMutationLock_(function() {
+      var sourceInfo = getCurrentAttendanceSourceInfo_();
+      var attendanceSheet = getAttendanceSourceSheet_(sourceInfo);
+      var dayStatusSheet = getAttendanceDaySourceSheet_(sourceInfo);
+      var dayRecords = getRecordsByDate_(date);
+      var deletedRecords = dayRecords.length;
+      deleteSheetRowsByIndexes_(attendanceSheet, dayRecords.map(function(record) {
+        return record.row_index;
+      }));
+
+      var lastRow = dayStatusSheet.getLastRow();
+      if (lastRow > 1) {
+        var data = dayStatusSheet.getRange(2, 1, lastRow - 1, 1).getValues();
+        var dayStatusRowIndexes = [];
+        for (var j = data.length - 1; j >= 0; j--) {
+          var rowDate = data[j][0] instanceof Date ? formatDate_(data[j][0]) : String(data[j][0] || '');
+          if (rowDate === date) {
+            dayStatusRowIndexes.push(j + 2);
+          }
+        }
+        deleteSheetRowsByIndexes_(dayStatusSheet, dayStatusRowIndexes);
+      }
+
+      clearDayNotificationState_(date);
+      invalidateAttendanceCaches_(date);
+      try { warmLikelyDerivedCachesForDate_(date, { mode: 'clear_holiday' }); } catch (eWarm) { Logger.log('warmLikelyDerivedCachesForDate_ clear holiday failed: ' + eWarm.message); }
+
+      return {
+        success: true,
+        message: deletedRecords > 0
+          ? 'ล้างข้อมูลเช็คชื่อในวันหยุด ' + thaiDate(date, 'long', false) + ' แล้ว'
+          : 'ไม่พบข้อมูลเช็คชื่อในวันหยุดที่ต้องล้าง',
+        data: {
+          date: date,
+          deleted_records: deletedRecords
+        }
+      };
+    });
+  });
+}
+
+function hasDayNotificationActivity_(date) {
+  return getDayNotifiedStudentKeys_(date).length > 0 || !!getDayNotifiedAt_(date);
+}
+
+function markDayNotified_(date, notifiedAt) {
+  saveSetting_(getDayNotificationKey_(date), notifiedAt || nowString_());
+}

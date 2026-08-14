@@ -1,0 +1,642 @@
+<script>
+/* ═══════════════════════════════════════════════════
+   Import CSV — JsImport.html
+   ═══════════════════════════════════════════════════ */
+
+(function() {
+  'use strict';
+
+  var previewData = null;
+  var successImportCount = 0;
+  var importUiState = buildImportUiState_('idle', '', 0, '', '');
+  var S, E;
+
+  function init() { S = window.AppState; E = window.AppShared; }
+
+  function buildImportUiState_(phase, fileName, fileSize, title, detail) {
+    return {
+      phase: phase || 'idle',
+      fileName: fileName || '',
+      fileSize: fileSize || 0,
+      title: title || '',
+      detail: detail || ''
+    };
+  }
+
+  function resetImportSession() {
+    previewData = null;
+    successImportCount = 0;
+    importUiState = buildImportUiState_('idle', '', 0, '', '');
+  }
+
+  function esc(str) {
+    if (!str) return '';
+    var div = document.createElement('div'); div.textContent = String(str); return div.innerHTML;
+  }
+
+  function formatFileSize(bytes) {
+    if (!bytes || bytes < 1024) return (bytes || 0) + ' B';
+    if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
+    return (Math.round((bytes / (1024 * 1024)) * 10) / 10) + ' MB';
+  }
+
+  function isImportBusy() {
+    return importUiState.phase === 'previewing' || importUiState.phase === 'confirming';
+  }
+
+  function todayString_() {
+    var now = new Date();
+    var year = now.getFullYear();
+    var month = String(now.getMonth() + 1).padStart(2, '0');
+    var day = String(now.getDate()).padStart(2, '0');
+    return year + '-' + month + '-' + day;
+  }
+
+  function getDefaultEffectiveFrom() {
+    if (window.AppState && window.AppState.activeSemester && window.AppState.activeSemester.from) {
+      return window.AppState.activeSemester.from;
+    }
+    return todayString_();
+  }
+
+  function getEffectiveFromValue() {
+    var input = document.getElementById('import-effective-from');
+    return input ? String(input.value || '').trim() : '';
+  }
+
+  function getImportModeValue() {
+    var input = document.getElementById('import-mode');
+    var value = input ? String(input.value || '').trim() : 'add_only';
+    return value === 'upsert' ? 'upsert' : 'add_only';
+  }
+
+  function formatEffectiveFrom(value) {
+    if (!value) return '';
+    var parts = String(value).split('-');
+    if (parts.length !== 3) return String(value);
+    var y = parseInt(parts[0], 10);
+    var m = parseInt(parts[1], 10);
+    var d = parseInt(parts[2], 10);
+    if (!(y && m && d)) return String(value);
+    return d + '/' + m + '/' + y;
+  }
+
+  function setImportUiState(phase, fileName, fileSize, title, detail) {
+    importUiState = buildImportUiState_(phase, fileName, fileSize, title, detail);
+    syncImportUi();
+  }
+
+  function renderImportIcon(kind) {
+    if (kind === 'upload') return '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 16V7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M8.5 10.5L12 7l3.5 3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 17.5h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><rect x="4" y="3.5" width="16" height="17" rx="3" stroke="currentColor" stroke-width="1.8"/></svg>';
+    if (kind === 'success') return '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.8"/><path d="M8.5 12.2l2.3 2.3 4.7-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    if (kind === 'rows') return '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="5" y="4" width="14" height="16" rx="2.5" stroke="currentColor" stroke-width="1.8"/><path d="M9 9h6M9 12h6M9 15h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+    if (kind === 'valid') return '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.8"/><path d="M8.5 12.2l2.3 2.3 4.7-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    if (kind === 'error') return '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.8"/><path d="M9.5 9.5l5 5m0-5l-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+    if (kind === 'skip') return '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 7h5a4 4 0 014 4v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 14l3 3 3-3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    return '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.8"/></svg>';
+  }
+
+  function renderLoading() {
+    init();
+    var panel = document.getElementById('page-import');
+    if (!panel) return;
+    panel.innerHTML = '<div class="skeleton-page">' +
+      '<div class="skeleton-hero">' +
+      '<div class="skeleton-line" style="width:120px"></div>' +
+      '<div class="skeleton-line skeleton-line-xl" style="width:40%"></div>' +
+      '<div class="skeleton-line skeleton-line-lg" style="width:76%"></div>' +
+      '<div class="empty-next-step" data-page-loading-note="true" hidden><div class="empty-next-step-title">กำลังโหลด</div><div class="empty-next-step-text">กำลังเตรียมพื้นที่นำเข้ารายชื่อและตรวจไฟล์ล่าสุด</div></div>' +
+      '</div>' +
+      '<div class="skeleton-grid">' +
+      '<div class="skeleton-card skeleton-card-wide"></div><div class="skeleton-card skeleton-card-wide"></div><div class="skeleton-card skeleton-card-wide"></div>' +
+      '</div>' +
+      '</div>';
+  }
+
+  function render(state) {
+    init();
+    resetImportSession();
+    var panel = document.getElementById('page-import');
+    var defaultEffectiveFrom = getDefaultEffectiveFrom();
+    var html = '';
+
+    // Header
+    html += '<div class="import-shell">';
+    html += '<section class="import-hero">';
+    html += '<div class="import-hero-copy">';
+    html += '<p class="import-kicker">เพิ่มรายชื่อแบบชุด</p>';
+    html += '<h1 class="import-title">เพิ่มรายชื่อนักเรียน</h1>';
+    html += '<p class="import-subtitle">ใช้แม่แบบหรืออัปโหลดไฟล์ครั้งเดียว แล้วเลือกได้ว่าจะเพิ่มใหม่อย่างเดียวหรืออัปเดตรายชื่อเดิมพร้อมกัน</p>';
+    html += '<div class="import-hero-actions">';
+    html += '<button class="btn btn-ghost" onclick="ImportPage.downloadTemplate()">ดาวน์โหลดแม่แบบรายชื่อ</button>';
+    html += '</div>';
+    html += '<p class="import-context">ใช้ 4 คอลัมน์หลัก: เลขที่, ชื่อ-สกุล, ชื่อเล่น, เพศ · ใส่เพศได้ทั้ง M/F หรือ ชาย/หญิง · รองรับไฟล์ CSV ไม่เกิน 1 MB</p>';
+    html += '</div>';
+    html += '<div class="import-hero-side">';
+    html += '<div class="import-guide-panel">';
+    html += '<p class="import-panel-label">ลำดับการนำเข้า</p>';
+    html += '<div class="import-guide-list">';
+    html += '<div class="import-guide-item"><span class="import-guide-index">1</span><div><div class="import-guide-title">ใช้แม่แบบรายชื่อ</div><p class="import-guide-text">เริ่มจากแม่แบบเพื่อไม่ต้องจัดคอลัมน์เอง</p></div></div>';
+    html += '<div class="import-guide-item"><span class="import-guide-index">2</span><div><div class="import-guide-title">อัปโหลดและตรวจสอบ</div><p class="import-guide-text">ระบบจะบอกทั้งรายการเพิ่มใหม่ รายการที่จะอัปเดต รายการซ้ำ และจุดที่ต้องแก้</p></div></div>';
+    html += '<div class="import-guide-item"><span class="import-guide-index">3</span><div><div class="import-guide-title">ยืนยันตามโหมดที่เลือก</div><p class="import-guide-text">เลือกได้ว่าจะเพิ่มใหม่อย่างเดียว หรืออัปเดตรายชื่อเดิมที่เลขที่ตรงกันด้วย</p></div></div>';
+    html += '</div>';
+    html += '</div>';
+    html += '</div>';
+    html += '</section>';
+
+    html += '<section class="import-workspace">';
+    html += '<div class="import-section-head">';
+    html += '<div><p class="import-section-kicker">พื้นที่อัปโหลด CSV</p><h2 class="import-section-title">อัปโหลดและตรวจสอบไฟล์</h2><p class="import-section-text">ลากไฟล์มาวางหรือคลิกเลือกไฟล์ แล้วตรวจข้อมูลก่อนเพิ่มเข้าระบบจริง</p></div>';
+    html += '<div class="import-section-meta">';
+    html += '<span class="student-badge badge-stone">4 คอลัมน์หลัก</span>';
+    html += '<span class="student-badge badge-blue">ตรวจข้อมูลก่อนเพิ่ม</span>';
+    html += '<span class="student-badge badge-amber">เลือกได้ว่าจะข้ามหรืออัปเดตเลขที่ซ้ำ</span>';
+    html += '</div>';
+    html += '</div>';
+    html += '<div class="import-upload-grid">';
+    html += '<div class="import-upload-surface">';
+    html += '<div class="input-group" style="margin-bottom:1rem">';
+    html += '<label class="input-label">เริ่มอยู่ในห้องตั้งแต่ *</label>';
+    html += '<input class="input" id="import-effective-from" type="date" max="' + esc(todayString_()) + '" value="' + esc(defaultEffectiveFrom) + '">';
+    html += '<div class="text-xs mt-1" style="color:var(--stone-500)">ใช้วันที่นี้เป็นวันเริ่มต้นของนักเรียนทุกคนในไฟล์ เพื่อให้เช็กชื่อย้อนหลังและรายงานตรงกับช่วงที่ต้องการ</div>';
+    html += '</div>';
+    html += '<div class="input-group" style="margin-bottom:1rem">';
+    html += '<label class="input-label">โหมดนำเข้า</label>';
+    html += '<select class="input" id="import-mode">';
+    html += '<option value="add_only">เพิ่มใหม่เท่านั้น (เลขที่ซ้ำจะข้าม)</option>';
+    html += '<option value="upsert">เพิ่มใหม่และอัปเดตรายชื่อเดิม</option>';
+    html += '</select>';
+    html += '<div class="text-xs mt-1" style="color:var(--stone-500)">โหมดอัปเดตจะเขียนทับชื่อ ชื่อเล่น เพศ และวันที่เริ่มอยู่ในห้องของเลขที่ที่มีอยู่แล้ว</div>';
+    html += '</div>';
+    html += '<div class="import-drop-zone" id="import-drop-zone" role="button" tabindex="0" aria-describedby="import-drop-help import-upload-status" onclick="ImportPage.openFilePicker()">';
+    html += '<span class="import-drop-icon">' + renderImportIcon('upload') + '</span>';
+    html += '<span class="import-drop-title">เลือกไฟล์ CSV หรือลากมาวาง</span>';
+    html += '<span class="import-drop-text" id="import-drop-help">เมื่ออัปโหลดแล้ว ระบบจะตรวจเลขที่ซ้ำและจุดที่ต้องแก้ให้ทันที</span>';
+    html += '</div>';
+    html += '<input type="file" id="import-file-input" accept=".csv" style="display:none" onchange="ImportPage.handleFile(this)">';
+    html += '<p class="import-upload-note">ถ้าต้องเริ่มใหม่ ใช้แม่แบบรายชื่อเดิมแล้วอัปโหลดไฟล์ใหม่ได้ทันที</p>';
+    html += '<div id="import-upload-status" class="import-upload-status" aria-live="polite" aria-atomic="true"></div>';
+    html += '</div>';
+    html += '<div class="import-spec-panel">';
+    html += '<p class="import-panel-label">รูปแบบไฟล์ที่แนะนำ</p>';
+    html += '<div class="import-spec-list">';
+    html += '<div class="import-spec-item"><span>เลขที่</span><strong>1</strong></div>';
+    html += '<div class="import-spec-item"><span>ชื่อ-สกุล</span><strong>สมชาย ใจดี</strong></div>';
+    html += '<div class="import-spec-item"><span>ชื่อเล่น</span><strong>เจ</strong></div>';
+    html += '<div class="import-spec-item"><span>เพศ</span><strong>M / F / ชาย / หญิง / เว้นว่างได้</strong></div>';
+    html += '</div>';
+    html += '<p class="import-spec-note">ถ้าไม่กรอกเพศ ระบบจะใส่ค่าเริ่มต้นให้ และเลขที่ซ้ำจะถูกข้ามหรืออัปเดตตามโหมดที่เลือก</p>';
+    html += '</div>';
+    html += '</div>';
+    html += '</section>';
+
+    html += '<div id="import-preview-container" class="import-preview-container" hidden></div>';
+    html += '</div>';
+
+    panel.innerHTML = html;
+
+    // Setup drag & drop
+    setTimeout(setupDragDrop, 100);
+    syncImportUi();
+  }
+
+  function renderImportMetric(icon, value, label, tone, meta) {
+    var html = '';
+    html += '<div class="import-metric import-metric-' + esc(tone || 'stone') + '">';
+    html += '<div class="import-metric-icon">' + icon + '</div>';
+    html += '<div class="import-metric-value">' + esc(value) + '</div>';
+    html += '<div class="import-metric-label">' + esc(label) + '</div>';
+    if (meta) html += '<div class="import-metric-meta">' + esc(meta) + '</div>';
+    html += '</div>';
+    return html;
+  }
+
+  function renderUploadStatus() {
+    var tone = 'stone';
+    var title = 'ยังไม่ได้เลือกไฟล์รายชื่อ';
+    var detail = 'เลือกไฟล์ CSV หรือลากไฟล์มาวางในช่องด้านบน ระบบจะตรวจข้อมูลให้ก่อนเพิ่มจริง';
+
+    if (importUiState.phase === 'previewing') {
+      tone = 'blue';
+      title = importUiState.title || 'กำลังตรวจสอบไฟล์';
+      detail = importUiState.detail || 'กรุณารอสักครู่ ระบบกำลังอ่านข้อมูลจากไฟล์';
+    } else if (importUiState.phase === 'ready') {
+      tone = 'green';
+      title = importUiState.title || 'ตรวจไฟล์เรียบร้อย';
+      detail = importUiState.detail || 'เลื่อนลงไปดูผลการตรวจสอบก่อนกดยืนยันเพิ่มรายชื่อ';
+    } else if (importUiState.phase === 'confirming') {
+      tone = 'amber';
+      title = importUiState.title || 'กำลังเพิ่มรายชื่อ';
+      detail = importUiState.detail || 'ระบบกำลังบันทึกรายการที่ผ่านการตรวจสอบ กรุณารอสักครู่';
+    } else if (importUiState.phase === 'error') {
+      tone = 'red';
+      title = importUiState.title || 'ยังไม่สามารถใช้ไฟล์นี้ได้';
+      detail = importUiState.detail || 'กรุณาตรวจไฟล์แล้วลองใหม่อีกครั้ง';
+    } else if (importUiState.phase === 'success') {
+      tone = 'green';
+      title = importUiState.title || 'เพิ่มรายชื่อเรียบร้อย';
+      detail = importUiState.detail || 'พร้อมเริ่มอัปโหลดไฟล์ชุดถัดไปได้ทันที';
+    }
+
+    var fileMeta = '';
+    if (importUiState.fileName) {
+      fileMeta = '<div class="import-upload-status-file">' + esc(importUiState.fileName);
+      if (importUiState.fileSize) fileMeta += ' <span>(' + esc(formatFileSize(importUiState.fileSize)) + ')</span>';
+      fileMeta += '</div>';
+    }
+
+    return '<div class="import-upload-status-card import-upload-status-' + esc(tone) + '">' +
+      '<div class="import-upload-status-badge">' + esc(
+        tone === 'blue' ? 'กำลังตรวจ' :
+        tone === 'green' ? 'พร้อมใช้งาน' :
+        tone === 'amber' ? 'กำลังบันทึก' :
+        tone === 'red' ? 'ต้องแก้ไฟล์' : 'พร้อมอัปโหลด'
+      ) + '</div>' +
+      '<div class="import-upload-status-title">' + esc(title) + '</div>' +
+      fileMeta +
+      '<div class="import-upload-status-meta">' + esc(detail) + '</div>' +
+      '</div>';
+  }
+
+  function renderImportLoadingState() {
+    return '<section class="import-results-section">' +
+      '<div class="import-loading-panel" role="status" aria-live="polite">' +
+      '<span class="import-loading-spinner" aria-hidden="true"></span>' +
+      '<div class="import-loading-copy">' +
+      '<div class="import-success-title">กำลังตรวจสอบไฟล์</div>' +
+      '<p class="import-success-text">ระบบกำลังอ่านข้อมูลจากไฟล์และแยกรายการที่พร้อมเพิ่ม รายการซ้ำ และจุดที่ต้องแก้</p>' +
+      '</div>' +
+      '</div>' +
+      '</section>';
+  }
+
+  function renderImportStatePanel(tone, title, description, nextStep, primaryHtml, secondaryHtml) {
+    var html = '';
+    html += '<section class="import-results-section">';
+    html += '<div class="import-success-panel import-success-panel-' + esc(tone || 'stone') + '">';
+    html += '<div class="import-success-icon">' + renderImportIcon(
+      tone === 'red' ? 'error' :
+      tone === 'amber' ? 'skip' :
+      tone === 'green' ? 'success' : 'rows'
+    ) + '</div>';
+    html += '<h2 class="import-success-title">' + esc(title) + '</h2>';
+    html += '<p class="import-success-text">' + esc(description) + '</p>';
+    if (nextStep) {
+      html += '<div class="empty-next-step"><div class="empty-next-step-title">สิ่งที่ควรทำต่อ</div><div class="empty-next-step-text">' + esc(nextStep) + '</div></div>';
+    }
+    if (primaryHtml || secondaryHtml) {
+      html += '<div class="import-success-actions">';
+      if (primaryHtml) html += primaryHtml;
+      if (secondaryHtml) html += secondaryHtml;
+      html += '</div>';
+    }
+    html += '</div>';
+    html += '</section>';
+    return html;
+  }
+
+  function renderImportIssues(title, tone, items, totalCount, emptyText) {
+    var html = '';
+    html += '<div class="import-feedback-card import-feedback-' + esc(tone) + '">';
+    html += '<div class="import-feedback-head">';
+    html += '<h3 class="import-feedback-title">' + esc(title) + '</h3>';
+    html += '<span class="student-badge ' + (tone === 'error' ? 'badge-red' : 'badge-amber') + '">' + totalCount + ' รายการ</span>';
+    html += '</div>';
+    if (!items.length) {
+      html += '<p class="import-feedback-empty">' + esc(emptyText) + '</p>';
+    } else {
+      html += '<div class="import-feedback-list">';
+      items.forEach(function(item) {
+        html += '<div class="import-error-item ' + esc(tone) + '">บรรทัด ' + item.line + ': ' + esc(item.message) + '</div>';
+      });
+      html += '</div>';
+      if (totalCount > items.length) {
+        html += '<p class="import-feedback-note">แสดง ' + items.length + ' รายการแรกจากทั้งหมด ' + totalCount + ' รายการ</p>';
+      }
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function renderImportSuccess(importedCount) {
+    var html = '';
+    html += '<section class="import-results-section">';
+    html += '<div class="import-success-panel">';
+    html += '<div class="import-success-icon">' + renderImportIcon('success') + '</div>';
+    html += '<h2 class="import-success-title">ประมวลผลไฟล์เรียบร้อย</h2>';
+    html += '<p class="import-success-text">จัดการรายการจากไฟล์แล้ว ' + esc(importedCount) + ' รายการ และพร้อมกลับไปตรวจรายชื่อหรือนำเข้าเพิ่มอีกชุดได้ทันที</p>';
+    html += '<div class="import-success-actions">';
+    html += '<button class="btn btn-primary btn-sm" onclick="AppShared.loadPage(\'students\')">ไปหน้ารายชื่อนักเรียน</button>';
+    html += '<button class="btn btn-ghost btn-sm" onclick="ImportPage.reset()">นำเข้าเพิ่มอีก</button>';
+    html += '</div>';
+    html += '</div>';
+    html += '</section>';
+    return html;
+  }
+
+  function renderImportPreviewContainer() {
+    var container = document.getElementById('import-preview-container');
+    if (!container) return;
+
+    if (importUiState.phase === 'previewing') {
+      container.hidden = false;
+      container.innerHTML = renderImportLoadingState();
+      return;
+    }
+
+    if (importUiState.phase === 'success' && successImportCount > 0) {
+      container.hidden = false;
+      container.innerHTML = renderImportSuccess(successImportCount);
+      return;
+    }
+
+    if (previewData) {
+      container.hidden = false;
+      container.innerHTML = buildPreviewHtml(previewData);
+      return;
+    }
+
+    container.hidden = false;
+    if (importUiState.phase === 'error') {
+      container.innerHTML = renderImportStatePanel(
+        'red',
+        importUiState.title || 'ยังไม่สามารถใช้ไฟล์นี้ได้',
+        importUiState.detail || 'กรุณาตรวจไฟล์แล้วลองใหม่อีกครั้ง',
+        'เริ่มจากตรวจรูปแบบไฟล์ เลือกวันที่เริ่มอยู่ในห้องให้ครบ และอัปโหลดไฟล์ใหม่อีกครั้ง',
+        '<button class="btn btn-primary btn-sm" onclick="ImportPage.openFilePicker()">เลือกไฟล์ใหม่</button>',
+        '<button class="btn btn-ghost btn-sm" onclick="ImportPage.downloadTemplate()">ดาวน์โหลดแม่แบบ CSV</button>'
+      );
+      return;
+    }
+
+    container.innerHTML = renderImportStatePanel(
+      'stone',
+      'ยังไม่มีชุดข้อมูลที่ตรวจไว้',
+      'เริ่มจากอัปโหลดไฟล์ CSV เพื่อให้ระบบตรวจรายการเพิ่มใหม่ รายการที่จะอัปเดต และแถวที่ต้องแก้ก่อนเพิ่มจริง',
+      'ถ้ายังไม่มีไฟล์ ให้ดาวน์โหลดแม่แบบรายชื่อก่อน แล้วกรอกข้อมูลให้ครบอย่างน้อย เลขที่ ชื่อ-สกุล ชื่อเล่น และเพศ',
+      '<button class="btn btn-primary btn-sm" onclick="ImportPage.openFilePicker()">เลือกไฟล์ CSV</button>',
+      '<button class="btn btn-ghost btn-sm" onclick="ImportPage.downloadTemplate()">ดาวน์โหลดแม่แบบ CSV</button>'
+    );
+  }
+
+  function syncImportUi() {
+    var status = document.getElementById('import-upload-status');
+    if (status) status.innerHTML = renderUploadStatus();
+
+    var zone = document.getElementById('import-drop-zone');
+    if (zone) {
+      zone.classList.toggle('is-busy', isImportBusy());
+      zone.setAttribute('aria-busy', isImportBusy() ? 'true' : 'false');
+      zone.setAttribute('aria-disabled', isImportBusy() ? 'true' : 'false');
+    }
+
+    renderImportPreviewContainer();
+  }
+
+  function setupDragDrop() {
+    var zone = document.getElementById('import-drop-zone');
+    if (!zone) return;
+
+    zone.addEventListener('dragover', function(e) {
+      e.preventDefault(); e.stopPropagation();
+      if (isImportBusy()) return;
+      zone.classList.add('dragover');
+    });
+    zone.addEventListener('dragleave', function(e) {
+      e.preventDefault(); e.stopPropagation();
+      zone.classList.remove('dragover');
+    });
+    zone.addEventListener('keydown', function(e) {
+      if (isImportBusy()) return;
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        openFilePicker();
+      }
+    });
+    zone.addEventListener('drop', function(e) {
+      e.preventDefault(); e.stopPropagation();
+      if (isImportBusy()) return;
+      zone.classList.remove('dragover');
+      var files = e.dataTransfer.files;
+      if (files.length > 0) processFile(files[0]);
+    });
+  }
+
+  function handleFile(input) {
+    if (input.files && input.files.length > 0) {
+      processFile(input.files[0]);
+    }
+  }
+
+  function openFilePicker() {
+    if (isImportBusy()) return;
+    var input = document.getElementById('import-file-input');
+    if (input) input.click();
+  }
+
+  function processFile(file) {
+    init();
+    if (!file || isImportBusy()) return;
+    var effectiveFrom = getEffectiveFromValue();
+    var importMode = getImportModeValue();
+
+    E.resetFileInput('import-file-input');
+    previewData = null;
+    successImportCount = 0;
+
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      setImportUiState('error', file.name, file.size, 'ใช้ได้เฉพาะไฟล์ CSV', 'เลือกไฟล์ .csv แล้วลองใหม่อีกครั้ง');
+      E.toast('อนุญาตเฉพาะไฟล์ CSV เท่านั้น', 'error');
+      return;
+    }
+    if (file.size > 1024 * 1024) {
+      setImportUiState('error', file.name, file.size, 'ไฟล์ใหญ่เกินกำหนด', 'ระบบรองรับไฟล์ขนาดไม่เกิน 1 MB');
+      E.toast('ไฟล์ใหญ่เกิน 1 MB', 'error');
+      return;
+    }
+
+      setImportUiState('previewing', file.name, file.size, 'กำลังตรวจสอบไฟล์', 'ระบบกำลังอ่านข้อมูลจากไฟล์และแยกแถวที่พร้อมเพิ่ม แถวที่อัปเดตได้ และจุดที่ต้องแก้');
+
+    if (!effectiveFrom) {
+      setImportUiState('error', file.name, file.size, 'กรุณาเลือกวันที่เริ่มอยู่ในห้อง', 'กำหนดวันที่เริ่มอยู่ในห้องก่อนอัปโหลดไฟล์ เพื่อให้รายงานย้อนหลังคำนวณถูกต้อง');
+      E.toast('กรุณาเลือกวันที่เริ่มอยู่ในห้องก่อนอัปโหลดไฟล์', 'error');
+      return;
+    }
+
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      var content = e.target.result;
+      E.toast('กำลังตรวจสอบไฟล์...', 'info');
+
+      E.serverCall('previewImportCSV', [content, effectiveFrom, { mode: importMode }], function(result) {
+          if (result.success) {
+            previewData = result.data;
+            setImportUiState('ready', file.name, file.size, 'ตรวจไฟล์เรียบร้อย', 'เลื่อนลงไปดูรายการที่พร้อมเพิ่ม รายการซ้ำ และข้อผิดพลาดก่อนยืนยัน');
+          } else {
+            previewData = null;
+            setImportUiState('error', file.name, file.size, 'ยังไม่สามารถใช้ไฟล์นี้ได้', result.message || 'กรุณาตรวจไฟล์แล้วลองอัปโหลดใหม่');
+            E.toast(result.message || 'ยังไม่สามารถใช้ไฟล์นี้ได้', 'error');
+          }
+        }, function(err) {
+          previewData = null;
+          setImportUiState('error', file.name, file.size, 'เกิดข้อผิดพลาดระหว่างตรวจไฟล์', ((err && err.message) ? err.message : 'กรุณาลองใหม่อีกครั้ง'));
+          E.toast('เกิดข้อผิดพลาด: ' + ((err && err.message) ? err.message : err), 'error');
+        });
+    };
+    reader.onerror = function() {
+      previewData = null;
+      setImportUiState('error', file.name, file.size, 'ไม่สามารถอ่านไฟล์นี้ได้', 'กรุณาบันทึกไฟล์ใหม่เป็น CSV UTF-8 แล้วลองอีกครั้ง');
+      E.toast('ไม่สามารถอ่านไฟล์นี้ได้', 'error');
+    };
+    reader.readAsText(file, 'UTF-8');
+  }
+
+  function buildPreviewHtml(data) {
+    var html = '';
+
+    // Summary
+    html += '<section class="import-results-section">';
+    html += '<div class="import-section-head">';
+    html += '<div><p class="import-section-kicker">ผลการตรวจสอบ</p><h2 class="import-section-title">ตรวจไฟล์เรียบร้อย</h2><p class="import-section-text">ดูจำนวนรายการเพิ่มใหม่ รายการที่จะอัปเดต รายการที่ถูกข้าม และข้อผิดพลาดก่อนยืนยัน</p></div>';
+    html += '<div class="import-section-meta">';
+    html += '<span class="student-badge badge-stone">ทั้งหมด ' + data.total_rows + ' รายการ</span>';
+    if (data.enrolled_from) html += '<span class="student-badge badge-blue">เริ่มอยู่ในห้องตั้งแต่ ' + esc(formatEffectiveFrom(data.enrolled_from)) + '</span>';
+    if (data.add_count > 0) html += '<span class="student-badge badge-green">เพิ่มใหม่ ' + data.add_count + '</span>';
+    if (data.update_count > 0) html += '<span class="student-badge badge-blue">อัปเดต ' + data.update_count + '</span>';
+    if (data.error_count > 0) html += '<span class="student-badge badge-red">ผิดพลาด ' + data.error_count + '</span>';
+    if (data.warning_count > 0) html += '<span class="student-badge badge-amber">ข้าม ' + data.warning_count + '</span>';
+    html += '</div>';
+    html += '</div>';
+
+    html += '<div class="import-summary-grid">';
+    html += renderImportMetric(renderImportIcon('rows'), data.total_rows, 'รายการทั้งหมด', 'stone', 'จำนวนข้อมูลที่ระบบอ่านได้จากไฟล์');
+    html += renderImportMetric(renderImportIcon('valid'), data.add_count || 0, 'เพิ่มใหม่', (data.add_count || 0) > 0 ? 'green' : 'stone', (data.add_count || 0) > 0 ? 'จะเพิ่มนักเรียนใหม่เข้าระบบ' : 'ไม่มีรายการใหม่ในไฟล์นี้');
+    html += renderImportMetric(renderImportIcon('success'), data.update_count || 0, 'อัปเดตรายชื่อเดิม', (data.update_count || 0) > 0 ? 'blue' : 'stone', (data.update_count || 0) > 0 ? 'จะเขียนทับข้อมูลรายชื่อเดิมตามเลขที่' : 'ไม่มีรายการที่ต้องอัปเดต');
+    html += renderImportMetric(renderImportIcon('error'), data.error_count, 'ข้อผิดพลาด', data.error_count > 0 ? 'red' : 'stone', data.error_count > 0 ? 'แก้ไขข้อมูลในไฟล์ก่อนอัปโหลดใหม่' : 'ไม่พบแถวที่ผิดรูปแบบ');
+    html += renderImportMetric(renderImportIcon('skip'), data.warning_count, 'รายการข้าม', data.warning_count > 0 ? 'amber' : 'stone', data.warning_count > 0 ? 'เลขที่ซ้ำกับในระบบและไม่ได้อยู่ในโหมดอัปเดต' : 'ไม่พบรายการที่ต้องข้าม');
+    html += '</div>';
+
+    if ((data.errors && data.errors.length > 0) || (data.warnings && data.warnings.length > 0)) {
+      html += '<div class="import-feedback-grid">';
+      html += renderImportIssues('ข้อผิดพลาดที่ต้องแก้', 'error', data.errors || [], data.error_count || 0, 'ไม่พบข้อผิดพลาดในไฟล์นี้');
+      html += renderImportIssues('รายการที่จะถูกข้าม', 'warning', data.warnings || [], data.warning_count || 0, 'ไม่พบเลขที่ซ้ำกับข้อมูลเดิม');
+      html += '</div>';
+    }
+
+    if (data.preview && data.preview.length > 0) {
+      html += '<div class="import-preview-surface">';
+      html += '<div class="import-feedback-head">';
+      html += '<h3 class="import-feedback-title">ตัวอย่างรายการที่พร้อมประมวลผล</h3>';
+      html += '<span class="student-badge badge-blue">ทั้งหมด ' + data.valid_count + ' รายการ</span>';
+      html += '</div>';
+      if (data.valid_count > data.preview.length) {
+        html += '<p class="import-preview-note">แสดง ' + data.preview.length + ' รายการแรกจากทั้งหมด ' + data.valid_count + ' รายการที่พร้อมประมวลผล</p>';
+      }
+      html += '<div class="rpt-table-wrap"><table class="rpt-table import-preview-table">';
+      html += '<thead><tr><th>โหมด</th><th>เลขที่</th><th>ชื่อ-สกุล</th><th>ชื่อเล่น</th><th>เพศ</th></tr></thead>';
+      html += '<tbody>';
+      data.preview.forEach(function(r) {
+        html += '<tr><td>' + (r.action === 'update' ? 'อัปเดต' : 'เพิ่ม') + '</td><td>' + r.student_number + '</td><td>' + esc(r.full_name) + '</td>';
+        html += '<td>' + esc(r.nickname) + '</td><td>' + (r.gender === 'M' ? 'ชาย' : 'หญิง') + '</td></tr>';
+      });
+      html += '</tbody></table></div>';
+      html += '</div>';
+    }
+
+    if (data.valid_count > 0) {
+      var confirmLabel = data.update_count > 0
+        ? ('เพิ่มใหม่ ' + (data.add_count || 0) + ' และอัปเดต ' + (data.update_count || 0))
+        : ('เพิ่ม ' + data.valid_count + ' คน');
+      html += '<div class="import-confirm-panel">';
+      html += '<div><p class="import-panel-label">พร้อมยืนยัน</p><h3 class="import-confirm-title">ยืนยัน ' + esc(confirmLabel) + '</h3><p class="import-confirm-text">ระบบจะประมวลผลตามโหมดที่เลือก และให้นักเรียนในไฟล์เริ่มอยู่ในห้องตั้งแต่ ' + esc(formatEffectiveFrom(data.enrolled_from || getEffectiveFromValue())) + '</p></div>';
+      html += '<div class="import-confirm-actions">';
+      html += '<button class="btn btn-primary" onclick="ImportPage.confirm()"' + (importUiState.phase === 'confirming' ? ' disabled aria-disabled="true"' : '') + '>' + (importUiState.phase === 'confirming' ? 'กำลังประมวลผล...' : confirmLabel) + '</button>';
+      html += '</div>';
+      html += '</div>';
+    }
+
+    html += '</section>';
+    return html;
+  }
+
+  function confirm() {
+    init();
+    if (isImportBusy()) return;
+    if (!previewData || !previewData.preview_token) {
+      setImportUiState('error', '', 0, 'ไม่พบชุดข้อมูลที่ตรวจไว้', 'ชุด preview เดิมอาจหมดอายุแล้ว กรุณาเลือกไฟล์และอัปโหลดใหม่อีกครั้ง');
+      syncImportUi();
+      E.toast('กรุณาอัปโหลดไฟล์ใหม่ก่อนยืนยันนำเข้า', 'error');
+      return;
+    }
+
+    var confirmText = previewData.update_count > 0
+      ? ('ยืนยันเพิ่มใหม่ ' + (previewData.add_count || 0) + ' คน และอัปเดตรายชื่อเดิม ' + (previewData.update_count || 0) + ' คน?')
+      : ('ยืนยันเพิ่มนักเรียน ' + previewData.valid_count + ' คน?');
+    E.confirm_dialog(confirmText, function() {
+      setImportUiState('confirming', importUiState.fileName, importUiState.fileSize, 'กำลังประมวลผลไฟล์', 'ระบบกำลังบันทึกทั้งรายการเพิ่มใหม่และรายการอัปเดต กรุณารอสักครู่');
+      E.toast('กำลังประมวลผลรายการ...', 'info');
+
+      E.serverCall('confirmImport', [previewData.preview_token], function(result) {
+          if (!result || !result.success) {
+            setImportUiState('error', importUiState.fileName, importUiState.fileSize, 'ยังไม่สามารถเพิ่มรายชื่อได้', (result && result.message) || 'กรุณาอัปโหลดใหม่อีกครั้ง');
+            E.toast((result && result.message) || 'ไม่สามารถนำเข้าได้', 'error');
+            return;
+          }
+
+          E.toast(result.message, 'success');
+
+          previewData = null;
+          successImportCount = ((result.data && result.data.imported_count) || 0) + ((result.data && result.data.updated_count) || 0);
+          E.resetFileInput('import-file-input');
+          setImportUiState('success', '', 0, 'เพิ่มรายชื่อเรียบร้อย', 'กลับไปตรวจรายชื่อหรือเริ่มนำเข้าไฟล์ชุดถัดไปได้ทันที');
+        }, function(err) {
+          setImportUiState('error', importUiState.fileName, importUiState.fileSize, 'เกิดข้อผิดพลาดระหว่างเพิ่มรายชื่อ', ((err && err.message) ? err.message : err));
+          E.toast('เกิดข้อผิดพลาด: ' + ((err && err.message) ? err.message : err), 'error');
+        });
+    });
+  }
+
+  function reset() {
+    render(window.AppState);
+  }
+
+  function downloadTemplate() {
+    init();
+    E.toast('กำลังเตรียมแม่แบบรายชื่อ...', 'info');
+
+    E.serverCall('getImportTemplate', [], function(result) {
+        if (!result || !result.success) {
+          E.toast((result && result.message) || 'ไม่สามารถสร้างแม่แบบรายชื่อได้', 'error');
+          return;
+        }
+
+        var opened = E.openDownloadWindow(
+          result.url,
+          'เบราว์เซอร์บล็อกไฟล์ดาวน์โหลด กรุณาอนุญาต pop-up แล้วลองใหม่'
+        );
+
+        if (opened) {
+          E.toast('ดาวน์โหลดแม่แบบรายชื่อแล้ว', 'success');
+        }
+
+        if (result.file_id) {
+          setTimeout(function() {
+            E.serverCall('cleanupImportTemplateFile', [result.file_id], function() {});
+          }, 15000);
+        }
+      }, function(err) {
+        E.toast('ยังสร้างแม่แบบรายชื่อไม่สำเร็จ ลองใหม่อีกครั้ง', 'error');
+      });
+  }
+
+  window.ImportPage = {
+    renderLoading: renderLoading,
+    render: render,
+    handleFile: handleFile,
+    openFilePicker: openFilePicker,
+    confirm: confirm,
+    reset: reset,
+    downloadTemplate: downloadTemplate
+  };
+})();
+</script>

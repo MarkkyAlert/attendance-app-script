@@ -1,0 +1,198 @@
+<script>
+  /* ═══════════════════════════════════════════════════
+     PIN Lock — JsPin.html
+     ═══════════════════════════════════════════════════ */
+
+  (function () {
+    'use strict';
+
+    var pinBuffer = '';
+
+    var pinLength = 4;
+    var isLocked = false;
+    var idleTimer = null;
+    var timeoutMinutes = 5;
+    var pinEnabled = false;
+
+    function renderPinIcon(kind) {
+      var svg = '';
+      if (kind === 'enter') {
+        svg = '<circle cx="12" cy="12" r="9"></circle><path d="m8.5 12 2.5 2.5 4.5-5"></path>';
+      }
+      if (!svg) return '';
+      return '<span class="inline-ui-icon" aria-hidden="true"><svg viewBox="0 0 24 24">' + svg + '</svg></span>';
+    }
+
+    function init(pinState) {
+      if (!pinState) return;
+      pinEnabled = pinState.pin_enabled && pinState.pin_set;
+      timeoutMinutes = pinState.pin_timeout_minutes || 5;
+
+      if (pinEnabled) {
+        // Check if was locked before
+        var wasLocked = sessionStorage.getItem('att_pin_locked') === '1';
+        if (wasLocked) {
+          lock();
+        } else {
+          startIdleTimer();
+        }
+      }
+    }
+
+    function buildPinPad() {
+      var overlay = document.getElementById('pin-overlay');
+      if (!overlay) return;
+
+      // Build dots
+      var dotsHtml = '';
+      for (var i = 0; i < 6; i++) {
+        dotsHtml += '<div class="pin-dot" id="pin-dot-' + i + '"></div>';
+      }
+      document.getElementById('pin-dots').innerHTML = dotsHtml;
+
+      // Build numpad
+      var keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'enter'];
+      var padHtml = '';
+      keys.forEach(function (k) {
+        if (k === 'clear') {
+          padHtml += '<button class="pin-key pin-key-special" onclick="PinLock.clear()">ลบ</button>';
+        } else if (k === 'enter') {
+          padHtml += '<button class="pin-key pin-key-special" onclick="PinLock.submit()" style="background:rgba(34,197,94,.2);color:#22c55e">' + renderPinIcon('enter') + '</button>';
+        } else {
+          padHtml += '<button class="pin-key" onclick="PinLock.press(\'' + k + '\')">' + k + '</button>';
+        }
+      });
+      document.getElementById('pin-pad').innerHTML = padHtml;
+    }
+
+    function lock() {
+      isLocked = true;
+      pinBuffer = '';
+      sessionStorage.setItem('att_pin_locked', '1');
+      stopIdleTimer();
+
+      var overlay = document.getElementById('pin-overlay');
+      if (overlay) {
+        overlay.style.display = 'flex';
+        buildPinPad();
+        updateDots();
+      }
+    }
+
+    function unlock() {
+      isLocked = false;
+      pinBuffer = '';
+      sessionStorage.removeItem('att_pin_locked');
+
+      var overlay = document.getElementById('pin-overlay');
+      if (overlay) overlay.style.display = 'none';
+
+      document.getElementById('pin-error').textContent = '';
+      startIdleTimer();
+    }
+
+    function press(digit) {
+      if (pinBuffer.length >= 6) return;
+      pinBuffer += digit;
+      updateDots();
+    }
+
+    function clear() {
+      if (pinBuffer.length > 0) {
+        pinBuffer = pinBuffer.slice(0, -1);
+        updateDots();
+      }
+      document.getElementById('pin-error').textContent = '';
+    }
+
+    function submit() {
+      if (pinBuffer.length < 4) {
+        document.getElementById('pin-error').textContent = 'กรอกอย่างน้อย 4 หลัก';
+        return;
+      }
+
+      window.AppShared.serverCall('verifyPin', [pinBuffer], function (result) {
+          if (result.success) {
+            unlock();
+            if (window.AppShared) window.AppShared.toast('ปลดล็อกแล้ว', 'success');
+          } else {
+            showPinError(result.message);
+            pinBuffer = '';
+            updateDots();
+          }
+        }, function () {
+          showPinError('เกิดข้อผิดพลาด');
+          pinBuffer = '';
+          updateDots();
+        });
+    }
+
+    function showPinError(msg) {
+      var errEl = document.getElementById('pin-error');
+      if (errEl) errEl.textContent = msg;
+
+      // Shake animation
+      var dots = document.querySelectorAll('.pin-dot');
+      dots.forEach(function (d) { d.classList.add('error'); });
+      setTimeout(function () {
+        dots.forEach(function (d) { d.classList.remove('error'); });
+      }, 500);
+    }
+
+    function updateDots() {
+      for (var i = 0; i < 6; i++) {
+        var dot = document.getElementById('pin-dot-' + i);
+        if (dot) {
+          dot.classList.toggle('filled', i < pinBuffer.length);
+        }
+      }
+    }
+
+    // ─── Idle Timer ─────────────────────────────
+
+    function startIdleTimer() {
+      stopIdleTimer();
+      if (!pinEnabled || timeoutMinutes <= 0) return;
+
+      var events = ['mousedown', 'mousemove', 'keydown', 'touchstart', 'scroll'];
+      events.forEach(function (evt) {
+        document.addEventListener(evt, resetIdleTimer, { passive: true });
+      });
+
+      resetIdleTimer();
+    }
+
+    function stopIdleTimer() {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = null;
+    }
+
+    function resetIdleTimer() {
+      stopIdleTimer();
+      if (!pinEnabled) return;
+      idleTimer = setTimeout(function () {
+        lock();
+      }, timeoutMinutes * 60 * 1000);
+    }
+
+    // ─── Manual Lock Button ─────────────────────
+
+    function manualLock() {
+      if (!pinEnabled) {
+        if (window.AppShared) window.AppShared.toast('กรุณาตั้ง PIN ก่อน', 'error');
+        return;
+      }
+      lock();
+    }
+
+    // Public API
+    window.PinLock = {
+      init: init,
+      lock: manualLock,
+      press: press,
+      clear: clear,
+      submit: submit,
+      isLocked: function () { return isLocked; }
+    };
+  })();
+</script>

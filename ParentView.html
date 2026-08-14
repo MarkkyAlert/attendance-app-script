@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="referrer" content="no-referrer">
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>ข้อมูลการเข้าเรียน</title>
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0
+        }
+
+        body {
+            font-family: 'Kanit', sans-serif;
+            background: #faf9f7;
+            color: #1c1917;
+            min-height: 100vh
+        }
+
+        .pv-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 0
+        }
+
+        .pv-icon svg {
+            width: 1em;
+            height: 1em;
+            stroke: currentColor;
+            stroke-width: 1.8;
+            fill: none;
+            stroke-linecap: round;
+            stroke-linejoin: round
+        }
+
+        .header {
+            background: linear-gradient(135deg, #7a624f, #5b4a3f);
+            color: #fff;
+            padding: 20px;
+            text-align: center
+        }
+
+        .header-school {
+            font-size: 1rem;
+            font-weight: 300;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            opacity: .8
+        }
+
+        .header-school .pv-icon svg {
+            width: 1rem;
+            height: 1rem
+        }
+
+        .header-title {
+            font-size: 1.4rem;
+            font-weight: 700;
+            margin-top: 4px
+        }
+
+        .header-class {
+            font-size: .8rem;
+            font-weight: 400;
+            opacity: .7;
+            margin-top: 2px
+        }
+
+        .container {
+            max-width: 480px;
+            margin: 0 auto;
+            padding: 12px
+        }
+
+        .student-card {
+            background: #fff;
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, .06);
+            text-align: center
+        }
+
+        .student-avatar {
+            width: 56px;
+            height: 56px;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            margin: 0 auto 8px;
+            background: #f5f0eb
+        }
+
+        .student-avatar .pv-icon {
+            color: #7a624f
+        }
+
+        .student-avatar .pv-icon svg {
+            width: 1.9rem;
+            height: 1.9rem
+        }
+
+        .student-name {
+            font-size: 1.15rem;
+            font-weight: 700
+        }
+
+        .student-meta {
+            font-size: .75rem;
+            color: #78716c;
+            margin-top: 2px
+        }
+
+        .month-nav {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            margin: 12px 0
+        }
+
+        .month-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            border: 1px solid #d6d3d1;
+            background: #fff;
+            font-size: 1rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center
+        }
+
+        .month-btn:active {
+            background: #f5f0eb
+        }
+
+        .month-label {
+            font-size: .9rem;
+            font-weight: 700;
+            color: #7a624f
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin-bottom: 12px
+        }
+
+        .stat-box {
+            background: #fff;
+            border-radius: 12px;
+            padding: 10px 6px;
+            text-align: center;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, .04)
+        }
+
+        .stat-num {
+            font-size: 1.3rem;
+            font-weight: 800
+        }
+
+        .stat-label {
+            font-size: .6rem;
+            font-weight: 600;
+            color: #78716c
+        }
+
+        .pct-card {
+            background: #fff;
+            border-radius: 14px;
+            padding: 16px;
+            text-align: center;
+            margin-bottom: 12px;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, .04)
+        }
+
+        .pct-num {
+            font-size: 2.5rem;
+            font-weight: 800
+        }
+
+        .pct-label {
+            font-size: .75rem;
+            color: #78716c;
+            font-weight: 600
+        }
+
+        .pct-bar {
+            height: 10px;
+            background: #e7e5e4;
+            border-radius: 5px;
+            margin-top: 8px;
+            overflow: hidden
+        }
+
+        .pct-fill {
+            height: 100%;
+            border-radius: 5px;
+            transition: width .4s
+        }
+
+        .cal-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 2px;
+            margin-bottom: 12px
+        }
+
+        .cal-header {
+            text-align: center;
+            font-size: .55rem;
+            font-weight: 700;
+            color: #78716c;
+            padding: 4px 0
+        }
+
+        .cal-day {
+            aspect-ratio: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            font-size: .6rem;
+            font-weight: 600
+        }
+
+        .cal-empty {
+            visibility: hidden
+        }
+
+        .cal-none {
+            background: #f5f5f4;
+            color: #a8a29e
+        }
+
+        .cal-green {
+            background: #dcfce7;
+            color: #166534
+        }
+
+        .cal-amber {
+            background: #fef3c7;
+            color: #92400e
+        }
+
+        .cal-red {
+            background: #fee2e2;
+            color: #991b1b
+        }
+
+        .cal-blue {
+            background: #dbeafe;
+            color: #1e40af
+        }
+
+        .cal-indigo {
+            background: #e0e7ff;
+            color: #3730a3
+        }
+
+        .card {
+            background: #fff;
+            border-radius: 14px;
+            padding: 14px;
+            margin-bottom: 12px;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, .04)
+        }
+
+        .card-title {
+            font-size: .85rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 8px
+        }
+
+        .card-title .pv-icon svg {
+            width: .95rem;
+            height: .95rem
+        }
+
+        .history-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 0;
+            border-bottom: 1px solid #f5f5f4;
+            font-size: .8rem
+        }
+
+        .history-item:last-child {
+            border-bottom: none
+        }
+
+        .history-date {
+            font-weight: 600;
+            color: #57534e;
+            min-width: 100px
+        }
+
+        .history-badge {
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: .7rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-weight: 700
+        }
+
+        .history-badge .pv-icon svg {
+            width: .8rem;
+            height: .8rem
+        }
+
+        .badge-green {
+            background: #dcfce7;
+            color: #166534
+        }
+
+        .badge-amber {
+            background: #fef3c7;
+            color: #92400e
+        }
+
+        .badge-red {
+            background: #fee2e2;
+            color: #991b1b
+        }
+
+        .badge-blue {
+            background: #dbeafe;
+            color: #1e40af
+        }
+
+        .badge-indigo {
+            background: #e0e7ff;
+            color: #3730a3
+        }
+
+        .footer {
+            text-align: center;
+            font-size: .65rem;
+            color: #a8a29e;
+            padding: 16px;
+            margin-top: 8px
+        }
+
+        .footer-actions {
+            margin-top: 10px;
+            display: flex;
+            justify-content: center
+        }
+
+        .footer-btn {
+            border: 1px solid #d6d3d1;
+            background: #fff;
+            color: #57534e;
+            border-radius: 999px;
+            padding: 8px 14px;
+            font: inherit;
+            font-size: .75rem;
+            font-weight: 600;
+            cursor: pointer
+        }
+
+        .loading {
+            text-align: center;
+            padding: 60px 20px;
+            color: #78716c
+        }
+
+        .spinner {
+            width: 32px;
+            height: 32px;
+            border: 3px solid #e7e5e4;
+            border-top-color: #7a624f;
+            border-radius: 50%;
+            animation: spin .6s linear infinite;
+            margin: 0 auto 12px
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg)
+            }
+        }
+
+        .error-page {
+            text-align: center;
+            padding: 60px 20px
+        }
+
+        .error-icon {
+            font-size: 3rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 12px
+        }
+
+        .error-icon .pv-icon svg {
+            width: 3rem;
+            height: 3rem
+        }
+
+        .error-msg {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #57534e
+        }
+
+        .error-sub {
+            font-size: .8rem;
+            color: #a8a29e;
+            margin-top: 8px
+        }
+
+        .error-next {
+            margin: 14px auto 0;
+            max-width: 320px;
+            padding: 12px 14px;
+            border-radius: 14px;
+            border: 1px solid #e7e5e4;
+            background: #fff;
+            text-align: left
+        }
+
+        .error-next-title {
+            font-size: .72rem;
+            font-weight: 800;
+            color: #7a624f;
+            text-transform: uppercase;
+            letter-spacing: .04em
+        }
+
+        .error-next-text {
+            margin-top: 4px;
+            font-size: .78rem;
+            line-height: 1.55;
+            color: #57534e
+        }
+
+        .sem-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: #f5f0eb;
+            color: #7a624f;
+            padding: 2px 10px;
+            border-radius: 8px;
+            font-size: .7rem;
+            font-weight: 600;
+            margin-top: 4px
+        }
+
+        .sem-badge .pv-icon svg {
+            width: .85rem;
+            height: .85rem
+        }
+
+        .cal-day .pv-icon svg {
+            width: .8rem;
+            height: .8rem
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="app">
+        <div class="loading">
+            <div class="spinner"></div>
+            <p>กำลังโหลดข้อมูล...</p>
+        </div>
+    </div>
+
+    <script>
+        (function () {
+            var PARENT_AUTH_STORAGE_KEY = 'att_parent_auth';
+            window.currentMonthStr = '';
+            window.parentAuth = null;
+
+            google.script.url.getLocation(function (location) {
+                var params = location.parameter || {};
+                var token = String(params.token || '').trim();
+                var currentMonth = String(params.month || '').trim();
+                window.parentAuth = loadStoredParentAuth_();
+                window.currentMonthStr = currentMonth;
+
+                if (token) {
+                    openParentSession_(token, currentMonth);
+                    return;
+                }
+
+                clearParentAuth_();
+                document.getElementById('app').innerHTML = errorPage('ลิงก์ไม่ถูกต้อง', 'กรุณาติดต่อครูประจำชั้นเพื่อขอลิงก์ใหม่');
+            });
+
+            function loadStoredParentAuth_() {
+                try {
+                    var raw = sessionStorage.getItem(PARENT_AUTH_STORAGE_KEY) || '';
+                    var auth = raw ? JSON.parse(raw) : null;
+                    if (auth && auth.expires_at && parseInt(auth.expires_at, 10) > Date.now()) {
+                        return auth;
+                    }
+                    if (raw) sessionStorage.removeItem(PARENT_AUTH_STORAGE_KEY);
+                    return null;
+                } catch (e) {
+                    return null;
+                }
+            }
+
+            function persistParentAuth_(auth) {
+                if (!auth || !auth.session_token) {
+                    clearParentAuth_();
+                    return null;
+                }
+                window.parentAuth = {
+                    session_token: String(auth.session_token || ''),
+                    expires_at: parseInt(auth.expires_at, 10) || 0
+                };
+                try {
+                    sessionStorage.setItem(PARENT_AUTH_STORAGE_KEY, JSON.stringify(window.parentAuth));
+                } catch (e) {}
+                return window.parentAuth;
+            }
+
+            function clearParentAuth_() {
+                window.parentAuth = null;
+                try { sessionStorage.removeItem(PARENT_AUTH_STORAGE_KEY); } catch (e) {}
+            }
+
+            window.logoutParentView_ = function () {
+                var sessionToken = window.parentAuth && window.parentAuth.session_token;
+                clearParentAuth_();
+                if (!sessionToken) {
+                    document.getElementById('app').innerHTML = errorPage('ออกจากระบบแล้ว', 'ปิดหน้าต่างนี้ได้เลย หรือเปิดลิงก์ผู้ปกครองใหม่เมื่อต้องการใช้งานอีกครั้ง');
+                    return;
+                }
+
+                google.script.run
+                    .withSuccessHandler(function () {
+                        document.getElementById('app').innerHTML = errorPage('ออกจากระบบแล้ว', 'ปิดหน้าต่างนี้ได้เลย หรือเปิดลิงก์ผู้ปกครองใหม่เมื่อต้องการใช้งานอีกครั้ง');
+                    })
+                    .withFailureHandler(function () {
+                        document.getElementById('app').innerHTML = errorPage('ออกจากระบบแล้ว', 'ปิดหน้าต่างนี้ได้เลย หรือเปิดลิงก์ผู้ปกครองใหม่เมื่อต้องการใช้งานอีกครั้ง');
+                    })
+                    .logoutParentSession(sessionToken);
+            };
+
+            function shouldClearParentAuth_(message) {
+                message = String(message || '');
+                return message.indexOf('หมดอายุ') >= 0 || message.indexOf('ไม่ถูกต้อง') >= 0 || message.indexOf('ขอลิงก์ใหม่') >= 0;
+            }
+
+            function stripSensitiveQuery_(month) {
+                if (!window.history || !window.history.replaceState) return;
+                var next = window.location.pathname + '?page=parent';
+                month = String(month || '').trim();
+                if (month) next += '&month=' + encodeURIComponent(month);
+                window.history.replaceState({}, document.title, next);
+            }
+
+            function renderLoading_() {
+                document.getElementById('app').innerHTML = '<div class="loading"><div class="spinner"></div><p>กำลังโหลดข้อมูล...</p></div>';
+            }
+
+            function openParentSession_(token, month) {
+                renderLoading_();
+                google.script.run
+                    .withSuccessHandler(function (data) {
+                        if (data && data.success && data.auth) {
+                            persistParentAuth_(data.auth);
+                            stripSensitiveQuery_(data.month || month);
+                        }
+                        render(data);
+                    })
+                    .withFailureHandler(function (err) {
+                        clearParentAuth_();
+                        document.getElementById('app').innerHTML = errorPage('เกิดข้อผิดพลาด', err.message || 'ไม่สามารถโหลดข้อมูลได้');
+                    })
+                    .openParentSession(token, month);
+            }
+
+            function loadDataBySession_(month) {
+                if (!window.parentAuth || !window.parentAuth.session_token) {
+                    document.getElementById('app').innerHTML = errorPage('ลิงก์หมดอายุ', 'กรุณาติดต่อครูประจำชั้นเพื่อขอลิงก์ใหม่');
+                    return;
+                }
+
+                renderLoading_();
+                google.script.run
+                    .withSuccessHandler(function (data) {
+                        if (data && data.success && data.auth) {
+                            persistParentAuth_(data.auth);
+                            stripSensitiveQuery_(data.month || month);
+                        } else if (!data || !data.success) {
+                            var errorMessage = (data && data.message) || '';
+                            if (shouldClearParentAuth_(errorMessage)) {
+                                clearParentAuth_();
+                            }
+                        }
+                        render(data);
+                    })
+                    .withFailureHandler(function (err) {
+                        var errMessage = String(err && err.message ? err.message : err || '');
+                        if (shouldClearParentAuth_(errMessage)) {
+                            clearParentAuth_();
+                        }
+                        document.getElementById('app').innerHTML = errorPage('เกิดข้อผิดพลาด', err.message || 'ไม่สามารถโหลดข้อมูลได้');
+                    })
+                    .getParentViewDataBySession(window.parentAuth.session_token, month);
+            }
+
+            function render(data) {
+                if (!data || !data.success) {
+                    var message = (data && data.message) || 'กรุณาติดต่อครูประจำชั้นเพื่อขอลิงก์ใหม่';
+                    if (shouldClearParentAuth_(message)) {
+                        clearParentAuth_();
+                    }
+                    document.getElementById('app').innerHTML = errorPage('ลิงก์ไม่ถูกต้อง', message);
+                    return;
+                }
+
+                if (data.auth) {
+                    persistParentAuth_(data.auth);
+                }
+
+                window.currentMonthStr = data.month;
+                var s = data.student;
+                var st = data.stats;
+                var ast = data.all_stats;
+                var cal = data.calendar;
+                var html = '';
+
+                html += '<div class="header">';
+                html += '<div class="header-school">' + renderParentIcon('school') + '<span>' + esc(data.school_name) + '</span></div>';
+                html += '<div class="header-title">ข้อมูลการเข้าเรียน</div>';
+                if (data.class_name) html += '<div class="header-class">' + esc(data.class_name) + '</div>';
+                html += '</div>';
+
+                html += '<div class="container">';
+                html += '<div class="student-card">';
+                html += '<div class="student-avatar">' + renderParentIcon('user') + '</div>';
+                html += '<div class="student-name">' + esc(s.full_name) + '</div>';
+                html += '<div class="student-meta">เลขที่ ' + s.student_number + ' · ' + s.gender_label;
+                if (s.nickname) html += ' · ' + esc(s.nickname);
+                html += '</div>';
+                if (data.semester) html += '<span class="sem-badge">' + renderParentIcon('semester') + '<span>ภาคเรียน ' + esc(data.semester) + '</span></span>';
+                html += '</div>';
+
+                html += '<div class="month-nav">';
+                html += '<button class="month-btn" onclick="shiftMonth(-1)">◀</button>';
+                html += '<span class="month-label">' + esc(data.month_th) + '</span>';
+                html += '<button class="month-btn" onclick="shiftMonth(1)">▶</button>';
+                html += '</div>';
+
+                var monthPct = getPercentValue_(st.attendance_pct);
+                var pctColor = monthPct === null ? '#78716c' : (monthPct >= 80 ? '#22c55e' : (monthPct >= 60 ? '#f59e0b' : '#ef4444'));
+                html += '<div class="pct-card">';
+                html += '<div class="pct-num" style="color:' + pctColor + '">' + formatPercentLabel_(st.attendance_pct) + '</div>';
+                html += '<div class="pct-label">อัตราการมาเรียน (เดือนนี้)</div>';
+                html += '<div class="pct-bar"><div class="pct-fill" style="width:' + getPercentBarWidth_(st.attendance_pct) + '%;background:' + pctColor + '"></div></div>';
+                html += '</div>';
+
+                html += '<div class="stats-grid">';
+                html += statBox(st.present, 'มาเรียน', '#22c55e');
+                html += statBox(st.late, 'สาย', '#f59e0b');
+                html += statBox(st.absent, 'ขาด', '#ef4444');
+                html += statBox(st.sick_leave, 'ลาป่วย', '#3b82f6');
+                html += statBox(st.personal_leave, 'ลากิจ', '#6366f1');
+                html += statBox(st.total, 'รวมวัน', '#78716c');
+                html += '</div>';
+
+                html += '<div class="card">';
+                html += '<div class="card-title">' + renderParentIcon('calendar') + '<span>ปฏิทินเดือนนี้</span></div>';
+                html += '<div class="cal-grid">';
+                var weekdays = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+                weekdays.forEach(function (w) { html += '<div class="cal-header">' + w + '</div>'; });
+                for (var e = 0; e < cal.first_weekday; e++) html += '<div class="cal-day cal-empty"></div>';
+                for (var d = 1; d <= cal.days_in_month; d++) {
+                    var dateStr = cal.month + '-' + ('0' + d).slice(-2);
+                    var rec = cal.records[dateStr];
+                    if (rec) {
+                        html += '<div class="cal-day cal-' + rec.color + '" title="' + esc(rec.label) + '">' + renderParentIcon(rec.status_code) + '</div>';
+                    } else {
+                        html += '<div class="cal-day cal-none">' + d + '</div>';
+                    }
+                }
+                html += '</div></div>';
+
+                html += '<div class="card">';
+                html += '<div class="card-title">' + renderParentIcon('chart') + '<span>สถิติรวม ' + esc(data.all_stats_scope_label || 'ทั้งหมด') + '</span></div>';
+                html += '<div class="stats-grid">';
+                html += statBox(ast.attend_days, 'มาเรียน', '#22c55e');
+                html += statBox(ast.absent, 'ขาด', '#ef4444');
+                html += statBox(formatPercentLabel_(ast.attendance_pct), 'มาเรียน', '#7a624f');
+                html += '</div></div>';
+
+                if (data.history && data.history.length > 0) {
+                    html += '<div class="card">';
+                    html += '<div class="card-title">' + renderParentIcon('history') + '<span>ประวัติล่าสุด</span></div>';
+                    data.history.forEach(function (h) {
+                        html += '<div class="history-item">';
+                        html += '<span class="history-date">' + esc(h.date_th) + '</span>';
+                        html += '<span class="history-badge badge-' + h.color + '">' + renderParentIcon(h.status_code) + '<span>' + esc(h.label) + '</span></span>';
+                        html += '</div>';
+                    });
+                    html += '</div>';
+                }
+
+                html += '<div class="footer">';
+                html += 'ข้อมูลจาก ' + esc(data.teacher_name) + ' · ' + esc(data.school_name);
+                html += '<br>ระบบเช็คชื่อนักเรียนอัตโนมัติ';
+                html += '<div class="footer-actions"><button class="footer-btn" onclick="logoutParentView_()">ออกจากระบบผู้ปกครอง</button></div>';
+                html += '</div>';
+                html += '</div>';
+
+                document.getElementById('app').innerHTML = html;
+            }
+
+            window.shiftMonth = function (offset) {
+                var parts = String(window.currentMonthStr || '').split('-');
+                if (parts.length !== 2) return;
+                var year = parseInt(parts[0], 10);
+                var month = parseInt(parts[1], 10);
+                var totalMonths = (year * 12) + (month - 1) + (parseInt(offset, 10) || 0);
+                window.currentMonthStr = Math.floor(totalMonths / 12) + '-' + ('0' + ((totalMonths % 12) + 1)).slice(-2);
+                loadDataBySession_(window.currentMonthStr);
+            };
+
+            function renderParentIcon(kind) {
+                var svg = '';
+                if (kind === 'school') {
+                    svg = '<path d="M3 10.5 12 5l9 5.5"></path><path d="M5 9.5V19h14V9.5"></path><path d="M9 19v-5h6v5"></path>';
+                } else if (kind === 'user') {
+                    svg = '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle>';
+                } else if (kind === 'semester' || kind === 'calendar' || kind === 'personal_leave') {
+                    svg = '<path d="M8 2v4"></path><path d="M16 2v4"></path><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M3 10h18"></path>';
+                } else if (kind === 'chart') {
+                    svg = '<path d="M3 3v18h18"></path><path d="M8 14v4"></path><path d="M12 10v8"></path><path d="M16 6v12"></path>';
+                } else if (kind === 'history') {
+                    svg = '<path d="M3 12a9 9 0 1 0 3-6.7"></path><path d="M3 3v6h6"></path><path d="M12 7v5l3 2"></path>';
+                } else if (kind === 'lock') {
+                    svg = '<rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path>';
+                } else if (kind === 'present') {
+                    svg = '<circle cx="12" cy="12" r="9"></circle><path d="m8.5 12 2.5 2.5 4.5-5"></path>';
+                } else if (kind === 'late') {
+                    svg = '<circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path>';
+                } else if (kind === 'absent') {
+                    svg = '<circle cx="12" cy="12" r="9"></circle><path d="m9 9 6 6"></path><path d="m15 9-6 6"></path>';
+                } else if (kind === 'sick_leave') {
+                    svg = '<circle cx="12" cy="12" r="9"></circle><path d="M12 8v8"></path><path d="M8 12h8"></path>';
+                }
+                if (!svg) return '';
+                return '<span class="pv-icon" aria-hidden="true"><svg viewBox="0 0 24 24">' + svg + '</svg></span>';
+            }
+
+            function statBox(value, label, color) {
+                return '<div class="stat-box"><div class="stat-num" style="color:' + color + '">' + value + '</div><div class="stat-label">' + label + '</div></div>';
+            }
+
+            function getPercentValue_(value) {
+                if (value === null || value === undefined || value === '') return null;
+                var num = Number(value);
+                return isFinite(num) ? num : null;
+            }
+
+            function formatPercentLabel_(value) {
+                var pct = getPercentValue_(value);
+                return pct === null ? '-' : String(pct) + '%';
+            }
+
+            function getPercentBarWidth_(value) {
+                var pct = getPercentValue_(value);
+                return pct === null ? 0 : Math.max(0, Math.min(100, pct));
+            }
+
+            function errorPage(title, sub) {
+                var resolvedTitle = String(title || 'เกิดข้อผิดพลาด');
+                var resolvedSub = String(sub || 'ไม่สามารถโหลดข้อมูลได้');
+                var nextStep = 'ลองเปิดลิงก์นี้ใหม่อีกครั้ง';
+                if (resolvedTitle.indexOf('ลิงก์หมดอายุ') >= 0 || resolvedSub.indexOf('ขอลิงก์ใหม่') >= 0) {
+                    nextStep = 'ติดต่อครูประจำชั้นเพื่อขอลิงก์ผู้ปกครองใหม่ แล้วเปิดจากลิงก์ล่าสุดอีกครั้ง';
+                } else if (resolvedTitle.indexOf('ลิงก์ไม่ถูกต้อง') >= 0) {
+                    nextStep = 'ตรวจว่าลิงก์ที่เปิดมาจากครูประจำชั้นโดยตรง และเปิดใหม่จากลิงก์นั้นอีกครั้ง';
+                } else if (resolvedTitle.indexOf('ออกจากระบบแล้ว') >= 0) {
+                    nextStep = 'ปิดหน้าต่างนี้ได้เลย หรือเปิดลิงก์ผู้ปกครองเดิมใหม่เมื่อต้องการใช้งานอีกครั้ง';
+                } else if (resolvedSub.indexOf('โหลดข้อมูลไม่ได้') >= 0) {
+                    nextStep = 'ลองเปิดลิงก์นี้ใหม่อีกครั้ง ถ้ายังไม่ได้ให้ติดต่อครูประจำชั้นเพื่อตรวจลิงก์';
+                }
+                return '<div class="error-page"><div class="error-icon">' + renderParentIcon('lock') + '</div><div class="error-msg">' + esc(resolvedTitle) + '</div><div class="error-sub">' + esc(resolvedSub) + '</div><div class="error-next"><div class="error-next-title">สิ่งที่ควรทำต่อ</div><div class="error-next-text">' + esc(nextStep) + '</div></div></div>';
+            }
+
+            function esc(s) { var d = document.createElement('div'); d.textContent = String(s || ''); return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+        })();
+    </script>
+</body>
+
+</html>

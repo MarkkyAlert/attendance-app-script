@@ -1,0 +1,1591 @@
+<script>
+  /* Reports Page - JsReports.html */
+
+  (function () {
+    'use strict';
+
+    var S, E;
+    var reportSearchDebounceId = 0;
+    var REPORT_SEARCH_DEBOUNCE_MS = 140;
+
+    function init() {
+      S = window.AppState;
+      E = window.AppShared;
+    }
+
+    function isCompactReportLayout_() {
+      return !!(window.matchMedia && window.matchMedia('(max-width: 767px)').matches);
+    }
+
+    function scheduleReportSearchRerender_(inputId) {
+      if (reportSearchDebounceId) window.clearTimeout(reportSearchDebounceId);
+      reportSearchDebounceId = window.setTimeout(function () {
+        reportSearchDebounceId = 0;
+        rerenderAndRestoreFocus(inputId);
+      }, REPORT_SEARCH_DEBOUNCE_MS);
+    }
+
+    function esc(str) {
+      if (str === null || str === undefined) return '';
+      var div = document.createElement('div'); div.textContent = String(str); return div.innerHTML;
+    }
+
+    function renderReportsIcon(kind) {
+      if (kind === 'present') return '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.8"/><path d="M8.5 12.2l2.3 2.3 4.7-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      if (kind === 'late') return '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.8"/><path d="M12 8.5v4l2.5 1.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      if (kind === 'absent') return '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.8"/><path d="M9.5 9.5l5 5m0-5l-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+      if (kind === 'sick') return '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="6" y="5" width="12" height="14" rx="3" stroke="currentColor" stroke-width="1.8"/><path d="M12 8.5v7M8.5 12h7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+      if (kind === 'sick_leave') return renderReportsIcon('sick');
+      if (kind === 'leave') return '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 5.5h8a2 2 0 012 2v9a2 2 0 01-2 2H8a2 2 0 01-2-2v-9a2 2 0 012-2z" stroke="currentColor" stroke-width="1.8"/><path d="M9 9h6M9 12h6M9 15h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+      if (kind === 'personal_leave') return renderReportsIcon('leave');
+      if (kind === 'percent') return '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7.5 16.5l9-9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="8.5" cy="8.5" r="1.6" stroke="currentColor" stroke-width="1.8"/><circle cx="15.5" cy="15.5" r="1.6" stroke="currentColor" stroke-width="1.8"/></svg>';
+      if (kind === 'days') return '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="5" y="6" width="14" height="13" rx="2.5" stroke="currentColor" stroke-width="1.8"/><path d="M8 4.5v3M16 4.5v3M5 10h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+      if (kind === 'students') return '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="9" cy="9" r="2.5" stroke="currentColor" stroke-width="1.8"/><path d="M4.5 17a4.5 4.5 0 019 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="16.5" cy="10" r="2" stroke="currentColor" stroke-width="1.8"/><path d="M14.5 17a4 4 0 014-3.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+      if (kind === 'start') return '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 6.5h10a2 2 0 012 2v9a2 2 0 01-2 2H7a2 2 0 01-2-2v-9a2 2 0 012-2z" stroke="currentColor" stroke-width="1.8"/><path d="M9 4.5v4m0 0l-2-2m2 2l2-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+      if (kind === 'end') return '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 6.5h10a2 2 0 012 2v9a2 2 0 01-2 2H7a2 2 0 01-2-2v-9a2 2 0 012-2z" stroke="currentColor" stroke-width="1.8"/><path d="M15 4.5v4m0 0l-2-2m2 2l2-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      if (kind === 'search') return '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="6.5" stroke="currentColor" stroke-width="1.8"/><path d="M16 16l4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+      return '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.8"/></svg>';
+    }
+
+    function renderLoading() {
+      init();
+      var panel = document.getElementById('page-reports');
+      if (!panel) return;
+      panel.innerHTML = '<div class="skeleton-page">' +
+        '<div class="skeleton-hero">' +
+        '<div class="skeleton-line" style="width:130px"></div>' +
+        '<div class="skeleton-line skeleton-line-xl" style="width:42%"></div>' +
+        '<div class="skeleton-line skeleton-line-lg" style="width:76%"></div>' +
+        '<div class="empty-next-step" data-page-loading-note="true" hidden><div class="empty-next-step-title">กำลังโหลด</div><div class="empty-next-step-text">กำลังเตรียมสรุปรายงานและช่วงวันที่ล่าสุด</div></div>' +
+        '</div>' +
+        '<div class="skeleton-grid">' +
+        '<div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div>' +
+        '</div>' +
+        '<div class="skeleton-grid">' +
+        '<div class="skeleton-card skeleton-card-wide"></div><div class="skeleton-card skeleton-card-wide"></div><div class="skeleton-card skeleton-card-wide"></div>' +
+        '</div>' +
+        '</div>';
+    }
+
+    function render(state) {
+      init();
+      var d = S && S.reportTab === 'daily' ? (S.dailyGrid || {}) : (S.summary || {});
+      var panel = document.getElementById('page-reports');
+      if (!panel) return;
+      var html = '';
+
+      // Header + Tab Nav
+      html += '<div class="reports-shell">';
+      html += '<section class="reports-hero">';
+      html += '<div class="reports-hero-copy">';
+      html += '<p class="reports-kicker">รายงานประจำชั้น</p>';
+      html += '<h1 class="reports-title">สรุปผลและรายงาน</h1>';
+      html += '<p class="reports-subtitle">' + getHeroSubtitle() + '</p>';
+      html += '<div class="reports-hero-meta">';
+      if (S.activeSemester && S.activeSemester.name) {
+        html += '<p class="reports-context">ภาคเรียน ' + esc(S.activeSemester.name) + '</p>';
+      }
+      html += '<p class="reports-role-badge">' + (S.reportTab === 'daily' ? 'ค้นหารายชื่อก่อน แล้วค่อยเปิดตารางเต็มเมื่อจำเป็น' : 'ดูภาพรวมก่อน แล้วค่อยพิมพ์หรือเตรียมข้อมูลสำหรับผู้ปกครองเมื่อจำเป็น') + '</p>';
+      html += '</div>';
+      html += '<div class="reports-tab-shell">';
+      html += '<div class="rpt-tabs reports-tabs">';
+      html += '<button class="rpt-tab' + (S.reportTab === 'summary' ? ' active' : '') + '" onclick="ReportsPage.switchTab(\'summary\')">สรุปภาพรวม</button>';
+      html += '<button class="rpt-tab' + (S.reportTab === 'daily' ? ' active' : '') + '" onclick="ReportsPage.switchTab(\'daily\')">รายงานรายวัน</button>';
+      html += '</div>';
+      html += '</div>';
+
+      html += '</div>';
+      html += '<div class="reports-hero-side">';
+      html += S.reportTab === 'summary' ? renderSummaryControls() : renderDailyControls();
+
+      html += '</div>';
+
+      html += '</section>';
+      if (S.reportTab === 'summary') {
+        html += renderSummaryTab();
+      } else {
+        html += renderDailyTab();
+      }
+
+      html += '</div>';
+      panel.innerHTML = html;
+    }
+
+    // SUMMARY TAB
+
+    function renderSummaryTab() {
+      var d = S.summary;
+      var summaryState = E.getPageDataStatus ? E.getPageDataStatus('reports', 'summary') : { status: 'idle', error: '' };
+      if (!d) {
+        if (summaryState.status === 'loading') {
+          return buildReportEmptyState(
+            renderReportsIcon('days'),
+            'กำลังโหลดสรุปรายงานของห้องนี้',
+            'ระบบกำลังเตรียมข้อมูลสรุปตามช่วงวันที่ที่เลือกไว้ คุณยังเปลี่ยนช่วงวันที่หรือกลับไปหน้าอื่นก่อนได้',
+            '',
+            '<div class="empty-next-step-title">สิ่งที่ควรทำต่อ</div><div class="empty-next-step-text">รอสักครู่ให้ระบบสรุปข้อมูลก่อน หากโหลดนานผิดปกติให้กดอัปเดตข้อมูลอีกครั้ง</div>'
+          );
+        }
+        if (summaryState.status === 'error') {
+          return buildReportEmptyState(
+            renderReportsIcon('days'),
+            'ยังโหลดสรุปรายงานไม่สำเร็จ',
+            summaryState.error || 'ลองโหลดข้อมูลอีกครั้งในช่วงวันที่เดิม หรือเปลี่ยนช่วงวันที่แล้วลองใหม่',
+            '<button class="btn btn-primary" type="button" onclick="ReportsPage.loadSummary(this)">ลองใหม่</button>',
+            '<div class="empty-next-step-title">สิ่งที่ควรทำต่อ</div><div class="empty-next-step-text">ตรวจช่วงวันที่ก่อน ถ้ายังไม่ได้ให้กลับไปยืนยันวันเช็กชื่อแล้วค่อยเปิดรายงานอีกครั้ง</div>'
+          );
+        }
+        return buildReportEmptyState(
+          renderReportsIcon('days'),
+          'ยังไม่มีสรุปผลให้แสดง',
+          'เลือกช่วงวันที่แล้วกดโหลดข้อมูลเพื่อดูภาพรวมการมาเรียนของทั้งห้อง',
+          '<button class="btn btn-primary" type="button" onclick="ReportsPage.loadSummary(this)">โหลดข้อมูล</button>',
+          '<div class="empty-next-step-title">สิ่งที่ควรทำต่อ</div><div class="empty-next-step-text">เริ่มจากเลือกช่วงวันที่ในภาคเรียนที่ต้องการ แล้วกดโหลดข้อมูลเพื่อดูรายงานสรุปของห้องนี้</div>'
+        );
+      }
+
+      var allRows = Array.isArray(d.rows) ? d.rows : [];
+      var rows = getFilteredSummaryRows(allRows);
+      var html = '';
+      var totals = d.totals || {};
+      var topAbsent = rows.slice().filter(function (row) {
+        return Number(row.absent_count || 0) > 0;
+      }).sort(function (a, b) {
+        return Number(b.absent_count || 0) - Number(a.absent_count || 0);
+      }).slice(0, 5);
+      var topLate = rows.slice().filter(function (row) {
+        return Number(row.late_count || 0) > 0;
+      }).sort(function (a, b) {
+        return Number(b.late_count || 0) - Number(a.late_count || 0);
+      }).slice(0, 5);
+
+        html += renderReportsSpotlight('summary', d);
+        if (!hasSummaryMeasurementData(d)) {
+          html += renderSummaryNoMeasurementState(d);
+          html += renderHolidayConflictSection(d, 'summary');
+          return html;
+        }
+      html += renderSummaryExecutiveBrief(d, allRows);
+      html += '<section class="reports-section">';
+      html += '<div class="reports-section-head">';
+      html += '<div><h2 class="reports-section-title">ภาพรวมช่วงวันที่</h2><p class="reports-section-text">สรุปสถานะทั้งหมดในช่วง ' + esc(d.start_date_th) + ' - ' + esc(d.end_date_th) + '</p></div>';
+      html += '</div>';
+      if (d.calendar_warning && d.calendar_warning.has_mismatch && d.calendar_warning.message) {
+        html += '<div class="alert alert-warning mb-3">' + renderReportsIcon('days') + '<span>' + esc(d.calendar_warning.message) + '</span></div>';
+      }
+      html += '<div class="reports-metric-grid">';
+      html += reportMetric(renderReportsIcon('days'), d.school_days || 0, 'วันเรียนตามปฏิทิน', 'stone');
+      html += reportMetric(renderReportsIcon('days'), d.confirmed_days_count || 0, 'วันที่ยืนยันแล้ว', 'stone');
+      html += reportMetric(renderReportsIcon('present'), totals.present, 'มาเรียน', 'green');
+      html += reportMetric(renderReportsIcon('late'), totals.late, 'สาย', 'amber');
+      html += reportMetric(renderReportsIcon('absent'), totals.absent, 'ขาด', 'red');
+      html += reportMetric(renderReportsIcon('sick'), totals.sick_leave, 'ลาป่วย', 'blue');
+      html += reportMetric(renderReportsIcon('leave'), totals.personal_leave, 'ลากิจ', 'indigo');
+      html += reportMetric(renderReportsIcon('percent'), formatPercentLabel(totals.attendance_percent), 'อัตรามาเรียน', 'stone');
+      html += '</div>';
+      html += '</section>';
+      html += renderHolidayConflictSection(d, 'summary');
+      html += renderSummaryComparisonSection(d);
+      html += renderSummaryActionPlan(allRows, d);
+
+      html += renderSummaryFilters(allRows, rows);
+
+      html += '<section class="reports-section">';
+      html += '<div class="reports-section-head">';
+      html += '<div><h2 class="reports-section-title">สรุปรายคน</h2><p class="reports-section-text">ค้นหาและกรองนักเรียนที่ต้องติดตาม ก่อนเปิดดูรายละเอียดในตารางเต็ม</p></div>';
+      html += '</div>';
+      if (!rows.length) {
+        html += buildReportEmptyState(
+          renderReportsIcon('students'),
+          'ไม่พบรายการที่ตรงกับตัวกรอง',
+          'ลองล้างคำค้นหรือเปลี่ยน quick filter เพื่อดูนักเรียนทั้งหมดอีกครั้ง',
+          '<button class="btn btn-ghost" type="button" onclick="ReportsPage.clearFilters()">ล้างตัวกรอง</button>',
+          '<div class="empty-next-step-title">สิ่งที่ควรทำต่อ</div><div class="empty-next-step-text">ล้างตัวกรองก่อน แล้วค่อยค้นชื่อหรือเลือกกลุ่มนักเรียนใหม่อีกครั้ง</div>'
+        );
+      } else {
+        if (isCompactReportLayout_()) {
+          html += renderSummaryMobileCards(rows);
+        } else {
+          html += renderSummaryTable(rows);
+        }
+      }
+      html += '</section>';
+
+      html += renderSummaryWatchSection(topAbsent, topLate);
+
+      if (d.leave_reasons && d.leave_reasons.length > 0) {
+        html += '<section class="reports-section">';
+        html += '<div class="reports-section-head">';
+        html += '<div><h2 class="reports-section-title">เหตุผลที่พบบ่อย</h2><p class="reports-section-text">ใช้ดูบริบทของการลาและมาสาย เพื่อช่วยอธิบายตัวเลขในภาพรวมได้เร็วขึ้น</p></div>';
+        html += '</div>';
+        html += '<div class="card reports-surface">';
+        html += '<div class="rpt-reasons">';
+        d.leave_reasons.forEach(function (reason) {
+          var statusInfo = { sick_leave: { label: 'ลาป่วย', color: 'blue' }, personal_leave: { label: 'ลากิจ', color: 'indigo' }, late: { label: 'มาสาย', color: 'amber' } };
+          var info = statusInfo[reason.status_code] || { label: 'หมายเหตุ', color: 'stone' };
+          html += '<span class="rpt-reason badge-' + info.color + '">' + info.label + ' · ' + esc(reason.note) + ' x' + esc(String(reason.count || 0)) + '</span>';
+        });
+        html += '</div></div></section>';
+      }
+
+      return html;
+    }
+
+    // DAILY GRID TAB
+
+    function renderDailyTab() {
+      var d = S.dailyGrid;
+      var dailyState = E.getPageDataStatus ? E.getPageDataStatus('reports', 'daily') : { status: 'idle', error: '' };
+      if (!d) {
+        if (dailyState.status === 'loading') {
+          return buildReportEmptyState(
+            renderReportsIcon('days'),
+            'กำลังโหลดรายงานรายวัน',
+            'ระบบกำลังเตรียมตารางย้อนหลังตามช่วงวันที่ที่เลือกไว้ เมื่อพร้อมแล้วจะแสดงรายชื่อนักเรียนและสถานะแต่ละวันทันที',
+            '',
+            '<div class="empty-next-step-title">สิ่งที่ควรทำต่อ</div><div class="empty-next-step-text">รอสักครู่ให้ระบบเตรียมตารางย้อนหลัง หรือเปลี่ยนช่วงวันที่แล้วลองใหม่หากจำเป็น</div>'
+          );
+        }
+        if (dailyState.status === 'error') {
+          return buildReportEmptyState(
+            renderReportsIcon('days'),
+            'ยังโหลดรายงานรายวันไม่สำเร็จ',
+            dailyState.error || 'ลองโหลดตารางรายวันอีกครั้ง หรือเปลี่ยนช่วงวันที่แล้วลองใหม่',
+            '<button class="btn btn-primary" type="button" onclick="ReportsPage.loadDailyGrid(this)">ลองใหม่</button>',
+            '<div class="empty-next-step-title">สิ่งที่ควรทำต่อ</div><div class="empty-next-step-text">ตรวจช่วงวันที่ก่อน แล้วกดโหลดข้อมูลอีกครั้ง หากยังไม่ได้ให้กลับไปยืนยันวันเช็กชื่อก่อน</div>'
+          );
+        }
+        return buildReportEmptyState(
+          renderReportsIcon('days'),
+          'ยังไม่มีรายงานรายวัน',
+          'เลือกช่วงวันที่แล้วกดโหลดข้อมูล เพื่อดูสถานะของนักเรียนแบบรายวัน',
+          '<button class="btn btn-primary" type="button" onclick="ReportsPage.loadDailyGrid(this)">โหลดข้อมูล</button>',
+          '<div class="empty-next-step-title">สิ่งที่ควรทำต่อ</div><div class="empty-next-step-text">เลือกช่วงวันที่ที่ต้องการตรวจย้อนหลัง แล้วกดโหลดข้อมูลเพื่อดูตารางรายวันของนักเรียนทั้งห้อง</div>'
+        );
+      }
+
+      var filteredStudents = getFilteredDailyStudents(d.students || []);
+      var html = '';
+      html += renderReportsSpotlight('daily', d);
+      html += '<section class="reports-section">';
+      html += '<div class="reports-section-head">';
+      html += '<div><h2 class="reports-section-title">ภาพรวมรายวัน</h2><p class="reports-section-text">ดูจำนวนวัน จำนวนคน และค้นหานักเรียนก่อนเปิดตารางเต็ม</p></div>';
+      html += '</div>';
+      html += '<div class="reports-metric-grid reports-daily-metrics">';
+      html += reportMetric(renderReportsIcon('days'), d.school_days || 0, 'วันเรียนตามปฏิทิน', 'stone');
+      html += reportMetric(renderReportsIcon('days'), d.confirmed_days_count || 0, 'วันที่ยืนยันแล้ว', 'stone');
+      html += reportMetric(renderReportsIcon('students'), (d.students || []).length, 'จำนวนนักเรียน', 'blue');
+      html += reportMetric(renderReportsIcon('start'), d.from_th || '', 'เริ่มต้น', 'amber');
+      html += reportMetric(renderReportsIcon('end'), d.to_th || '', 'สิ้นสุด', 'green');
+      html += '</div>';
+      html += '</section>';
+
+      html += renderHolidayConflictSection(d, 'daily');
+
+      html += renderDailySearchToolbar(d, filteredStudents);
+
+      html += '<section class="reports-section">';
+      html += '<div class="reports-section-head">';
+      html += '<div><h2 class="reports-section-title">รายงานรายวัน</h2><p class="reports-section-text">บนเดสก์ท็อปยังมีตารางเต็ม ส่วนบนมือถือเปลี่ยนเป็นการ์ดสรุปเพื่อให้ดูง่ายขึ้น</p></div>';
+      html += '</div>';
+      if (!filteredStudents.length) {
+        html += buildReportEmptyState(
+          renderReportsIcon('students'),
+          'ไม่พบนักเรียนที่ตรงกับคำค้น',
+          'ลองเปลี่ยนคำค้นหา หรือกดล้างตัวกรองเพื่อกลับไปดูทั้งหมด',
+          '<button class="btn btn-ghost" type="button" onclick="ReportsPage.clearFilters()">ล้างตัวกรอง</button>',
+          '<div class="empty-next-step-title">สิ่งที่ควรทำต่อ</div><div class="empty-next-step-text">ล้างคำค้นก่อน แล้วลองค้นจากเลขที่ ชื่อ หรือชื่อเล่นใหม่อีกครั้ง</div>'
+        );
+      } else {
+        if (isCompactReportLayout_()) {
+          html += renderDailyMobileCards(d, filteredStudents);
+        } else {
+          html += renderDailyGridTable(d, filteredStudents);
+        }
+      }
+      html += '</section>';
+      return html;
+    }
+
+    function renderDailyGridTable(d, students) {
+      var html = '';
+      html += '<div class="card reports-surface reports-daily-desktop">';
+      html += '<div class="rpt-table-wrap rpt-daily-scroll"><table class="rpt-table rpt-daily-table">';
+      html += '<thead><tr><th class="rpt-sticky-col">เลขที่</th><th class="rpt-sticky-col2">ชื่อ</th>';
+      (d.dates || []).forEach(function (dt) {
+        html += '<th class="rpt-day-header' + (dt.is_weekend ? ' rpt-weekend' : '') + (dt.is_holiday ? ' rpt-holiday' : '') + '">';
+        html += '<div>' + esc(dt.label) + '</div>';
+        if (dt.is_holiday) html += '<div class="reports-day-badge">วันหยุด</div>';
+        html += '</th>';
+      });
+      html += '</tr></thead><tbody>';
+
+      students.forEach(function (student) {
+        html += '<tr>';
+        html += '<td class="rpt-sticky-col text-center">' + esc(String(student.student_number || '')) + '</td>';
+        html += '<td class="rpt-sticky-col2 truncate" style="max-width:120px">' + esc(student.full_name) + '</td>';
+        (d.dates || []).forEach(function (dt) {
+          var st = student.statuses && student.statuses[dt.date];
+          if (st) {
+            html += '<td class="rpt-day-cell rpt-day-' + esc(st.color || 'stone') + '" title="' + esc(st.label || '') + '">' + renderReportsIcon(st.status_code) + '</td>';
+          } else {
+            html += '<td class="rpt-day-cell' + (dt.is_weekend ? ' rpt-weekend' : '') + (dt.is_holiday ? ' rpt-holiday' : '') + '">' + (dt.is_holiday ? '<span class="reports-day-badge">หยุด</span>' : '-') + '</td>';
+          }
+        });
+        html += '</tr>';
+      });
+
+      html += '</tbody></table></div></div>';
+      return html;
+    }
+
+    function buildReportEmptyState(icon, title, description, actionHtml, nextStepHtml) {
+      var normalizedIcon = String(icon || '').replace(
+        '<svg ',
+        '<svg width="32" height="32" style="width:2rem;height:2rem;display:block;max-width:2rem;max-height:2rem;" '
+      );
+      var html = '<div class="empty-state reports-empty-state" style="max-width:100%;padding:1.5rem 1.25rem;">';
+      html += '<div class="empty-icon" style="width:4.25rem;height:4.25rem;margin:0 auto .9rem;display:inline-flex;align-items:center;justify-content:center;overflow:hidden;">' + normalizedIcon + '</div>';
+      html += '<div class="empty-title">' + esc(title) + '</div>';
+      html += '<div class="empty-desc">' + esc(description) + '</div>';
+      if (nextStepHtml) html += '<div class="empty-next-step" style="margin-top:.9rem;max-width:420px;">' + nextStepHtml + '</div>';
+      if (actionHtml) html += '<div class="students-empty-actions">' + actionHtml + '</div>';
+      html += '</div>';
+      return html;
+    }
+
+    function renderSummaryFilters(allRows, filteredRows) {
+      var counts = getSummaryQuickFilterCounts(allRows);
+      var activeFilter = S.reportQuickFilter || 'all';
+      var query = S.reportSearchQuery || '';
+      var isFiltered = !!normalizeReportQuery(query) || activeFilter !== 'all';
+      var html = '';
+      html += '<section class="reports-section">';
+      html += '<div class="reports-filter-panel">';
+      html += '<div class="reports-filter-head">';
+      html += '<div>';
+      html += '<p class="reports-filter-kicker">ค้นหาและกรองทันที</p>';
+      html += '<div class="reports-filter-title">เริ่มจากรายชื่อที่ต้องดูต่อ</div>';
+      html += '<p class="reports-filter-meta">แสดง ' + esc(String(filteredRows.length)) + ' จาก ' + esc(String(allRows.length)) + ' คน</p>';
+      html += '</div>';
+      if (isFiltered) html += '<button class="btn btn-ghost btn-sm" type="button" onclick="ReportsPage.clearFilters()">ล้างตัวกรอง</button>';
+      html += '</div>';
+      html += '<div class="reports-filter-toolbar">';
+      html += '<label class="reports-search-box">';
+      html += '<span class="reports-search-icon">' + renderReportsIcon('search') + '</span>';
+      html += '<input id="reports-summary-search" class="reports-search-input" type="search" value="' + esc(query) + '" placeholder="ค้นหาจากเลขที่ ชื่อ หรือชื่อเล่น" autocomplete="off" autocapitalize="words" enterkeyhint="search" oninput="ReportsPage.setSearch(this.value)">';
+      html += '</label>';
+      html += '<div class="reports-chip-bar">';
+      html += renderReportChip('all', 'ทั้งหมด', counts.all, activeFilter);
+      html += renderReportChip('attention', 'ต้องติดตาม', counts.attention, activeFilter);
+      html += renderReportChip('absent', 'มีวันขาด', counts.absent, activeFilter);
+      html += renderReportChip('late', 'มีวันสาย', counts.late, activeFilter);
+      html += renderReportChip('excellent', 'เรียบร้อย', counts.excellent, activeFilter);
+      html += '</div>';
+      html += '</div>';
+      html += '</div>';
+      html += '</section>';
+      return html;
+    }
+
+    function renderDailySearchToolbar(d, filteredStudents) {
+      var allStudents = d.students || [];
+      var query = S.reportDailySearchQuery || '';
+      var html = '';
+      html += '<section class="reports-section">';
+      html += '<div class="reports-filter-panel">';
+      html += '<div class="reports-filter-head">';
+      html += '<div>';
+      html += '<p class="reports-filter-kicker">ค้นหารายคน</p>';
+      html += '<div class="reports-filter-title">ดูรายวันแบบไม่ต้องเลื่อนตารางก่อน</div>';
+      html += '<p class="reports-filter-meta">แสดง ' + esc(String(filteredStudents.length)) + ' จาก ' + esc(String(allStudents.length)) + ' คน ในช่วง ' + esc(d.from_th || '') + ' - ' + esc(d.to_th || '') + '</p>';
+      html += '</div>';
+      if (normalizeReportQuery(query)) html += '<button class="btn btn-ghost btn-sm" type="button" onclick="ReportsPage.clearFilters()">ล้างตัวกรอง</button>';
+      html += '</div>';
+      html += '<div class="reports-filter-toolbar">';
+      html += '<label class="reports-search-box">';
+      html += '<span class="reports-search-icon">' + renderReportsIcon('search') + '</span>';
+      html += '<input id="reports-daily-search" class="reports-search-input" type="search" value="' + esc(query) + '" placeholder="ค้นหานักเรียนก่อนเปิดดูรายวัน" autocomplete="off" autocapitalize="words" enterkeyhint="search" oninput="ReportsPage.setDailySearch(this.value)">';
+      html += '</label>';
+      html += '</div>';
+      html += '</div>';
+      html += '</section>';
+      return html;
+    }
+
+    function renderReportChip(filter, label, count, activeFilter) {
+      return '<button class="reports-chip' + (activeFilter === filter ? ' active' : '') + '" type="button" onclick="ReportsPage.setQuickFilter(\'' + filter + '\')">' + esc(label) + ' <span>' + esc(String(count || 0)) + '</span></button>';
+    }
+
+    function renderSummaryTable(rows) {
+      var html = '';
+      html += '<div class="card reports-surface reports-desktop-table">';
+      html += '<div class="rpt-table-wrap"><table class="rpt-table">';
+      html += '<thead><tr>';
+      html += '<th>เลขที่</th><th>ชื่อ-สกุล</th><th>มาเรียน</th><th>สาย</th><th>ขาด</th><th>ลาป่วย</th><th>ลากิจ</th><th>วันเรียน</th><th>%มาเรียน</th><th>สถานะ</th>';
+      html += '</tr></thead><tbody>';
+      rows.forEach(function (row) {
+        var tone = getSummaryStatusTone(row);
+        html += '<tr' + (row.is_below_threshold ? ' class="rpt-row-warning"' : '') + '>';
+        html += '<td class="text-center">' + esc(String(row.student_number || '')) + '</td>';
+        html += '<td class="font-bold">' + esc(row.full_name);
+        if (row.nickname) html += ' <span class="student-nick">(' + esc(row.nickname) + ')</span>';
+        html += '</td>';
+        html += '<td>' + esc(String(row.present_count || 0)) + '</td>';
+        html += '<td>' + esc(String(row.late_count || 0)) + '</td>';
+        html += '<td>' + esc(String(row.absent_count || 0)) + '</td>';
+        html += '<td>' + esc(String(row.sick_leave_count || 0)) + '</td>';
+        html += '<td>' + esc(String(row.personal_leave_count || 0)) + '</td>';
+        html += '<td>' + esc(String(row.total_days || 0)) + '</td>';
+        html += '<td><div class="flex items-center gap-2"><span class="rpt-bar-inline" style="--pct:' + esc(String(getPercentBarWidth(row.attendance_percent))) + '%"></span><span class="font-bold">' + esc(formatPercentLabel(row.attendance_percent)) + '</span></div></td>';
+        html += '<td><span class="reports-student-state reports-student-state-' + tone + '">' + getSummaryStatusLabel(row) + '</span></td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table></div></div>';
+      return html;
+    }
+
+    function renderSummaryMobileCards(rows) {
+      var html = '<div class="reports-mobile-only reports-mobile-list">';
+      rows.forEach(function (row) {
+        var tone = getSummaryStatusTone(row);
+        var leaveTotal = Number(row.sick_leave_count || 0) + Number(row.personal_leave_count || 0);
+        var metaParts = ['วันเรียน ' + esc(String(row.total_days || 0)) + ' วัน'];
+        if (leaveTotal > 0) metaParts.push('ลา ' + esc(String(leaveTotal)) + ' วัน');
+        if (Number(row.absent_count || 0) > 0 || Number(row.late_count || 0) > 0) {
+          metaParts.push('ขาด ' + esc(String(row.absent_count || 0)) + ' วัน');
+          metaParts.push('สาย ' + esc(String(row.late_count || 0)) + ' ครั้ง');
+        } else if (leaveTotal === 0) {
+          metaParts.push('ยังไม่พบการขาดหรือมาสายในช่วงนี้');
+        }
+        html += '<article class="reports-student-card">';
+        html += '<div class="reports-student-card-top">';
+        html += '<div><div class="reports-student-card-number">เลขที่ ' + esc(String(row.student_number || '')) + '</div><div class="reports-student-card-name">' + esc(row.full_name);
+        if (row.nickname) html += ' <span class="student-nick">(' + esc(row.nickname) + ')</span>';
+        html += '</div></div>';
+        html += '<span class="reports-student-state reports-student-state-' + tone + '">' + getSummaryStatusLabel(row) + '</span>';
+        html += '</div>';
+        html += '<div class="reports-kv-grid">';
+        html += renderKv('มาเรียน', row.present_count);
+        html += renderKv('สาย', row.late_count);
+        html += renderKv('ขาด', row.absent_count, Number(row.absent_count || 0) > 0 ? 'accent' : '');
+        html += renderKv('ลาป่วย', row.sick_leave_count);
+        html += renderKv('ลากิจ', row.personal_leave_count);
+        html += renderKv('%มาเรียน', formatPercentLabel(row.attendance_percent), (getPercentValue(row.attendance_percent) !== null && getPercentValue(row.attendance_percent) < getSummaryAlertPercent()) ? 'accent' : '');
+        html += '</div>';
+        html += '<div class="reports-student-card-meta">' + metaParts.join(' · ') + '</div>';
+        html += '</article>';
+      });
+      html += '</div>';
+      return html;
+    }
+
+    function renderSummaryNoMeasurementState(d) {
+      var rangeText = (d && d.start_date_th && d.end_date_th)
+        ? 'ช่วง ' + esc(d.start_date_th) + ' - ' + esc(d.end_date_th) + ' ยังไม่พบวันเช็คชื่อที่ยืนยันแล้ว'
+        : 'ยังไม่พบวันเช็คชื่อที่ยืนยันแล้วในช่วงที่เลือก';
+      var schoolDays = parseInt(d && d.school_days, 10) || 0;
+      var confirmedDays = parseInt(d && d.confirmed_days_count, 10) || 0;
+      var html = '<section class="reports-section">';
+      html += '<div class="reports-section-head">';
+      html += '<div><h2 class="reports-section-title">ยังไม่มีข้อมูลพอสำหรับสรุปผล</h2><p class="reports-section-text">' + rangeText + ' จึงยังสรุปภาพรวมและรายชื่อนักเรียนไม่ได้</p></div>';
+      html += '</div>';
+      html += '<div class="card reports-surface reports-summary-empty-card">';
+      html += '<div class="reports-summary-empty-copy">';
+      html += '<div class="reports-summary-empty-title">ยังสรุปรายงานช่วงนี้ไม่ได้</div>';
+      html += '<p class="reports-summary-empty-text">ลองเปลี่ยนช่วงวันที่ด้านบน หรือกลับไปยืนยันการเช็คชื่อก่อนแล้วค่อยโหลดรายงานอีกครั้ง</p>';
+      html += '<div class="empty-next-step" style="margin-top:.9rem;max-width:460px;"><div class="empty-next-step-title">สิ่งที่ควรทำต่อ</div><div class="empty-next-step-text">ถ้าต้องการสรุปแบบทางการ ให้กลับไปหน้าเช็กชื่อแล้วกดยืนยันวันที่มีข้อมูลก่อนอย่างน้อย 1 วัน หรือเปลี่ยนช่วงวันที่ให้ตรงกับวันที่เคยยืนยันแล้ว</div></div>';
+      html += '<div class="reports-summary-empty-meta">';
+      html += '<span class="reports-summary-empty-pill">วันเรียนตามปฏิทิน ' + esc(String(schoolDays)) + ' วัน</span>';
+      html += '<span class="reports-summary-empty-pill">วันที่ยืนยันแล้ว ' + esc(String(confirmedDays)) + ' วัน</span>';
+      html += '</div>';
+      html += '</div>';
+      html += '<div class="reports-summary-empty-actions">';
+      html += '<button class="btn btn-primary btn-sm" type="button" onclick="window.AppShared.loadPage(\'attendance\')">ไปหน้าเช็คชื่อ</button>';
+      html += '<button class="btn btn-ghost btn-sm" type="button" onclick="ReportsPage.loadSummary(this)">โหลดข้อมูลใหม่</button>';
+      html += '</div>';
+      html += '</div>';
+      html += '</section>';
+      return html;
+    }
+
+    function renderHolidayConflictSection(data, mode) {
+      var conflicts = data && data.holiday_conflicts ? data.holiday_conflicts : [];
+      var warning = data && data.calendar_warning ? data.calendar_warning : null;
+      if ((!warning || !warning.has_mismatch) && !conflicts.length) return '';
+
+      var html = '';
+      html += '<section class="reports-section">';
+      html += '<div class="card reports-surface reports-holiday-alert">';
+      html += '<div class="reports-section-head">';
+      html += '<div><h2 class="reports-section-title">ตรวจพบข้อมูลที่ควรแก้จากปฏิทิน</h2><p class="reports-section-text">' + esc((warning && warning.message) || 'มีวันเรียนตามปฏิทินและข้อมูลเช็คชื่อที่ไม่ตรงกัน') + '</p></div>';
+      html += '</div>';
+      html += '<div class="empty-next-step" style="margin:0 0 1rem 0;max-width:none;"><div class="empty-next-step-title">สิ่งที่ควรทำต่อ</div><div class="empty-next-step-text">ตรวจวันที่ที่แสดงด้านล่าง ถ้าวันนั้นเป็นวันหยุดจริงให้กดล้างข้อมูลวันหยุด แล้วโหลดรายงานใหม่อีกครั้ง</div></div>';
+      if (conflicts.length) {
+        html += '<div class="reports-holiday-conflicts">';
+        conflicts.forEach(function (item) {
+          html += '<div class="reports-holiday-conflict-item">';
+          html += '<div><div class="reports-holiday-conflict-date">' + esc(item.date_th || item.date || '') + '</div><div class="reports-holiday-conflict-meta">พบข้อมูลเช็คชื่อ ' + esc(String(item.record_count || 0)) + ' รายการในวันที่ตั้งเป็นวันหยุด</div></div>';
+          html += '<button class="btn btn-ghost btn-sm" type="button" onclick="ReportsPage.clearHolidayAttendance(\'' + esc(item.date || '') + '\', this, \'' + esc(mode || 'summary') + '\')">ล้างข้อมูลวันหยุด</button>';
+          html += '</div>';
+        });
+        html += '</div>';
+      }
+      html += '</div>';
+      html += '</section>';
+      return html;
+    }
+
+    function renderSummaryExecutiveBrief(data, rows) {
+      var counts = getSummaryQuickFilterCounts(rows || []);
+      var totals = data && data.totals ? data.totals : {};
+      var summaryTone = getSummaryExecutiveTone_(data, counts);
+      var summaryTitle = getSummaryExecutiveTitle_(data, counts);
+      var snippet = buildSummarySnippet_(data, rows);
+      var html = '';
+      html += '<section class="reports-section">';
+      html += '<div class="reports-summary-brief reports-summary-brief-' + summaryTone + '">';
+      html += '<div class="reports-summary-brief-copy">';
+      html += '<p class="reports-summary-brief-kicker">สรุปให้อ่านจบใน 5 วินาที</p>';
+      html += '<h2 class="reports-summary-brief-title">' + esc(summaryTitle) + '</h2>';
+      html += '<p class="reports-summary-brief-text">' + esc(snippet) + '</p>';
+      html += '<div class="reports-summary-brief-tags">';
+      html += renderSummaryBriefTag_('นักเรียน ' + String(rows.length || 0) + ' คน');
+      html += renderSummaryBriefTag_('ต้องติดตาม ' + String(counts.attention || 0) + ' คน');
+      html += renderSummaryBriefTag_('ขาด ' + String(totals.absent || 0) + ' ครั้ง');
+      html += renderSummaryBriefTag_('สาย ' + String(totals.late || 0) + ' ครั้ง');
+      html += '</div>';
+      html += '</div>';
+      html += '<div class="reports-summary-brief-actions">';
+      html += '<button class="btn btn-primary btn-sm" type="button" onclick="ReportsPage.copySummarySnippet()">คัดลอกข้อความสรุป</button>';
+      html += '<button class="btn btn-ghost btn-sm" type="button" onclick="ReportsPage.openSummaryFilter(\'attention\')">ดูคนที่ต้องติดตาม</button>';
+      html += '</div>';
+      html += '</div>';
+      html += '</section>';
+      return html;
+    }
+
+    function renderSummaryBriefTag_(label) {
+      return '<span class="reports-summary-tag">' + esc(label) + '</span>';
+    }
+
+    function renderSummaryComparisonSection(data) {
+      var comparison = data && data.comparison ? data.comparison : null;
+      var previousSummary = comparison && comparison.previous_summary ? comparison.previous_summary : null;
+      var previousTotals = previousSummary && previousSummary.totals ? previousSummary.totals : {};
+      var html = '';
+      html += '<section class="reports-section">';
+      html += '<div class="reports-section-head">';
+      html += '<div><h2 class="reports-section-title">เทียบกับช่วงก่อนหน้า</h2><p class="reports-section-text">ช่วยให้เห็นทันทีว่าช่วงนี้ดีขึ้นหรือแย่ลงจากช่วงก่อนหน้าที่มีความยาวใกล้เคียงกัน</p></div>';
+      html += '</div>';
+
+      if (!comparison || !previousSummary || !comparison.available) {
+        html += '<div class="card reports-surface reports-compare-empty">';
+        html += '<div class="reports-compare-empty-title">ยังเทียบกับช่วงก่อนหน้าไม่ได้</div>';
+        html += '<p class="reports-empty-note">ช่วงก่อนหน้าที่อยู่ในเทอมนี้ยังไม่มีข้อมูลพอ ระบบจะแสดงผลเปรียบเทียบทันทีเมื่อมีข้อมูลย้อนหลังมากขึ้น</p>';
+        html += '<div class="empty-next-step" style="margin-top:.9rem;max-width:460px;"><div class="empty-next-step-title">สิ่งที่ควรทำต่อ</div><div class="empty-next-step-text">ลองเลือกช่วงวันที่ย้อนหลังให้กว้างขึ้น หรือกลับไปยืนยันข้อมูลของช่วงก่อนหน้าเพิ่มก่อน แล้วค่อยกลับมาเทียบอีกครั้ง</div></div>';
+        html += '</div>';
+        html += '</section>';
+        return html;
+      }
+
+      html += '<div class="reports-compare-grid">';
+      html += renderSummaryComparisonCard_(
+        'อัตรามาเรียน',
+        formatPercentLabel(data.totals && data.totals.attendance_percent),
+        formatPercentLabel(previousTotals.attendance_percent),
+        comparison.delta ? comparison.delta.attendance_percent : null,
+        'point',
+        false
+      );
+      html += renderSummaryComparisonCard_(
+        'ขาดเรียน',
+        String(data.totals && data.totals.absent || 0) + ' ครั้ง',
+        String(previousTotals.absent || 0) + ' ครั้ง',
+        comparison.delta ? comparison.delta.absent : null,
+        'count',
+        true
+      );
+      html += renderSummaryComparisonCard_(
+        'มาสาย',
+        String(data.totals && data.totals.late || 0) + ' ครั้ง',
+        String(previousTotals.late || 0) + ' ครั้ง',
+        comparison.delta ? comparison.delta.late : null,
+        'count',
+        true
+      );
+      html += '</div>';
+      html += '<p class="reports-compare-note">เทียบกับช่วง ' + esc(previousSummary.start_date_th || '') + ' - ' + esc(previousSummary.end_date_th || '') + (comparison.is_partial ? ' ซึ่งเป็นช่วงก่อนหน้าที่อยู่ในเทอมนี้และมีความยาวสั้นกว่าที่เลือกเล็กน้อย' : '') + '</p>';
+      html += '</section>';
+      return html;
+    }
+
+    function renderSummaryComparisonCard_(label, currentValue, previousValue, deltaValue, deltaType, betterWhenLower) {
+      var delta = getSummaryDeltaDisplay_(deltaValue, deltaType, betterWhenLower);
+      var html = '<article class="reports-compare-card">';
+      html += '<div class="reports-compare-label">' + esc(label) + '</div>';
+      html += '<div class="reports-compare-value">' + esc(currentValue) + '</div>';
+      html += '<div class="reports-compare-meta">ช่วงก่อนหน้า ' + esc(previousValue) + '</div>';
+      html += '<span class="reports-compare-badge reports-compare-badge-' + esc(delta.tone) + '">' + esc(delta.label) + '</span>';
+      html += '</article>';
+      return html;
+    }
+
+    function renderSummaryActionPlan(rows, data) {
+      var counts = getSummaryQuickFilterCounts(rows || []);
+      var topAbsent = data && data.top_absent && data.top_absent.length ? data.top_absent[0] : null;
+      var topLate = data && data.top_late && data.top_late.length ? data.top_late[0] : null;
+      var html = '';
+      html += '<section class="reports-section">';
+      html += '<div class="reports-section-head">';
+      html += '<div><h2 class="reports-section-title">ควรทำอะไรต่อทันที</h2><p class="reports-section-text">ไม่ต้องตีความเองก่อน ระบบสรุปให้ว่าเริ่มดูตรงไหนก่อนเพื่อใช้ต่อกับงานครูประจำชั้นได้ทันที</p></div>';
+      html += '</div>';
+      html += '<div class="reports-action-grid">';
+      html += renderSummaryActionCard_(
+        'attention',
+        counts.attention > 0 ? 'เริ่มจากกลุ่มที่ต้องติดตาม' : 'ช่วงนี้ยังไม่มีกลุ่มเสี่ยงหนัก',
+        counts.attention > 0
+          ? 'มี ' + String(counts.attention) + ' คนที่ควรเปิดดูต่อทันที' + (topAbsent ? ' โดย ' + topAbsent.full_name + ' ขาดมากสุด ' + String(topAbsent.absent_count || 0) + ' วัน' : '')
+          : 'ยังไม่พบนักเรียนที่ต่ำกว่าเกณฑ์หรือมีรูปแบบน่าเป็นห่วงมากเป็นพิเศษ',
+        counts.attention > 0 ? 'เปิดรายชื่อที่ต้องติดตาม' : 'ดูรายชื่อทั้งหมด',
+        counts.attention > 0 ? 'red' : 'green'
+      );
+      html += renderSummaryActionCard_(
+        'late',
+        counts.late > 0 ? 'คุยเรื่องการมาสายก่อนลุกลาม' : 'เรื่องมาสายยังคุมได้',
+        counts.late > 0
+          ? 'พบ ' + String(counts.late) + ' คนมีประวัติมาสาย' + (topLate ? ' และ ' + topLate.full_name + ' สายมากสุด ' + String(topLate.late_count || 0) + ' ครั้ง' : '')
+          : 'ช่วงนี้ยังไม่พบการมาสายที่ต้องยกขึ้นมาเตือนเป็นพิเศษ',
+        counts.late > 0 ? 'ดูเฉพาะคนที่มาสาย' : 'ดูรายชื่อทั้งหมด',
+        counts.late > 0 ? 'amber' : 'green'
+      );
+      html += renderSummaryActionCard_(
+        counts.excellent > 0 ? 'excellent' : 'all',
+        counts.excellent > 0 ? 'ใช้กลุ่มเรียบร้อยเป็นตัวอย่างได้' : 'ยังไม่มีชุดนักเรียนเรียบร้อยเด่นชัด',
+        counts.excellent > 0
+          ? 'มี ' + String(counts.excellent) + ' คนที่มาเรียนดี ไม่มีขาด และไม่มีสาย เหมาะกับการชมเชยหรือใช้เป็นแรงเสริมในห้อง'
+          : 'ถ้าต้องการยกตัวอย่างเชิงบวก ลองติดตามต่ออีกช่วงเพื่อให้เห็นกลุ่มเรียบร้อยชัดขึ้น',
+        counts.excellent > 0 ? 'ดูเฉพาะคนที่เรียบร้อย' : 'ดูภาพรวมทั้งหมด',
+        'green'
+      );
+      html += '</div>';
+      html += '</section>';
+      return html;
+    }
+
+    function renderSummaryActionCard_(filter, title, description, buttonLabel, tone) {
+      return '<article class="reports-action-card reports-action-card-' + esc(tone) + '">' +
+        '<div class="reports-action-card-body">' +
+        '<div class="reports-action-card-title">' + esc(title) + '</div>' +
+        '<p class="reports-action-card-text">' + esc(description) + '</p>' +
+        '</div>' +
+        '<button class="btn btn-ghost btn-sm" type="button" onclick="ReportsPage.openSummaryFilter(\'' + esc(filter) + '\')">' + esc(buttonLabel) + '</button>' +
+        '</article>';
+    }
+
+    function renderSummaryWatchSection(topAbsent, topLate) {
+      var html = '';
+      html += '<section class="reports-section">';
+      html += '<div class="reports-section-head">';
+      html += '<div><h2 class="reports-section-title">จุดที่ต้องจับตา</h2><p class="reports-section-text">แยกคนที่ขาดหรือมาสายบ่อยออกมาให้เห็นทันที โดยอิงจากข้อมูลที่กำลังกรองอยู่</p></div>';
+      html += '</div>';
+
+      if (!topAbsent.length && !topLate.length) {
+        html += '<div class="card reports-surface reports-watch-empty">';
+        html += '<div class="reports-watch-empty-title">ช่วงนี้ยังไม่พบคนที่ต้องติดตามเป็นพิเศษ</div>';
+        html += '<p class="reports-empty-note">จากรายการที่กำลังดู ยังไม่พบการขาดหรือมาสายที่ต้องดึงขึ้นมาเตือนเพิ่ม</p>';
+        html += '</div>';
+        html += '</section>';
+        return html;
+      }
+
+      html += '<div class="rpt-grid-2 reports-split-grid">';
+      html += '<div class="card reports-surface">';
+      html += '<h2 class="card-title">ขาดมากที่สุด</h2>';
+      if (!topAbsent.length) {
+        html += '<p class="reports-empty-note">ยังไม่พบการขาดเรียนในช่วงข้อมูลที่กำลังดู</p>';
+      } else {
+        html += '<div class="rpt-compact-list">';
+        topAbsent.forEach(function (student, index) {
+          html += '<div class="rpt-compact-item">';
+          html += '<span class="rpt-compact-rank">' + (index + 1) + '</span>';
+          html += '<div class="rpt-compact-info">' + esc(student.full_name);
+          if (student.nickname) html += ' <span class="student-nick">(' + esc(student.nickname) + ')</span>';
+          html += '</div>';
+          html += '<span class="rpt-compact-badge badge-red">' + esc(String(student.absent_count || 0)) + ' วัน</span>';
+          html += '</div>';
+        });
+        html += '</div>';
+      }
+      html += '</div>';
+
+      html += '<div class="card reports-surface">';
+      html += '<h2 class="card-title">สายมากที่สุด</h2>';
+      if (!topLate.length) {
+        html += '<p class="reports-empty-note">ยังไม่พบการมาสายในช่วงข้อมูลที่กำลังดู</p>';
+      } else {
+        html += '<div class="rpt-compact-list">';
+        topLate.forEach(function (student, index) {
+          html += '<div class="rpt-compact-item">';
+          html += '<span class="rpt-compact-rank">' + (index + 1) + '</span>';
+          html += '<div class="rpt-compact-info">' + esc(student.full_name);
+          if (student.nickname) html += ' <span class="student-nick">(' + esc(student.nickname) + ')</span>';
+          html += '</div>';
+          html += '<span class="rpt-compact-badge badge-amber">' + esc(String(student.late_count || 0)) + ' ครั้ง</span>';
+          html += '</div>';
+        });
+        html += '</div>';
+      }
+      html += '</div></div></section>';
+      return html;
+    }
+
+    function renderDailyMobileCards(d, students) {
+      var html = '<div class="reports-mobile-only reports-mobile-list">';
+      students.forEach(function (student) {
+        var summary = summarizeDailyStudent(student, d.dates || []);
+        html += '<article class="reports-daily-card">';
+        html += '<div class="reports-student-card-top">';
+        html += '<div><div class="reports-student-card-number">เลขที่ ' + esc(String(student.student_number || '')) + '</div><div class="reports-student-card-name">' + esc(student.full_name) + '</div></div>';
+        html += '<span class="reports-student-state reports-student-state-' + summary.tone + '">' + summary.label + '</span>';
+        html += '</div>';
+        html += '<div class="reports-kv-grid reports-kv-grid-compact">';
+        html += renderKv('มาเรียน', summary.present);
+        html += renderKv('สาย', summary.late);
+        html += renderKv('ขาด', summary.absent, summary.absent > 0 ? 'accent' : '');
+        html += renderKv('ลา', summary.leaveTotal);
+        html += renderKv('มีบันทึก', summary.recordedDays + '/' + summary.totalDates);
+        html += '</div>';
+        html += '<div class="reports-daily-event-list">';
+        if (!summary.events.length) {
+          html += '<div class="reports-daily-empty-note">ไม่มีวันผิดปกติในช่วงนี้</div>';
+        } else {
+          summary.events.slice(0, 6).forEach(function (event) {
+            html += '<div class="reports-daily-pill reports-daily-pill-' + event.tone + '">' + esc(event.dateLabel) + ' · ' + esc(event.label) + '</div>';
+          });
+          if (summary.events.length > 6) html += '<div class="reports-daily-empty-note">และอีก ' + esc(String(summary.events.length - 6)) + ' รายการ</div>';
+        }
+        html += '</div></article>';
+      });
+      html += '</div>';
+      return html;
+    }
+
+    function renderKv(label, value, modifier) {
+      return '<div class="reports-kv' + (modifier ? ' reports-kv-' + modifier : '') + '"><div class="reports-kv-label">' + esc(label) + '</div><div class="reports-kv-value' + (modifier === 'accent' ? ' reports-kv-value-accent' : '') + '">' + esc(String(value || 0)) + '</div></div>';
+    }
+
+    function normalizeReportQuery(value) {
+      return String(value || '').trim().toLowerCase();
+    }
+
+    function getPercentValue(value) {
+      if (value === null || value === undefined || value === '') return null;
+      var num = Number(value);
+      return isFinite(num) ? num : null;
+    }
+
+    function formatPercentLabel(value) {
+      var pct = getPercentValue(value);
+      return pct === null ? '-' : String(pct) + '%';
+    }
+
+    function getPercentBarWidth(value) {
+      var pct = getPercentValue(value);
+      return pct === null ? 0 : Math.max(0, Math.min(100, pct));
+    }
+
+    function hasSummaryMeasurementData(data) {
+      var totals = data && data.totals ? data.totals : {};
+      return Number(totals.total_days || 0) > 0;
+    }
+
+    function getSummaryAlertPercent() {
+      var summary = S && S.summary ? S.summary : {};
+      var pct = Number(summary.attendance_alert_percent || 0);
+      return pct > 0 ? pct : 80;
+    }
+
+    function matchesReportStudent(item, query) {
+      if (!query) return true;
+      var haystack = [item.student_number, item.full_name, item.nickname, item.group_name].join(' ').toLowerCase();
+      return haystack.indexOf(query) >= 0;
+    }
+
+    function matchesSummaryQuickFilter(row, filter) {
+      var attendancePercent = getPercentValue(row.attendance_percent);
+      var absentCount = Number(row.absent_count || 0);
+      var lateCount = Number(row.late_count || 0);
+      if (filter === 'attention') return !!row.is_below_threshold || absentCount > 0 || lateCount > 1 || (attendancePercent !== null && attendancePercent < getSummaryAlertPercent());
+      if (filter === 'absent') return absentCount > 0;
+      if (filter === 'late') return lateCount > 0;
+      if (filter === 'excellent') return attendancePercent !== null && attendancePercent >= 95 && absentCount === 0 && lateCount === 0;
+      return true;
+    }
+
+    function getSummaryQuickFilterCounts(rows) {
+      var counts = { all: rows.length, attention: 0, absent: 0, late: 0, excellent: 0 };
+      rows.forEach(function (row) {
+        if (matchesSummaryQuickFilter(row, 'attention')) counts.attention += 1;
+        if (matchesSummaryQuickFilter(row, 'absent')) counts.absent += 1;
+        if (matchesSummaryQuickFilter(row, 'late')) counts.late += 1;
+        if (matchesSummaryQuickFilter(row, 'excellent')) counts.excellent += 1;
+      });
+      return counts;
+    }
+
+    function getFilteredSummaryRows(rows) {
+      var query = normalizeReportQuery(S.reportSearchQuery);
+      var filter = S.reportQuickFilter || 'all';
+      return rows.filter(function (row) {
+        return matchesReportStudent(row, query) && matchesSummaryQuickFilter(row, filter);
+      });
+    }
+
+    function getSummaryStatusTone(row) {
+      var attendancePercent = getPercentValue(row.attendance_percent);
+      var absentCount = Number(row.absent_count || 0);
+      var lateCount = Number(row.late_count || 0);
+      if (!!row.is_below_threshold || absentCount >= 2 || (attendancePercent !== null && attendancePercent < getSummaryAlertPercent())) return 'red';
+      if (attendancePercent === null && absentCount === 0 && lateCount === 0) return 'amber';
+      if (absentCount > 0 || lateCount > 0 || (attendancePercent !== null && attendancePercent < 95)) return 'amber';
+      return 'green';
+    }
+
+    function getSummaryStatusLabel(row) {
+      var attendancePercent = getPercentValue(row.attendance_percent);
+      var absentCount = Number(row.absent_count || 0);
+      var lateCount = Number(row.late_count || 0);
+      if (attendancePercent === null && absentCount === 0 && lateCount === 0) return 'ไม่มีวันวัดผล';
+      var tone = getSummaryStatusTone(row);
+      if (tone === 'red') return 'ต้องติดตาม';
+      if (tone === 'amber') return 'ควรเช็กต่อ';
+      return 'เรียบร้อย';
+    }
+
+    function getSummaryExecutiveTone_(data, counts) {
+      var totals = data && data.totals ? data.totals : {};
+      var pct = getPercentValue(totals.attendance_percent);
+      if ((counts && counts.attention > 0) || Number(totals.absent || 0) > 0) return 'red';
+      if (pct !== null && pct >= 95) return 'green';
+      return 'amber';
+    }
+
+    function getSummaryExecutiveTitle_(data, counts) {
+      var totals = data && data.totals ? data.totals : {};
+      var pct = getPercentValue(totals.attendance_percent);
+      if ((counts && counts.attention > 0) || Number(totals.absent || 0) > 0) return 'สรุปช่วงนี้ออกแล้ว และเห็นเลยว่าควรตามใครก่อน';
+      if (pct !== null && pct >= 95) return 'ภาพรวมช่วงนี้เรียบร้อยและพร้อมใช้อ้างอิงในห้องเรียนได้ทันที';
+      return 'ภาพรวมช่วงนี้อยู่ในเกณฑ์ดี และมีจุดเช็กต่อชัดเจน';
+    }
+
+    function buildSummarySnippet_(data, rows) {
+      var totals = data && data.totals ? data.totals : {};
+      var counts = getSummaryQuickFilterCounts(rows || []);
+      var statusText = Number(totals.absent || 0) > 0 || Number(totals.late || 0) > 0
+        ? 'พบขาด ' + String(totals.absent || 0) + ' ครั้ง และมาสาย ' + String(totals.late || 0) + ' ครั้ง'
+        : 'ยังไม่พบการขาดหรือมาสายในช่วงนี้';
+      return 'ช่วง ' + String(data && data.start_date_th || '') + ' - ' + String(data && data.end_date_th || '') + ' ห้องนี้มีอัตรามาเรียนเฉลี่ย ' + formatPercentLabel(totals.attendance_percent) + ' จากนักเรียน ' + String((rows || []).length) + ' คน มี ' + String(counts.attention || 0) + ' คนที่ควรติดตาม และ' + statusText;
+    }
+
+    function getSummaryDeltaDisplay_(deltaValue, deltaType, betterWhenLower) {
+      var amount = Number(deltaValue);
+      if (!isFinite(amount)) return { tone: 'stone', label: 'ยังไม่มีข้อมูลเทียบ' };
+      if (amount === 0) return { tone: 'stone', label: 'เท่าเดิมจากช่วงก่อน' };
+      var isBetter = betterWhenLower ? amount < 0 : amount > 0;
+      var absoluteValue = Math.abs(amount);
+      var unitLabel = deltaType === 'point' ? 'จุด' : 'ครั้ง';
+      return {
+        tone: isBetter ? 'green' : 'red',
+        label: (isBetter ? 'ดีขึ้น ' : 'แย่ลง ') + String(absoluteValue) + ' ' + unitLabel
+      };
+    }
+
+    function getFilteredDailyStudents(students) {
+      var query = normalizeReportQuery(S.reportDailySearchQuery);
+      return students.filter(function (student) {
+        return matchesReportStudent(student, query);
+      });
+    }
+
+    function summarizeDailyStudent(student, dates) {
+      var schoolDates = (dates || []).filter(function (day) { return !day.is_holiday; });
+      var summary = {
+        present: 0,
+        late: 0,
+        absent: 0,
+        sick: 0,
+        personal: 0,
+        leaveTotal: 0,
+        recordedDays: 0,
+        totalDates: schoolDates.length,
+        events: [],
+        tone: 'green',
+        label: 'ครบถ้วน'
+      };
+
+      dates.forEach(function (day) {
+        if (day.is_holiday) {
+          if (student.statuses && student.statuses[day.date]) {
+            summary.events.push({ dateLabel: day.label, label: 'มีข้อมูลในวันหยุด', tone: 'red' });
+          }
+          return;
+        }
+        var status = student.statuses && student.statuses[day.date];
+        if (!status) return;
+        summary.recordedDays += 1;
+        if (status.status_code === 'present') summary.present += 1;
+        if (status.status_code === 'late') {
+          summary.late += 1;
+          summary.events.push({ dateLabel: day.label, label: status.label || 'มาสาย', tone: 'amber' });
+        }
+        if (status.status_code === 'absent') {
+          summary.absent += 1;
+          summary.events.push({ dateLabel: day.label, label: status.label || 'ขาดเรียน', tone: 'red' });
+        }
+        if (status.status_code === 'sick_leave') {
+          summary.sick += 1;
+          summary.events.push({ dateLabel: day.label, label: status.label || 'ลาป่วย', tone: 'blue' });
+        }
+        if (status.status_code === 'personal_leave') {
+          summary.personal += 1;
+          summary.events.push({ dateLabel: day.label, label: status.label || 'ลากิจ', tone: 'indigo' });
+        }
+      });
+
+      summary.leaveTotal = summary.sick + summary.personal;
+      if (summary.absent > 0) {
+        summary.tone = 'red';
+        summary.label = 'มีวันขาด';
+      } else if (summary.late > 0) {
+        summary.tone = 'amber';
+        summary.label = 'มีวันสาย';
+      } else if (summary.leaveTotal > 0) {
+        summary.tone = 'blue';
+        summary.label = 'มีวันลา';
+      }
+
+      return summary;
+    }
+
+    function getHeroSubtitle() {
+      if (S.reportTab === 'daily') {
+        return 'ดูย้อนหลังแบบรายวัน ค้นหาง่าย และอ่านสะดวกทั้งบนมือถือและเดสก์ท็อป';
+      }
+      return 'สรุปผลรวมของทั้งห้อง หาคนที่ต้องติดตาม และเตรียมรายงานที่พร้อมใช้ต่อได้ทันที';
+    }
+
+    function renderReportsSpotlight(mode, data) {
+      var title = '';
+      var text = '';
+      var meta = '';
+
+      if (mode === 'daily') {
+        title = 'เริ่มจากรายชื่อที่ต้องดู';
+        text = 'กำลังดูนักเรียน ' + esc(String((data.students || []).length)) + ' คน ครอบคลุม ' + esc(String((data.dates || []).length)) + ' วัน';
+        meta = 'บนมือถือจะแสดงเป็นการ์ดสรุปต่อคน ส่วนเดสก์ท็อปยังคงตารางเต็ม';
+      } else {
+        var totals = data.totals || {};
+        var pct = getPercentValue(totals.attendance_percent);
+        var alertPct = Number(data.attendance_alert_percent || getSummaryAlertPercent());
+        if (!hasSummaryMeasurementData(data)) {
+          title = 'ช่วงนี้ยังไม่มีวันเช็คชื่อที่ยืนยันแล้วสำหรับสรุปผล';
+          text = 'ลองเปลี่ยนช่วงวันที่ หรือกลับไปยืนยันการเช็คชื่อก่อนแล้วค่อยโหลดรายงานอีกครั้ง';
+          meta = 'เมื่อมีวันเช็คชื่อที่ยืนยันแล้ว ระบบจะสรุปภาพรวม รายชื่อนักเรียน และจุดที่ต้องติดตามให้ทันที';
+        } else {
+          title = pct === null
+            ? 'ช่วงนี้ยังไม่มีวันวัดผลเพียงพอสำหรับสรุป % มาเรียน'
+            : (pct >= 95 ? 'ภาพรวมช่วงนี้พร้อมสรุปผลได้ทันที' : (pct >= alertPct ? 'ภาพรวมช่วงนี้อยู่ในเกณฑ์ดี' : 'ช่วงนี้ควรติดตามการมาเรียนเพิ่มเติม'));
+          text = 'อัตรามาเรียนเฉลี่ยอยู่ที่ ' + esc(formatPercentLabel(totals.attendance_percent)) + ' จากช่วง ' + esc(data.start_date_th || '') + ' - ' + esc(data.end_date_th || '');
+          meta = Number(totals.absent || 0) > 0
+            ? 'มีรายการขาด ' + esc(String(totals.absent || 0)) + ' ครั้ง และมาสาย ' + esc(String(totals.late || 0)) + ' ครั้งในช่วงนี้'
+            : 'ยังไม่พบการขาดเรียนในช่วงนี้';
+        }
+      }
+
+      return '<section class="reports-spotlight reports-spotlight-' + esc(mode) + '">' +
+        '<div class="reports-spotlight-kicker">สิ่งที่ควรดูเป็นอันดับแรก</div>' +
+        '<div class="reports-spotlight-title">' + title + '</div>' +
+        '<div class="reports-spotlight-text">' + text + '</div>' +
+        '<div class="reports-spotlight-meta">' + meta + '</div>' +
+        '</section>';
+    }
+
+    function renderSummaryControls() {
+      var d = S.summary || {};
+      var hasOutputs = !!(d.start_date && d.end_date && hasSummaryMeasurementData(d));
+      var fallbackRange = getDefaultSummaryRange_();
+      var summaryState = E.getPageDataStatus ? E.getPageDataStatus('reports', 'summary') : { status: 'idle', error: '' };
+      var printHints = getPrintReadinessHints_('monthly', d);
+      var html = '';
+      html += '<div class="reports-control-panel">';
+      html += '<div class="reports-control-head">';
+      html += '<div><p class="reports-control-kicker">ช่วงวันที่สำหรับสรุปผล</p><p class="reports-control-title">ดูผลรวมเพื่อพิมพ์หรือส่งต่อ</p></div>';
+
+      html += '</div>';
+      html += '<div class="reports-control-row">';
+      html += '<input type="date" class="date-input" id="rpt-start" value="' + esc(d.start_date || fallbackRange.from || '') + '">';
+      html += '<span class="reports-range-sep">ถึง</span>';
+      html += '<input type="date" class="date-input" id="rpt-end" value="' + esc(d.end_date || fallbackRange.to || '') + '">';
+      html += '</div>';
+      html += '<div class="reports-control-actions reports-control-actions-primary">';
+      html += '<button class="btn btn-primary btn-sm" type="button" onclick="ReportsPage.loadSummary(this)">' + (hasOutputs ? 'อัปเดตข้อมูล' : 'โหลดข้อมูล') + '</button>';
+      html += '</div>';
+      if (hasOutputs) {
+        html += '<div class="reports-control-actions reports-control-actions-secondary">';
+        html += '<button class="btn btn-ghost btn-sm" type="button" onclick="ReportsPage.exportCSV(\'monthly\', this)">ดาวน์โหลด CSV</button>';
+        html += '<button class="btn btn-ghost btn-sm" type="button" onclick="ReportsPage.openPrint(\'pp6\')">พิมพ์ ปพ.6</button>';
+        html += '<button class="btn btn-ghost btn-sm" type="button" onclick="ReportsPage.openPrint(\'absent\')">พิมพ์ นร.ขาดบ่อย</button>';
+        html += '</div>';
+      } else {
+        html += '<p class="reports-control-hint">' + (summaryState.status === 'loading'
+          ? 'กำลังโหลดสรุปรายงานให้อัตโนมัติ คุณยังเปลี่ยนช่วงวันที่ได้'
+          : 'โหลดข้อมูลก่อน แล้วค่อยดาวน์โหลดหรือพิมพ์รายงาน') + '</p>';
+      }
+      if (d.start_date_th && d.end_date_th) {
+        html += '<p class="reports-range-note">' + esc(d.start_date_th) + ' - ' + esc(d.end_date_th) + '</p>';
+      }
+      if (printHints.length) {
+        html += '<div class="reports-print-hints">';
+        printHints.forEach(function(hint) {
+          html += '<div class="alert alert-' + esc(hint.tone || 'warning') + '"><span>' + esc(hint.message || '') + '</span></div>';
+        });
+        html += '</div>';
+      }
+      html += '</div>';
+      return html;
+    }
+
+    function renderDailyControls() {
+      var hasOutputs = !!(S.dailyGrid && S.dailyGrid.from_th && S.dailyGrid.to_th);
+      var defaultRange = getDefaultDailyRange_();
+      var printDate = getDailyPrintDate_();
+      var dailyState = E.getPageDataStatus ? E.getPageDataStatus('reports', 'daily') : { status: 'idle', error: '' };
+      var printHints = getPrintReadinessHints_('daily', S.dailyGrid);
+      var html = '';
+      html += '<div class="reports-control-panel">';
+      html += '<div class="reports-control-head">';
+      html += '<div><p class="reports-control-kicker">ช่วงวันที่สำหรับตรวจย้อนหลัง</p><p class="reports-control-title">ดูตารางย้อนหลังเป็นช่วงวัน แล้วเลือกวันเดียวเมื่อต้องการพิมพ์รายงาน</p></div>';
+
+      html += '</div>';
+      html += '<div class="reports-control-row">';
+      html += '<input type="date" class="date-input" id="rpt-grid-from" value="' + esc(S.dailyGridFrom || defaultRange.from || '') + '">';
+      html += '<span class="reports-range-sep">ถึง</span>';
+      html += '<input type="date" class="date-input" id="rpt-grid-to" value="' + esc(S.dailyGridTo || defaultRange.to || '') + '">';
+      html += '</div>';
+      html += '<div class="reports-control-actions reports-control-actions-primary">';
+      html += '<button class="btn btn-primary btn-sm" type="button" onclick="ReportsPage.loadDailyGrid(this)">' + (hasOutputs ? 'อัปเดตข้อมูล' : 'โหลดข้อมูล') + '</button>';
+      html += '</div>';
+      html += '<div class="reports-control-row">';
+      html += '<input type="date" class="date-input" id="rpt-daily-print-date" value="' + esc(printDate) + '">';
+      html += '<span class="reports-range-sep">ใช้พิมพ์รายงานวัน</span>';
+      html += '</div>';
+      if (hasOutputs) {
+        html += '<div class="reports-control-actions reports-control-actions-secondary">';
+        html += '<button class="btn btn-ghost btn-sm" type="button" onclick="ReportsPage.exportCSV(\'daily\', this)">ดาวน์โหลด CSV</button>';
+        html += '<button class="btn btn-ghost btn-sm" type="button" onclick="ReportsPage.openPrint(\'daily\')">พิมพ์รายงานวัน</button>';
+        html += '</div>';
+      } else {
+        html += '<p class="reports-control-hint">' + (dailyState.status === 'loading'
+          ? 'กำลังโหลดตารางรายวัน คุณยังปรับช่วงวันที่และเลือกวันพิมพ์ได้'
+          : 'โหลดข้อมูลก่อน แล้วค่อยดาวน์โหลดหรือพิมพ์รายงาน') + '</p>';
+      }
+      if (S.dailyGrid && S.dailyGrid.from_th && S.dailyGrid.to_th) {
+        html += '<p class="reports-range-note">ตารางย้อนหลัง: ' + esc(S.dailyGrid.from_th) + ' - ' + esc(S.dailyGrid.to_th) + '</p>';
+      }
+      if (printHints.length) {
+        html += '<div class="reports-print-hints">';
+        printHints.forEach(function(hint) {
+          html += '<div class="alert alert-' + esc(hint.tone || 'warning') + '"><span>' + esc(hint.message || '') + '</span></div>';
+        });
+        html += '</div>';
+      }
+      html += '</div>';
+      return html;
+    }
+
+    function getDefaultSummaryRange_() {
+      if (S.summary && S.summary.start_date && S.summary.end_date) {
+        return { from: S.summary.start_date, to: S.summary.end_date };
+      }
+      if (S.reportBootstrap && S.reportBootstrap.default_summary_range) {
+        return {
+          from: S.reportBootstrap.default_summary_range.from || '',
+          to: S.reportBootstrap.default_summary_range.to || ''
+        };
+      }
+      if (S.activeSemester && S.activeSemester.start_date && S.activeSemester.end_date) {
+        return { from: S.activeSemester.start_date, to: S.activeSemester.end_date };
+      }
+      var today = E && typeof E.todayStr === 'function' ? E.todayStr() : '';
+      return {
+        from: today ? String(today).slice(0, 7) + '-01' : '',
+        to: today || ''
+      };
+    }
+
+    function getDefaultDailyRange_() {
+      if (S.dailyGridFrom && S.dailyGridTo) {
+        return { from: S.dailyGridFrom, to: S.dailyGridTo };
+      }
+      if (S.reportBootstrap && S.reportBootstrap.default_daily_range) {
+        return {
+          from: S.reportBootstrap.default_daily_range.from || '',
+          to: S.reportBootstrap.default_daily_range.to || ''
+        };
+      }
+      return getDefaultSummaryRange_();
+    }
+
+    function getDailyPrintDate_() {
+      if (S.dailyPrintDate) return S.dailyPrintDate;
+      if (S.dailyGridFrom) return S.dailyGridFrom;
+      var range = getDefaultDailyRange_();
+      return range.from || '';
+    }
+
+    function getPrintReadinessHints_(mode, data) {
+      var hints = [];
+      if (!data) return hints;
+      if (data.out_of_semester) {
+        hints.push({
+          tone: 'warning',
+          message: 'ช่วงวันที่นี้อยู่นอกภาคเรียนปัจจุบัน ให้กลับไปเลือกช่วงวันในภาคเรียนก่อนจึงจะพิมพ์รายงานทางการได้'
+        });
+        return hints;
+      }
+      if (mode === 'monthly') {
+        var schoolDays = parseInt(data.school_days, 10) || 0;
+        var confirmedDays = parseInt(data.confirmed_days_count, 10) || 0;
+        if (schoolDays <= 0) {
+          hints.push({
+            tone: 'warning',
+            message: 'ช่วงวันที่นี้ยังไม่มีวันเรียนตามปฏิทิน จึงยังพิมพ์รายงานสรุปแบบทางการไม่ได้'
+          });
+        } else if (confirmedDays <= 0) {
+          hints.push({
+            tone: 'warning',
+            message: 'ช่วงวันที่นี้ยังไม่มีวันเช็คชื่อที่ยืนยันแล้ว หากต้องการพิมพ์ ปพ.6 ควรยืนยันข้อมูลก่อน'
+          });
+        } else if (confirmedDays < schoolDays) {
+          hints.push({
+            tone: 'info',
+            message: 'ช่วงนี้ยืนยันข้อมูลแล้ว ' + confirmedDays + ' จากวันเรียนตามปฏิทิน ' + schoolDays + ' วัน รายงานที่พิมพ์จะสะท้อนเฉพาะวันที่ยืนยันแล้ว'
+          });
+        }
+      } else if (mode === 'daily') {
+        var printDate = getDailyPrintDate_();
+        if (!printDate) {
+          hints.push({
+            tone: 'warning',
+            message: 'เลือกวันที่ที่จะพิมพ์รายงานวันก่อน แล้วจึงเปิดหน้าพิมพ์ได้'
+          });
+        }
+      }
+      if (data.calendar_warning && data.calendar_warning.has_mismatch && data.calendar_warning.message) {
+        hints.push({
+          tone: 'warning',
+          message: data.calendar_warning.message
+        });
+      }
+      return hints;
+    }
+
+    function getPrintPreflightIssue_(type) {
+      if (type === 'daily') {
+        var dateEl = document.getElementById('rpt-daily-print-date');
+        var printDate = dateEl && dateEl.value ? dateEl.value : getDailyPrintDate_();
+        if (!printDate) return 'กรุณาเลือกวันที่ที่จะพิมพ์รายงานวัน';
+        if (!S.dailyGrid) return 'กรุณาโหลดตารางรายวันก่อนพิมพ์รายงานวัน';
+        if (S.dailyGrid.out_of_semester) return 'ช่วงวันที่ที่โหลดอยู่นอกภาคเรียน กรุณากลับไปเลือกวันในภาคเรียนก่อน';
+        return '';
+      }
+
+      if (!S.summary) return 'กรุณาโหลดข้อมูลรายงานสรุปก่อนพิมพ์';
+      if (S.summary.out_of_semester) return 'ช่วงวันที่นี้อยู่นอกภาคเรียนปัจจุบัน กรุณากลับไปเลือกช่วงวันที่ในภาคเรียนก่อน';
+      if (!S.summary.start_date || !S.summary.end_date) return 'กรุณาเลือกช่วงวันที่ก่อนพิมพ์รายงาน';
+
+      if (type === 'pp6') {
+        var schoolDays = parseInt(S.summary.school_days, 10) || 0;
+        var confirmedDays = parseInt(S.summary.confirmed_days_count, 10) || 0;
+        if (schoolDays <= 0) return 'ช่วงวันที่นี้ยังไม่มีวันเรียนตามปฏิทิน ให้กลับไปสร้างปฏิทินวันเรียนก่อนจึงจะพิมพ์ ปพ.6 ได้';
+        if (confirmedDays <= 0) return 'ช่วงวันที่นี้ยังไม่มีข้อมูลยืนยันแล้ว ให้กลับไปยืนยันวันเช็กชื่อก่อนอย่างน้อย 1 วันจึงจะพิมพ์ ปพ.6 ได้';
+      }
+
+      return '';
+    }
+
+    function reportMetric(icon, value, label, tone) {
+      return '<div class="reports-metric-card reports-metric-' + tone + '">' +
+        '<div class="reports-metric-icon">' + icon + '</div>' +
+        '<div class="reports-metric-value">' + esc(String(value || 0)) + '</div>' +
+        '<div class="reports-metric-label">' + esc(label) + '</div>' +
+        '</div>';
+    }
+
+    // Actions
+
+    function setSearch(value) {
+      init();
+      S.reportSearchQuery = String(value || '');
+      scheduleReportSearchRerender_('reports-summary-search');
+    }
+
+    function setQuickFilter(filter) {
+      init();
+      S.reportQuickFilter = filter || 'all';
+      render(S);
+    }
+
+    function openSummaryFilter(filter) {
+      setQuickFilter(filter || 'all');
+      setTimeout(function () {
+        var input = document.getElementById('reports-summary-search');
+        if (!input) return;
+        if (input.scrollIntoView) input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        input.focus();
+      }, 0);
+    }
+
+    function clearFilters() {
+      init();
+      if (S.reportTab === 'daily') {
+        S.reportDailySearchQuery = '';
+        rerenderAndRestoreFocus('reports-daily-search');
+        return;
+      }
+      S.reportSearchQuery = '';
+      S.reportQuickFilter = 'all';
+      rerenderAndRestoreFocus('reports-summary-search');
+    }
+
+    function setDailySearch(value) {
+      init();
+      S.reportDailySearchQuery = String(value || '');
+      scheduleReportSearchRerender_('reports-daily-search');
+    }
+
+    function rerenderAndRestoreFocus(inputId) {
+      render(S);
+      var input = document.getElementById(inputId);
+      if (!input) return;
+      input.focus();
+      if (typeof input.setSelectionRange === 'function') {
+        var pos = input.value.length;
+        input.setSelectionRange(pos, pos);
+      }
+    }
+
+    function switchTab(tab) {
+      init();
+      S.reportTab = tab;
+      if (tab === 'summary' && !S.summary) {
+        loadSummary(null, { silent: true, quiet: true });
+        return;
+      }
+      if (tab === 'daily' && !S.dailyGrid) {
+        render(S);
+        loadDailyGrid(null, { silent: true, quiet: true, preserveView: true });
+        return;
+      }
+      render(S);
+    }
+
+    function loadSummary(buttonEl, options) {
+      init();
+      options = options || {};
+      var startEl = document.getElementById('rpt-start');
+      var endEl = document.getElementById('rpt-end');
+      var fallbackRange = getDefaultSummaryRange_();
+      var startDate = startEl ? startEl.value : fallbackRange.from;
+      var endDate = endEl ? endEl.value : fallbackRange.to;
+
+      if (!startDate || !endDate) {
+        E.toast('กรุณาเลือกช่วงวันที่', 'error');
+        return;
+      }
+      if (startDate > endDate) {
+        E.toast('วันที่เริ่มต้นต้องไม่มากกว่าวันที่สิ้นสุด', 'error');
+        return;
+      }
+
+      if (E.setPageDataStatus) E.setPageDataStatus('reports', 'summary', 'loading', '');
+      if (!options.preserveView) render(S);
+      if (E.setActionButtonState) E.setActionButtonState(buttonEl, true, 'กำลังโหลด...');
+      if (!options.silent) E.toast('กำลังโหลดรายงาน...', 'info');
+      var requestFn = options.quiet && E.serverCallQuiet ? E.serverCallQuiet : E.serverCall;
+      requestFn('getSummaryTable', [startDate, endDate], function (data) {
+        if (options.loadToken && E.isActivePageLoad && !E.isActivePageLoad(options.loadToken)) return;
+        if (E.setActionButtonState) E.setActionButtonState(buttonEl, false);
+        S.summary = data;
+        S.reportMonth = data && data.start_date ? String(data.start_date).slice(0, 7) : '';
+        S.reportTab = 'summary';
+        if (E.setPageDataStatus) E.setPageDataStatus('reports', 'summary', 'ready', '');
+        render(S);
+      }, function (msg) {
+        if (options.loadToken && E.isActivePageLoad && !E.isActivePageLoad(options.loadToken)) return;
+        if (E.setActionButtonState) E.setActionButtonState(buttonEl, false);
+        if (E.setPageDataStatus) E.setPageDataStatus('reports', 'summary', 'error', msg || 'ยังโหลดสรุปรายงานไม่สำเร็จ');
+        render(S);
+      });
+    }
+
+    function loadDailyGrid(buttonEl, options) {
+      init();
+      options = options || {};
+      var fromEl = document.getElementById('rpt-grid-from');
+      var toEl = document.getElementById('rpt-grid-to');
+      var fallbackRange = getDefaultDailyRange_();
+      var from = fromEl ? fromEl.value : fallbackRange.from;
+      var to = toEl ? toEl.value : fallbackRange.to;
+
+      if (!from || !to) {
+        E.toast('กรุณาเลือกช่วงวันที่', 'error');
+        return;
+      }
+      if (from > to) {
+        E.toast('วันที่เริ่มต้นต้องไม่มากกว่าวันที่สิ้นสุด', 'error');
+        return;
+      }
+
+      S.dailyGridFrom = from;
+      S.dailyGridTo = to;
+      if (E.setPageDataStatus) E.setPageDataStatus('reports', 'daily', 'loading', '');
+      if (!options.preserveView) render(S);
+      if (E.setActionButtonState) E.setActionButtonState(buttonEl, true, 'กำลังโหลด...');
+      if (!options.silent) E.toast('กำลังโหลดตารางรายวัน...', 'info');
+      var requestFn = options.quiet && E.serverCallQuiet ? E.serverCallQuiet : E.serverCall;
+      requestFn('getDailyGrid', [from, to], function (data) {
+        if (options.loadToken && E.isActivePageLoad && !E.isActivePageLoad(options.loadToken)) return;
+        if (E.setActionButtonState) E.setActionButtonState(buttonEl, false);
+        S.dailyGrid = data;
+        S.reportTab = 'daily';
+        if (E.setPageDataStatus) E.setPageDataStatus('reports', 'daily', 'ready', '');
+        render(S);
+      }, function (msg) {
+        if (options.loadToken && E.isActivePageLoad && !E.isActivePageLoad(options.loadToken)) return;
+        if (E.setActionButtonState) E.setActionButtonState(buttonEl, false);
+        if (E.setPageDataStatus) E.setPageDataStatus('reports', 'daily', 'error', msg || 'ยังโหลดรายงานรายวันไม่สำเร็จ');
+        render(S);
+      });
+    }
+
+    function clearHolidayAttendance(date, buttonEl, sourceTab) {
+      init();
+      if (!date) {
+        E.toast('ไม่พบวันที่ของรายการที่ต้องการล้าง', 'error');
+        return;
+      }
+      var confirmFn = E.confirm_dialog || window.confirm_dialog;
+      if (typeof confirmFn !== 'function') {
+        E.toast('ไม่สามารถเปิดกล่องยืนยันได้ กรุณารีโหลดหน้าแล้วลองอีกครั้ง', 'error');
+        return;
+      }
+      confirmFn('ต้องการล้างข้อมูลเช็คชื่อที่อยู่ในวันหยุด ' + date + ' ใช่หรือไม่', function () {
+        if (E.setActionButtonState) E.setActionButtonState(buttonEl, true, 'กำลังล้าง...');
+        E.serverCall('clearHolidayAttendance', [date], function (result) {
+          if (E.setActionButtonState) E.setActionButtonState(buttonEl, false);
+          E.toast((result && result.message) || 'ล้างข้อมูลเรียบร้อย', result && result.success ? 'success' : 'error');
+          if (!result || !result.success) return;
+          if (sourceTab === 'daily') {
+            loadDailyGrid(null, { silent: true });
+          } else {
+            loadSummary(null, { silent: true });
+          }
+        }, function () {
+          if (E.setActionButtonState) E.setActionButtonState(buttonEl, false);
+        });
+      });
+    }
+
+    function exportCSV(type, buttonEl) {
+      init();
+      var params = {};
+
+      if (type === 'monthly') {
+        var startEl = document.getElementById('rpt-start');
+        var endEl = document.getElementById('rpt-end');
+        params.start_date = startEl ? startEl.value : '';
+        params.end_date = endEl ? endEl.value : '';
+
+        if (!params.start_date || !params.end_date) {
+          E.toast('กรุณาเลือกช่วงวันที่', 'error');
+          return;
+        }
+        if (params.start_date > params.end_date) {
+          E.toast('วันที่เริ่มต้นต้องไม่มากกว่าวันที่สิ้นสุด', 'error');
+          return;
+        }
+      } else {
+        var fromEl = document.getElementById('rpt-grid-from');
+        var toEl = document.getElementById('rpt-grid-to');
+        params.from = fromEl ? fromEl.value : '';
+        params.to = toEl ? toEl.value : '';
+
+        if (!params.from || !params.to) {
+          E.toast('กรุณาเลือกช่วงวันที่', 'error');
+          return;
+        }
+        if (params.from > params.to) {
+          E.toast('วันที่เริ่มต้นต้องไม่มากกว่าวันที่สิ้นสุด', 'error');
+          return;
+        }
+      }
+
+      if (E.setActionButtonState) E.setActionButtonState(buttonEl, true, 'กำลังสร้างไฟล์...');
+      E.toast('กำลังสร้างไฟล์ CSV...', 'info');
+      E.serverCall('downloadCSV', [type, params], function (result) {
+        if (E.setActionButtonState) E.setActionButtonState(buttonEl, false);
+        if (!result || !result.success || !result.url) {
+          E.toast((result && result.message) || 'ไม่สามารถสร้าง CSV ได้', 'error');
+          return;
+        }
+
+        var downloadWindow = E.openDownloadWindow(result.url, 'เบราว์เซอร์บล็อกหน้าดาวน์โหลด กรุณาอนุญาต pop-up แล้วลองใหม่');
+        if (!downloadWindow) {
+          E.toast('เบราว์เซอร์บล็อกหน้าดาวน์โหลด กรุณาอนุญาต pop-up แล้วลองใหม่', 'error');
+          return;
+        }
+
+        E.toast('ดาวน์โหลด ' + (result.filename || 'CSV') + ' สำเร็จ', 'success');
+        if (result.file_id) {
+          setTimeout(function () {
+            E.serverCall('cleanupCSVFile', [result.file_id], function () {});
+          }, 30000);
+        }
+      }, function () {
+        if (E.setActionButtonState) E.setActionButtonState(buttonEl, false);
+      });
+    }
+
+    function openPrint(type) {
+      init();
+      var preflightIssue = getPrintPreflightIssue_(type);
+      if (preflightIssue) {
+        E.toast(preflightIssue, 'error');
+        return;
+      }
+      var url = SCRIPT_URL + '?page=print&type=' + type;
+      var printContext = { type: type };
+      var popupWindow = null;
+      try {
+        popupWindow = window.open('', '_blank');
+      } catch (e) {
+        popupWindow = null;
+      }
+      if (type === 'daily') {
+        var dateEl = document.getElementById('rpt-daily-print-date');
+        if (dateEl && dateEl.value) {
+          url += '&date=' + dateEl.value;
+          printContext.date = dateEl.value;
+        }
+        if (!printContext.date) {
+          try {
+            if (popupWindow && !popupWindow.closed) popupWindow.close();
+          } catch (ignore) {}
+          E.toast('กรุณาเลือกวันที่ที่จะพิมพ์รายงานวัน', 'error');
+          return;
+        }
+      } else {
+        var startEl = document.getElementById('rpt-start');
+        var endEl = document.getElementById('rpt-end');
+        if (startEl && startEl.value) {
+          url += '&start=' + startEl.value;
+          printContext.start_date = startEl.value;
+        }
+        if (endEl && endEl.value) {
+          url += '&end=' + endEl.value;
+          printContext.end_date = endEl.value;
+        }
+      }
+      E.serverCall('createPrintSession', [printContext], function (result) {
+        if (!result || !result.success || !result.token) {
+          try {
+            if (popupWindow && !popupWindow.closed) popupWindow.close();
+          } catch (ignore) {}
+          E.toast((result && result.message) || 'ไม่สามารถเปิดหน้าพิมพ์ได้', 'error');
+          return;
+        }
+        try {
+          localStorage.setItem('att_pending_print_launch', JSON.stringify({
+            token: String(result.token || ''),
+            type: String(type || ''),
+            date: String(printContext.date || ''),
+            start_date: String(printContext.start_date || ''),
+            end_date: String(printContext.end_date || ''),
+            created_at: Date.now()
+          }));
+        } catch (e) {}
+        var finalUrl = url + '&print_token=' + encodeURIComponent(result.token);
+        try {
+          if (popupWindow && !popupWindow.closed) {
+            popupWindow.location = finalUrl;
+            return;
+          }
+        } catch (ignore) {}
+        window.open(finalUrl, '_blank');
+      });
+    }
+
+    function copySummarySnippet() {
+      init();
+      if (!S.summary || !hasSummaryMeasurementData(S.summary)) {
+        E.toast('ยังไม่มีข้อมูลสรุปให้คัดลอก', 'error');
+        return;
+      }
+      copyTextToClipboard_(buildSummarySnippet_(S.summary, S.summary.rows || []), function () {
+        E.toast('คัดลอกข้อความสรุปแล้ว', 'success');
+      }, function () {
+        E.toast('คัดลอกข้อความไม่ได้ ลองอีกครั้ง', 'error');
+      });
+    }
+
+    function copyTextToClipboard_(text, onSuccess, onError) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(onSuccess).catch(function () {
+          fallbackCopyText_(text, onSuccess, onError);
+        });
+        return;
+      }
+      fallbackCopyText_(text, onSuccess, onError);
+    }
+
+    function fallbackCopyText_(text, onSuccess, onError) {
+      try {
+        var textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.setAttribute('readonly', 'readonly');
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        var copied = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        if (copied) {
+          onSuccess();
+          return;
+        }
+      } catch (err) {}
+      onError();
+    }
+    // Public API
+    window.ReportsPage = {
+      renderLoading: renderLoading,
+      render: render,
+      switchTab: switchTab,
+      loadSummary: loadSummary,
+      loadDailyGrid: loadDailyGrid,
+      clearHolidayAttendance: clearHolidayAttendance,
+      exportCSV: exportCSV,
+      openPrint: openPrint,
+      setSearch: setSearch,
+      setQuickFilter: setQuickFilter,
+      openSummaryFilter: openSummaryFilter,
+      clearFilters: clearFilters,
+      setDailySearch: setDailySearch,
+      copySummarySnippet: copySummarySnippet
+    };
+  })();
+</script>

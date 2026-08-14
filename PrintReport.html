@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>พิมพ์รายงาน — ระบบเช็คชื่อ</title>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+/* Print Report Styles — Sarabun font for official docs */
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Sarabun', 'TH SarabunPSK', sans-serif;
+  font-size: 14px; line-height: 1.5; color: #000;
+  background: #e5e5e5;
+}
+
+.toolbar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  background: #fff; border-bottom: 2px solid #7a624f;
+  padding: 8px 16px; display: flex; align-items: center; gap: 8px;
+  flex-wrap: wrap; box-shadow: 0 2px 8px rgba(0,0,0,.1);
+}
+.print-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  vertical-align: middle;
+}
+.print-icon svg {
+  width: 1em;
+  height: 1em;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.toolbar-title { font-weight: 700; font-size: 14px; color: #5b4a3f; display: inline-flex; align-items: center; gap: 6px; }
+.toolbar-title .print-icon svg { width: 1rem; height: 1rem; }
+.toolbar-btn {
+  padding: 6px 16px; border-radius: 8px; border: 1px solid #d6d3d1;
+  background: #fff; font-family: inherit; font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all .15s;
+}
+.toolbar-btn .print-icon svg { width: .95rem; height: .95rem; }
+.toolbar-btn:hover { background: #f5f0eb; }
+.toolbar-btn-primary {
+  background: #7a624f; color: #fff; border-color: #7a624f;
+}
+.toolbar-btn-primary:hover { background: #5b4a3f; }
+.toolbar select {
+  padding: 6px 12px; border-radius: 8px; border: 1px solid #d6d3d1;
+  font-family: inherit; font-size: 13px; background: #fff;
+}
+
+.page-container {
+  max-width: 210mm; margin: 60px auto 20px; padding: 20px;
+}
+
+.page {
+  background: #fff; width: 210mm; max-width: 100%;
+  margin: 0 auto 20px; padding: 14mm 15mm 18mm;
+  box-shadow: 0 2px 16px rgba(0,0,0,.08);
+  margin-bottom: 20px; min-height: 297mm;
+  position: relative;
+}
+
+.rpt-watermark {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  font-size: 76px;
+  font-weight: 700;
+  color: rgba(220, 38, 38, .08);
+  letter-spacing: .08em;
+  transform: rotate(-22deg);
+  text-transform: uppercase;
+}
+
+/* Report Header */
+
+.rpt-header { text-align: center; margin-bottom: 14px; }
+.rpt-header-logo { font-size: 28px; margin-bottom: 4px; }
+.rpt-header-logo .print-icon svg { width: 1.6rem; height: 1.6rem; }
+.rpt-header-school { font-size: 18px; font-weight: 700; }
+.rpt-header-title { font-size: 16px; font-weight: 700; margin-top: 8px; border-bottom: 2px solid #000; display: inline-block; padding-bottom: 2px; }
+.rpt-header-sub { font-size: 14px; margin-top: 6px; }
+.rpt-header-meta { display: flex; justify-content: space-between; font-size: 13px; margin-top: 8px; flex-wrap: wrap; gap: 4px; }
+
+.rpt-header-meta span { white-space: nowrap; }
+
+.rpt-info-strip {
+  margin: 10px 0 12px;
+  border: 1px solid #d6d3d1;
+  background: #faf8f5;
+  padding: 8px 12px;
+  font-size: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 16px;
+}
+
+.rpt-info-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.rpt-info-label { color: #57534e; }
+.rpt-info-value { font-weight: 700; text-align: right; }
+
+/* Table */
+
+.rpt-tbl {
+  width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px;
+}
+.rpt-tbl th, .rpt-tbl td {
+  border: 1px solid #444; padding: 3px 5px; text-align: center; vertical-align: middle;
+}
+.rpt-tbl th {
+  background: #f0ece7; font-weight: 700; font-size: 11px;
+}
+.rpt-tbl td.left { text-align: left; }
+.rpt-tbl td.num { font-weight: 600; }
+.rpt-tbl .row-below { background: #fff0f0; }
+.rpt-tbl .row-total { background: #f0ece7; font-weight: 700; }
+
+/* Summary Box */
+
+.rpt-summary {
+  margin-top: 14px; border: 1px solid #444; padding: 10px 14px;
+  font-size: 13px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 20px;
+}
+.rpt-summary-item { display: flex; justify-content: space-between; }
+.rpt-summary-label { font-weight: 400; }
+.rpt-summary-value { font-weight: 700; }
+
+.rpt-footnotes {
+  margin-top: 14px;
+  border: 1px solid #d6d3d1;
+  background: #faf8f5;
+  padding: 10px 12px;
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.rpt-footnotes-title {
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.rpt-footnote-list {
+  padding-left: 18px;
+}
+
+/* Signature */
+
+.rpt-sig {
+  margin-top: 30px; display: flex; justify-content: space-around; gap: 20px;
+}
+.rpt-sig-box { text-align: center; min-width: 180px; }
+.rpt-sig-line { margin-top: 50px; border-bottom: 1px dotted #000; width: 180px; margin-left: auto; margin-right: auto; }
+.rpt-sig-name { font-size: 12px; margin-top: 4px; }
+.rpt-sig-title { font-size: 12px; color: #555; }
+.rpt-sig, .rpt-footnotes, .rpt-page-meta { break-inside: avoid; page-break-inside: avoid; }
+
+.rpt-page-meta {
+  margin-top: 18px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+  color: #57534e;
+}
+
+.rpt-page-counter { white-space: nowrap; }
+
+.rpt-draft-banner {
+  margin: 0 0 12px;
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.rpt-empty-block {
+  margin-top: 12px;
+  border: 1px solid #d6d3d1;
+  background: #faf8f5;
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+
+.rpt-empty-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #292524;
+}
+
+.rpt-empty-text {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #57534e;
+}
+
+/* Daily Report */
+
+.daily-status { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 4px; }
+.daily-status .print-icon svg { width: .8rem; height: .8rem; }
+.st-present { background: #dcfce7; color: #166534; }
+.st-late { background: #fef3c7; color: #92400e; }
+.st-absent { background: #fee2e2; color: #991b1b; }
+.st-sick_leave { background: #dbeafe; color: #1e40af; }
+.st-personal_leave { background: #e0e7ff; color: #3730a3; }
+
+.st-unchecked { background: #f5f5f4; color: #78716c; }
+
+.daily-summary-bar {
+  display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0;
+  font-size: 13px; font-weight: 600;
+}
+.daily-summary-item { padding: 4px 12px; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px; }
+.daily-summary-item .print-icon svg { width: .85rem; height: .85rem; }
+
+/* Loading / Error */
+
+.loading { text-align: center; padding: 60px 20px; font-size: 16px; color: #78716c; }
+.spinner { width: 32px; height: 32px; border: 3px solid #e7e5e4; border-top-color: #7a624f; border-radius: 50%; animation: spin .6s linear infinite; margin: 0 auto 12px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Print Styles */
+
+@media print {
+  body { background: #fff; }
+  .toolbar { display: none !important; }
+  .page-container { margin: 0; padding: 0; max-width: none; }
+  .page {
+    box-shadow: none; margin: 0; padding: 10mm 12mm 15mm;
+    min-height: auto; page-break-after: always;
+  }
+  .page:last-child { page-break-after: auto; }
+  .rpt-tbl { font-size: 11px; }
+  .rpt-tbl th, .rpt-tbl td { padding: 2px 4px; }
+  .page.page-pp6 { padding: 7mm 9mm 8mm; }
+  .page.page-pp6 .rpt-header { margin-bottom: 8px; }
+  .page.page-pp6 .rpt-header-logo { font-size: 22px; margin-bottom: 2px; }
+  .page.page-pp6 .rpt-header-logo .print-icon svg { width: 1.2rem; height: 1.2rem; }
+  .page.page-pp6 .rpt-header-school { font-size: 16px; }
+  .page.page-pp6 .rpt-header-title { font-size: 14px; margin-top: 5px; }
+  .page.page-pp6 .rpt-header-sub { font-size: 12px; margin-top: 3px; }
+  .page.page-pp6 .rpt-header-meta { font-size: 11px; margin-top: 6px; }
+  .page.page-pp6 .rpt-info-strip { margin: 8px 0 9px; padding: 6px 10px; font-size: 11px; gap: 4px 10px; }
+  .page.page-pp6 .rpt-info-item { gap: 8px; }
+  .page.page-pp6 .rpt-tbl { font-size: 10px; margin-top: 8px; }
+  .page.page-pp6 .rpt-tbl th, .page.page-pp6 .rpt-tbl td { padding: 2px 3px; }
+  .page.page-pp6 .rpt-tbl th { font-size: 9.5px; }
+  .page.page-pp6 .rpt-summary { margin-top: 9px; padding: 8px 10px; font-size: 11px; gap: 4px 14px; }
+  .page.page-pp6 .rpt-footnotes { margin-top: 8px; padding: 7px 10px; font-size: 9.5px; line-height: 1.45; }
+  .page.page-pp6 .rpt-footnotes-title { margin-bottom: 3px; }
+  .page.page-pp6 .rpt-footnote-list { margin: 0; padding-left: 16px; }
+  .page.page-pp6 .rpt-sig { margin-top: 10px; gap: 10px; }
+  .page.page-pp6 .rpt-sig-box { min-width: 135px; }
+  .page.page-pp6 .rpt-sig-line { margin-top: 22px; width: 135px; }
+  .page.page-pp6 .rpt-sig-name, .page.page-pp6 .rpt-sig-title { font-size: 10.5px; }
+  .page.page-pp6 .rpt-page-meta { margin-top: 8px; font-size: 9.5px; }
+  .page.page-daily { padding: 8mm 10mm 10mm; }
+  .page.page-daily .rpt-header { margin-bottom: 8px; }
+  .page.page-daily .rpt-header-school { font-size: 16px; }
+  .page.page-daily .rpt-header-title { font-size: 14px; margin-top: 5px; }
+  .page.page-daily .rpt-header-sub { font-size: 12px; margin-top: 3px; }
+  .page.page-daily .rpt-info-strip { margin: 6px 0; padding: 6px 9px; font-size: 11px; gap: 4px 10px; }
+  .page.page-daily .rpt-info-item { gap: 8px; }
+  .page.page-daily .daily-summary-bar { display: none; }
+  .page.page-daily .rpt-tbl { font-size: 10px; margin-top: 6px; }
+  .page.page-daily .rpt-tbl th, .page.page-daily .rpt-tbl td { padding: 1px 3px; }
+  .page.page-daily .rpt-tbl th { font-size: 9.5px; }
+  .page.page-daily .daily-status { font-size: 10px; padding: 1px 4px; gap: 3px; line-height: 1.2; }
+  .page.page-daily .daily-status .print-icon svg { width: .72rem; height: .72rem; }
+  .page.page-daily .rpt-summary { margin-top: 8px; padding: 7px 9px; font-size: 11px; gap: 4px 12px; }
+  .page.page-daily .rpt-footnotes { margin-top: 8px; padding: 6px 9px; font-size: 9.5px; line-height: 1.4; }
+  .page.page-daily .rpt-footnotes-title { margin-bottom: 2px; }
+  .page.page-daily .rpt-footnote-list { margin: 0; padding-left: 15px; }
+  .page.page-daily .rpt-sig { margin-top: 10px; gap: 10px; }
+  .page.page-daily .rpt-sig-box { min-width: 150px; }
+  .page.page-daily .rpt-sig-line { margin-top: 18px; width: 150px; }
+  .page.page-daily .rpt-sig-name, .page.page-daily .rpt-sig-title { font-size: 10.5px; }
+  .page.page-daily .rpt-page-meta { margin-top: 8px; font-size: 9.5px; }
+}
+
+@page { size: A4 portrait; margin: 5mm; }
+</style>
+</head>
+<body>
+
+<!-- Toolbar (hidden in print) -->
+<div class="toolbar" id="toolbar">
+  <span class="toolbar-title"><span class="print-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 9V3h12v6"></path><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><path d="M6 14h12v7H6z"></path></svg></span><span>พิมพ์รายงาน</span></span>
+  <select id="report-type" onchange="loadReport()">
+    <option value="pp6">ปพ.6 สรุปเวลาเรียน</option>
+    <option value="daily">รายงานประจำวัน</option>
+    <option value="absent">นักเรียนขาดเรียนบ่อย</option>
+  </select>
+  <div id="date-inputs">
+    <input type="date" id="start-date" class="toolbar-btn">
+    <span>-</span>
+    <input type="date" id="end-date" class="toolbar-btn">
+  </div>
+  <div id="single-date-input" style="display:none">
+    <input type="date" id="single-date" class="toolbar-btn">
+  </div>
+  <button class="toolbar-btn toolbar-btn-primary" onclick="loadReport()">โหลดข้อมูล</button>
+  <button class="toolbar-btn toolbar-btn-primary" onclick="window.print()"><span class="print-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 9V3h12v6"></path><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><path d="M6 14h12v7H6z"></path></svg></span><span>พิมพ์ / PDF</span></button>
+  <button class="toolbar-btn" onclick="window.close()">ปิด</button>
+</div>
+
+<!-- Report Content -->
+<div class="page-container" id="page-container">
+  <div class="loading" id="loading"><div class="spinner"></div>กำลังโหลดข้อมูล...</div>
+</div>
+
+<script>
+(function() {
+  var params = {};
+  var printAuth = null;
+  var PENDING_PRINT_LAUNCH_KEY = 'att_pending_print_launch';
+  var url = window.location.search || '';
+  url.replace(/[?&]+([^=&]+)=([^&]*)/gi, function(m, k, v) { params[k] = decodeURIComponent(v); });
+
+  // Set defaults
+  var todayParts = {};
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date()).forEach(function(part) {
+    if (part.type !== 'literal') todayParts[part.type] = part.value;
+  });
+  var y = todayParts.year || '1970';
+  var m = todayParts.month || '01';
+  var d = todayParts.day || '01';
+  var todayStr = y + '-' + m + '-' + d;
+  var monthStart = y + '-' + m + '-01';
+
+  function esc(s) {
+    var node = document.createElement('div');
+    node.textContent = String(s || '');
+    return node.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function formatPercentText(value) {
+    if (value === null || value === undefined || value === '') return '-';
+    var num = Number(value);
+    return isFinite(num) ? (String(num) + '%') : '-';
+  }
+
+  function infoItem(label, value) {
+    return '<div class="rpt-info-item"><span class="rpt-info-label">' + esc(label) + '</span><span class="rpt-info-value">' + value + '</span></div>';
+  }
+
+  function renderReportHtml(html) {
+    document.getElementById('page-container').innerHTML = html;
+    updatePageCounters();
+  }
+
+  function updatePageCounters() {
+    var counters = document.querySelectorAll('[data-page-counter]');
+    var total = counters.length || 1;
+    for (var i = 0; i < counters.length; i++) {
+      counters[i].textContent = 'หน้า ' + (i + 1) + ' / ' + total;
+    }
+  }
+
+  function showError(err) {
+    var message = err && err.message ? err.message : err || 'ไม่ทราบสาเหตุ';
+    var title = 'ยังเปิดหน้าพิมพ์ไม่ได้';
+    var detail = 'ระบบยังสร้างเอกสารหน้านี้ไม่สำเร็จ';
+    var nextStep = 'กลับไปเปิดหน้าพิมพ์ใหม่จากระบบครูอีกครั้ง';
+    if (String(message).indexOf('หมดอายุ') >= 0) {
+      title = 'ลิงก์พิมพ์หมดอายุแล้ว';
+      detail = 'ลิงก์พิมพ์นี้ใช้ต่อไม่ได้แล้ว เพราะเซสชันพิมพ์หมดอายุหรือข้อมูลยืนยันตัวตนไม่ครบ';
+      nextStep = 'กลับไปที่หน้า reports แล้วกดพิมพ์ใหม่จากระบบครูอีกครั้ง';
+    } else if (String(message).indexOf('ไม่ถูกต้อง') >= 0) {
+      title = 'ลิงก์พิมพ์ไม่ถูกต้อง';
+      detail = 'หน้าพิมพ์นี้ไม่ได้เปิดจากลิงก์ที่ระบบออกให้ หรือข้อมูลในลิงก์ไม่ครบ';
+      nextStep = 'กลับไปที่ระบบครู แล้วกดปุ่มพิมพ์จากหน้า reports ใหม่อีกครั้ง';
+    }
+    document.getElementById('page-container').innerHTML =
+      '<div class="page"><div class="rpt-empty-block">' +
+      '<div class="rpt-empty-title">' + esc(title) + '</div>' +
+      '<div class="rpt-empty-text">' + esc(detail) + '</div>' +
+      '<div class="rpt-empty-text" style="margin-top:.65rem;color:#57534e"><strong>สิ่งที่ควรทำต่อ:</strong> ' + esc(nextStep) + '</div>' +
+      '</div></div>';
+  }
+
+  function handlePrintFailure(err) {
+    var message = String(err && err.message ? err.message : err || 'ไม่ทราบสาเหตุ');
+    if (
+      message.indexOf('AUTH_REQUIRED|') === 0 ||
+      message.indexOf('AUTH_EXPIRED|') === 0 ||
+      message.indexOf('PRINT_AUTH_REQUIRED|') === 0 ||
+      message.indexOf('PRINT_AUTH_EXPIRED|') === 0
+    ) {
+      message = message.split('|').slice(1).join('|') || 'เซสชันหมดอายุ กรุณาเปิดหน้าพิมพ์ใหม่จากระบบครู';
+    }
+    showError({ message: message });
+  }
+
+  function stripPrintAuthParams_() {
+    if (!window.history || !window.history.replaceState || !window.URLSearchParams) return;
+    var qs = new URLSearchParams(window.location.search || '');
+    var changed = false;
+    ['print_token', 'session', 'key'].forEach(function(name) {
+      if (qs.has(name)) {
+        qs.delete(name);
+        changed = true;
+      }
+    });
+    if (!changed) return;
+    var next = window.location.pathname + (qs.toString() ? ('?' + qs.toString()) : '');
+    window.history.replaceState({}, document.title, next);
+  }
+
+  function readPendingPrintLaunch_() {
+    try {
+      var raw = localStorage.getItem(PENDING_PRINT_LAUNCH_KEY) || '';
+      if (!raw) return null;
+      var data = JSON.parse(raw);
+      if (!data || !data.token) return null;
+      if ((Date.now() - Number(data.created_at || 0)) > 5 * 60 * 1000) return null;
+      return data;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function clearPendingPrintLaunch_() {
+    try { localStorage.removeItem(PENDING_PRINT_LAUNCH_KEY); } catch (e) {}
+  }
+
+  function consumePendingPrintToken_() {
+    var pending = readPendingPrintLaunch_();
+    if (!pending) return '';
+    var requestedType = String(params.type || '').trim();
+    if (requestedType && requestedType !== String(pending.type || '').trim()) return '';
+    if (requestedType === 'daily') {
+      if (params.date && String(params.date) !== String(pending.date || '')) return '';
+    } else {
+      if (params.start && String(params.start) !== String(pending.start_date || '')) return '';
+      if (params.end && String(params.end) !== String(pending.end_date || '')) return '';
+    }
+    clearPendingPrintLaunch_();
+    return String(pending.token || '');
+  }
+
+  function callPrintApi(fnName, args, onSuccess) {
+    var runner = google.script.run
+      .withSuccessHandler(onSuccess)
+      .withFailureHandler(handlePrintFailure);
+    runner[fnName].apply(runner, (args || []).concat([printAuth || {}]));
+  }
+
+  function applyLockedPrintScope_() {
+    if (!printAuth || !printAuth.report_type) return;
+    var reportTypeEl = document.getElementById('report-type');
+    var startEl = document.getElementById('start-date');
+    var endEl = document.getElementById('end-date');
+    var singleDateEl = document.getElementById('single-date');
+
+    reportTypeEl.value = printAuth.report_type;
+    reportTypeEl.disabled = true;
+    if (printAuth.report_type === 'daily') {
+      if (printAuth.date) singleDateEl.value = printAuth.date;
+      singleDateEl.disabled = true;
+      startEl.disabled = true;
+      endEl.disabled = true;
+    } else {
+      if (printAuth.start_date) startEl.value = printAuth.start_date;
+      if (printAuth.end_date) endEl.value = printAuth.end_date;
+      startEl.disabled = true;
+      endEl.disabled = true;
+      singleDateEl.disabled = true;
+    }
+    reportTypeEl.dispatchEvent(new Event('change'));
+  }
+
+  function ensurePrintAuth_(onReady) {
+    if (printAuth && printAuth.print_session_token) {
+      stripPrintAuthParams_();
+      onReady();
+      return;
+    }
+    var printToken = String(params.print_token || '').trim();
+    if (!printToken) {
+      printToken = consumePendingPrintToken_();
+    }
+    if (printToken) {
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.success && result.auth && result.auth.print_session_token) {
+            printAuth = result.auth;
+            applyLockedPrintScope_();
+            stripPrintAuthParams_();
+            onReady();
+            return;
+          }
+          showError({ message: (result && result.message) || 'ลิงก์พิมพ์หมดอายุ กรุณาเปิดใหม่จากระบบครู' });
+        })
+        .withFailureHandler(handlePrintFailure)
+        .resolvePrintSession(printToken);
+      return;
+    }
+    showError({ message: 'กรุณาเปิดหน้าพิมพ์จากระบบครูอีกครั้ง' });
+  }
+
+  document.getElementById('start-date').value = params.start || monthStart;
+  document.getElementById('end-date').value = params.end || todayStr;
+  document.getElementById('single-date').value = params.date || todayStr;
+  if (params.type) document.getElementById('report-type').value = params.type;
+
+  document.getElementById('report-type').addEventListener('change', function() {
+    var type = this.value;
+    document.getElementById('date-inputs').style.display = (type === 'daily') ? 'none' : '';
+    document.getElementById('single-date-input').style.display = (type === 'daily') ? '' : 'none';
+  });
+  document.getElementById('report-type').dispatchEvent(new Event('change'));
+
+  window.loadReport = function() {
+    var type = document.getElementById('report-type').value;
+    var container = document.getElementById('page-container');
+    container.innerHTML = '<div class="loading"><div class="spinner"></div>กำลังโหลดข้อมูล...</div>';
+
+    if (type === 'pp6') {
+      var s = document.getElementById('start-date').value;
+      var e = document.getElementById('end-date').value;
+      callPrintApi('getPP6Report', [s, e], renderPP6);
+    } else if (type === 'daily') {
+      var date = document.getElementById('single-date').value;
+      callPrintApi('getDailyReport', [date], renderDaily);
+    } else if (type === 'absent') {
+      var s = document.getElementById('start-date').value;
+      var e = document.getElementById('end-date').value;
+      callPrintApi('getAbsentReport', [s, e, null], renderAbsent);
+    }
+  };
+
+  ensurePrintAuth_(function() {
+    if (printAuth && printAuth.report_type) {
+      window.loadReport();
+      return;
+    }
+    var type = document.getElementById('report-type').value;
+    if (type !== 'daily' && !params.start && !params.end) {
+      callPrintApi('getPrintActiveSemesterRange', [], function(sem) {
+        if (sem && sem.from && sem.to) {
+          document.getElementById('start-date').value = sem.from;
+          document.getElementById('end-date').value = sem.to;
+        }
+        window.loadReport();
+      });
+      return;
+    }
+    window.loadReport();
+  });
+
+  function renderPrintIcon(kind) {
+    var svg = '';
+    if (kind === 'school') {
+      svg = '<path d="M3 10.5 12 5l9 5.5"></path><path d="M5 9.5V19h14V9.5"></path><path d="M9 19v-5h6v5"></path>';
+    } else if (kind === 'present') {
+      svg = '<circle cx="12" cy="12" r="9"></circle><path d="m8.5 12 2.5 2.5 4.5-5"></path>';
+    } else if (kind === 'late' || kind === 'unchecked') {
+      svg = '<circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path>';
+    } else if (kind === 'absent') {
+      svg = '<circle cx="12" cy="12" r="9"></circle><path d="m9 9 6 6"></path><path d="m15 9-6 6"></path>';
+    } else if (kind === 'sick_leave') {
+      svg = '<circle cx="12" cy="12" r="9"></circle><path d="M12 8v8"></path><path d="M8 12h8"></path>';
+    } else if (kind === 'personal_leave') {
+      svg = '<path d="M8 2v4"></path><path d="M16 2v4"></path><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M3 10h18"></path>';
+    } else if (kind === 'success') {
+      svg = '<path d="M7 13.5 10.5 17 17 9.5"></path>';
+    }
+    if (!svg) return '';
+    return '<span class="print-icon" aria-hidden="true"><svg viewBox="0 0 24 24">' + svg + '</svg></span>';
+  }
+
+  // ปพ.6 Report
+
+  function renderPP6(data) {
+    var html = '<div class="page page-pp6">';
+    var hasMeasurementData = !!data.has_measurement_data;
+
+    // Header
+    html += '<div class="rpt-header">';
+    html += '<div class="rpt-header-logo">' + renderPrintIcon('school') + '</div>';
+    html += '<div class="rpt-header-school">' + esc(data.school_name) + '</div>';
+    html += '<div class="rpt-header-title">ปพ.6 แบบรายงานผลการเข้าเรียน</div>';
+    html += '<div class="rpt-header-sub">ชั้น ' + esc(data.class_name) + '</div>';
+    html += '<div class="rpt-header-meta">';
+    html += '<span>ตั้งแต่วันที่ ' + esc(data.start_date_th) + ' ถึง ' + esc(data.end_date_th) + '</span>';
+    html += '<span>พิมพ์เมื่อ ' + esc(data.printed_at_th) + '</span>';
+    html += '</div>';
+    html += '</div>';
+
+    html += '<div class="rpt-info-strip">';
+    if (data.semester_name) {
+      html += infoItem('ภาคเรียนที่ใช้อ้างอิง', esc(data.semester_name));
+    }
+    html += infoItem('ช่วงวันที่ที่เลือก', esc(data.start_date_th) + ' - ' + esc(data.end_date_th));
+    html += infoItem('วันเรียนตามปฏิทิน', esc(String(data.school_days || 0)) + ' วัน');
+    html += infoItem('มีข้อมูลที่ยืนยันแล้ว', esc(String(data.confirmed_days_count || 0)) + ' วัน');
+    html += infoItem('จัดพิมพ์โดย', esc(data.printed_by_name || data.teacher_name || '-'));
+    html += infoItem('จำนวนนักเรียนในรายงาน', esc(String(data.total_students || 0)) + ' คน');
+    html += infoItem('พิมพ์เมื่อ', esc(data.printed_at_text || data.printed_at_th || '-'));
+    html += '</div>';
+
+    if (data.calendar_warning && data.calendar_warning.has_mismatch && data.calendar_warning.message) {
+      html += '<div class="rpt-draft-banner">' + esc(data.calendar_warning.message) + '</div>';
+    }
+
+    if (data.out_of_semester) {
+      html += '<div class="rpt-draft-banner">ช่วงวันที่นี้อยู่นอกภาคเรียนที่กำลังใช้งานอยู่ จึงยังไม่สามารถสร้างรายงานสรุปแบบทางการได้</div>';
+    } else if (!hasMeasurementData) {
+      html += '<div class="rpt-draft-banner">ช่วงวันที่นี้ยังไม่มีข้อมูลเช็คชื่อที่ยืนยันแล้ว จึงยังสรุปผลการเข้าเรียนแบบทางการไม่ได้</div>';
+    }
+
+    if (hasMeasurementData) {
+      // Table
+      html += '<table class="rpt-tbl">';
+      html += '<thead><tr>';
+      html += '<th style="width:30px">ที่</th>';
+      html += '<th style="min-width:120px;text-align:left">ชื่อ - สกุล</th>';
+      html += '<th style="width:36px">มา</th>';
+      html += '<th style="width:36px">สาย</th>';
+      html += '<th style="width:36px">ขาด</th>';
+      html += '<th style="width:36px">ป่วย</th>';
+      html += '<th style="width:36px">กิจ</th>';
+      html += '<th style="width:42px">รวม<br>มาเรียน</th>';
+      html += '<th style="width:44px">วันเรียน</th>';
+      html += '<th style="width:42px">%</th>';
+      html += '<th style="min-width:60px">หมายเหตุ</th>';
+      html += '</tr></thead><tbody>';
+
+      var tPresent=0, tLate=0, tAbsent=0, tSick=0, tPersonal=0, tAttend=0, tTotal=0;
+
+      data.rows.forEach(function(r) {
+        var cls = r.below_80 ? ' class="row-below"' : '';
+        html += '<tr' + cls + '>';
+        html += '<td class="num">' + r.student_number + '</td>';
+        html += '<td class="left">' + esc(r.full_name) + '</td>';
+        html += '<td>' + r.present + '</td>';
+        html += '<td>' + r.late + '</td>';
+        html += '<td>' + (r.absent > 0 ? '<b>' + r.absent + '</b>' : '0') + '</td>';
+        html += '<td>' + r.sick_leave + '</td>';
+        html += '<td>' + r.personal_leave + '</td>';
+        html += '<td class="num">' + r.attend_days + '</td>';
+        html += '<td>' + r.total_days + '</td>';
+        html += '<td class="num"' + (r.below_80 ? ' style="color:red"' : '') + '>' + formatPercentText(r.percent) + '</td>';
+        html += '<td class="left" style="font-size:10px">' + esc(r.remark) + '</td>';
+        html += '</tr>';
+        tPresent += r.present; tLate += r.late; tAbsent += r.absent;
+        tSick += r.sick_leave; tPersonal += r.personal_leave;
+        tAttend += r.attend_days; tTotal += r.total_days;
+      });
+
+      // Totals row
+      var tPct = formatPercentText(data.totals && data.totals.attendance_percent);
+      html += '<tr class="row-total">';
+      html += '<td colspan="2">รวมทั้งหมด</td>';
+      html += '<td>' + tPresent + '</td><td>' + tLate + '</td><td>' + tAbsent + '</td>';
+      html += '<td>' + tSick + '</td><td>' + tPersonal + '</td>';
+      html += '<td>' + tAttend + '</td><td>' + tTotal + '</td>';
+      html += '<td>' + tPct + '</td><td></td>';
+      html += '</tr>';
+      html += '</tbody></table>';
+    } else {
+      html += '<div class="rpt-empty-block">';
+      html += '<div class="rpt-empty-title">ยังไม่มีข้อมูลพอสำหรับออก ปพ.6</div>';
+      html += '<div class="rpt-empty-text">เมื่อยืนยันการเช็คชื่ออย่างน้อย 1 วันในช่วงวันที่ที่เลือกแล้ว รายงานสรุปผลการเข้าเรียนจะพร้อมพิมพ์ในรูปแบบทางการ</div>';
+      html += '<div class="rpt-empty-text" style="margin-top:.65rem;color:#57534e"><strong>สิ่งที่ควรทำต่อ:</strong> กลับไปหน้าเช็กชื่อหรือรายงาน แล้วเลือกวันที่ที่เคยบันทึกไว้ จากนั้นกดยืนยันวันนี้ก่อนอย่างน้อย 1 วัน</div>';
+      html += '</div>';
+    }
+
+    // Summary box
+    html += '<div class="rpt-summary">';
+    html += sumItem('วันเรียนตามปฏิทิน', data.school_days + ' วัน');
+    html += sumItem('วันที่มีข้อมูลยืนยันแล้ว', data.confirmed_days_count + ' วัน');
+    html += sumItem('จำนวนนักเรียนทั้งหมด', data.total_students + ' คน');
+    html += sumItem('นักเรียนชาย', data.male_count + ' คน');
+    html += sumItem('นักเรียนหญิง', data.female_count + ' คน');
+    html += sumItem('มาเรียน ≥ 80%', data.count_above_80 + ' คน');
+    html += sumItem('มาเรียน < 80%', '<span style="color:red;font-weight:700">' + data.count_below_80 + ' คน</span>');
+    html += '</div>';
+
+    html += '<div class="rpt-footnotes">';
+    html += '<div class="rpt-footnotes-title">คำอธิบายการคำนวณ</div>';
+    html += '<ol class="rpt-footnote-list">';
+    html += '<li>รายงานนี้นับจากข้อมูลการเช็คชื่อที่ยืนยันแล้วเท่านั้น</li>';
+    html += '<li>วันหยุดในปฏิทินวันเรียนจะไม่ถูกนับเป็นวันเรียน และข้อมูลเช็คชื่อที่อยู่ในวันหยุดจะไม่ถูกนำมาคิดร้อยละ</li>';
+    html += '<li>สาย นับเป็นการมาเรียน</li>';
+    html += '<li>ลาป่วยและลากิจไม่นับเป็นวันฐานคำนวณร้อยละการมาเรียน จึงอาจแสดงเป็น - หากไม่มีวันมา/สาย/ขาด</li>';
+    html += '<li>คอลัมน์ วันเรียน หมายถึงจำนวนวันเรียนตามปฏิทินที่นักเรียนควรเข้าเรียนในช่วงวันที่เลือก</li>';
+    html += '</ol>';
+    html += '</div>';
+
+    // Signature
+    html += '<div class="rpt-sig">';
+    html += sigBox('ครูประจำชั้น', data.teacher_name);
+    html += sigBox('หัวหน้าฝ่ายวิชาการ', '');
+    html += sigBox('ผู้อำนวยการโรงเรียน', '');
+    html += '</div>';
+
+    html += '<div class="rpt-page-meta">';
+    html += '<span>เอกสารสรุปผลการเข้าเรียนสำหรับใช้อ้างอิงทางวิชาการ</span>';
+    html += '</div>';
+
+    html += '</div>';
+
+    renderReportHtml(html);
+  }
+
+  // Daily Report
+
+  function renderDaily(data) {
+    var html = '<div class="page page-daily' + (data.is_draft ? ' page-draft' : '') + '">';
+
+    if (data.is_draft) {
+      html += '<div class="rpt-watermark">ฉบับร่าง</div>';
+    }
+
+    html += '<div class="rpt-header">';
+    html += '<div class="rpt-header-school">' + esc(data.school_name) + '</div>';
+    html += '<div class="rpt-header-title">รายงานเช็คชื่อประจำวัน</div>';
+    html += '<div class="rpt-header-sub">ชั้น ' + esc(data.class_name) + ' — ' + esc(data.date_th) + '</div>';
+    html += '</div>';
+
+    if (data.is_draft) {
+      html += '<div class="rpt-draft-banner">เอกสารนี้เป็นฉบับร่างจากวันที่ยังไม่ยืนยัน ตัวเลขอาจเปลี่ยนได้จนกว่าจะกดยืนยันวันนี้</div>';
+      html += '<div class="rpt-empty-text" style="margin:0 0 1rem 0;color:#57534e"><strong>สิ่งที่ควรทำต่อ:</strong> หากต้องการเอกสารทางการ ให้กลับไปหน้าเช็กชื่อแล้วกดยืนยันวันนี้ก่อน จากนั้นค่อยเปิดหน้าพิมพ์ใหม่</div>';
+    }
+
+    html += '<div class="rpt-info-strip">';
+    html += infoItem('วันที่รายงาน', esc(data.date_th));
+    html += infoItem('สถานะข้อมูล', esc(data.status_label || (data.is_official ? 'ยืนยันแล้ว' : 'ฉบับร่าง')));
+    html += infoItem('จัดพิมพ์โดย', esc(data.printed_by_name || data.teacher_name || '-'));
+    html += infoItem('จำนวนนักเรียนในรายงาน', esc(String(data.total_students || 0)) + ' คน');
+    if (data.semester_name) {
+      html += infoItem('ภาคเรียนที่ใช้อ้างอิง', esc(data.semester_name));
+    }
+    html += infoItem('พิมพ์เมื่อ', esc(data.printed_at_text || data.printed_at_th || '-'));
+    html += '</div>';
+
+    // Summary bar
+    var s = data.summary;
+    html += '<div class="daily-summary-bar">';
+    html += '<span class="daily-summary-item st-present">' + renderPrintIcon('present') + '<span>มาเรียน ' + s.present + '</span></span>';
+    html += '<span class="daily-summary-item st-late">' + renderPrintIcon('late') + '<span>สาย ' + s.late + '</span></span>';
+    html += '<span class="daily-summary-item st-absent">' + renderPrintIcon('absent') + '<span>ขาด ' + s.absent + '</span></span>';
+    html += '<span class="daily-summary-item st-sick_leave">' + renderPrintIcon('sick_leave') + '<span>ลาป่วย ' + s.sick_leave + '</span></span>';
+    html += '<span class="daily-summary-item st-personal_leave">' + renderPrintIcon('personal_leave') + '<span>ลากิจ ' + s.personal_leave + '</span></span>';
+    if (s.unchecked > 0) html += '<span class="daily-summary-item st-unchecked">— ยังไม่เช็ค ' + s.unchecked + '</span>';
+    html += '</div>';
+
+    // Table
+    html += '<table class="rpt-tbl">';
+    html += '<thead><tr><th style="width:30px">ที่</th><th style="text-align:left">ชื่อ - สกุล</th><th style="width:80px">สถานะ</th><th style="text-align:left">หมายเหตุ</th></tr></thead>';
+    html += '<tbody>';
+
+    data.rows.forEach(function(r) {
+      html += '<tr>';
+      html += '<td class="num">' + r.student_number + '</td>';
+      html += '<td class="left">' + esc(r.full_name) + '</td>';
+      html += '<td><span class="daily-status st-' + r.status_code + '">' + renderPrintIcon(r.status_code) + ' ' + esc(r.status_label) + '</span></td>';
+      html += '<td class="left" style="font-size:12px">' + esc(r.note) + '</td>';
+      html += '</tr>';
+    });
+
+    html += '</tbody></table>';
+
+    // Summary footer
+    var total = data.total_students;
+    var checked = total - (s.unchecked || 0);
+    html += '<div class="rpt-summary" style="grid-template-columns:1fr 1fr 1fr">';
+    html += sumItem('นักเรียนทั้งหมด', total + ' คน');
+    html += sumItem('เช็คแล้ว', checked + ' คน');
+    html += sumItem('มาเรียน', s.present + ' คน');
+    html += '</div>';
+
+    html += '<div class="rpt-footnotes">';
+    html += '<div class="rpt-footnotes-title">หมายเหตุ</div>';
+    html += '<ol class="rpt-footnote-list">';
+    html += data.is_draft
+      ? '<li>เอกสารนี้เป็นฉบับร่างสำหรับตรวจทานหรือใช้งานภายในก่อนกดยืนยันวันนี้</li>'
+      : '<li>รายงานนี้แสดงเฉพาะวันที่ยืนยันแล้ว</li>';
+    html += '<li>ถ้ามีการแก้ไขข้อมูลหลังพิมพ์ ควรเปิดหน้าพิมพ์ใหม่เพื่อให้ข้อมูลตรงกับระบบล่าสุด</li>';
+    html += '</ol>';
+    html += '</div>';
+
+    // Signature
+    html += '<div class="rpt-sig">';
+    html += sigBox('ครูประจำชั้น', data.teacher_name);
+    html += sigBox('หัวหน้าฝ่ายวิชาการ', '');
+    html += '</div>';
+
+    html += '<div class="rpt-page-meta">';
+    html += '<span>' + esc(data.is_draft ? 'รายงานประจำวันฉบับร่างสำหรับตรวจทานก่อนยืนยัน' : 'รายงานเช็คชื่อประจำวันฉบับยืนยันแล้วสำหรับใช้อ้างอิงทางการภายในชั้นเรียน') + '</span>';
+    html += '</div>';
+
+    html += '</div>';
+    renderReportHtml(html);
+  }
+
+  // Absent Report
+
+  function renderAbsent(data) {
+    var html = '<div class="page">';
+
+    html += '<div class="rpt-header">';
+    html += '<div class="rpt-header-school">' + esc(data.school_name) + '</div>';
+    html += '<div class="rpt-header-title">รายงานนักเรียนที่มีปัญหาการเข้าเรียน</div>';
+    html += '<div class="rpt-header-sub">ชั้น ' + esc(data.class_name) + '</div>';
+    html += '<div class="rpt-header-sub">' + esc(data.start_date_th) + ' — ' + esc(data.end_date_th) + '</div>';
+    html += '</div>';
+
+    html += '<div class="rpt-info-strip">';
+    if (data.semester_name) {
+      html += infoItem('ภาคเรียนที่ใช้อ้างอิง', esc(data.semester_name));
+    }
+    html += infoItem('ช่วงวันที่ที่เลือก', esc(data.start_date_th) + ' - ' + esc(data.end_date_th));
+    html += infoItem('เกณฑ์คัดกรอง', 'ขาด ≥ ' + esc(String(data.threshold || 0)) + ' วัน หรือมาเรียนต่ำกว่า 80%');
+    html += infoItem('จัดพิมพ์โดย', esc(data.printed_by_name || data.teacher_name || '-'));
+    html += infoItem('จำนวนนักเรียนที่ถูกคัดกรอง', esc(String(data.total_flagged || 0)) + ' คน');
+    html += infoItem('พิมพ์เมื่อ', esc(data.printed_at_text || data.printed_at_th || '-'));
+    html += '</div>';
+
+    if (data.out_of_semester) {
+      html += '<div class="rpt-draft-banner">ช่วงวันที่นี้อยู่นอกภาคเรียนที่กำลังใช้งานอยู่ จึงยังไม่สามารถออกรายงานติดตามแบบทางการได้</div>';
+    } else if (data.calendar_warning && data.calendar_warning.has_mismatch && data.calendar_warning.message) {
+      html += '<div class="rpt-draft-banner">' + esc(data.calendar_warning.message) + '</div>';
+    }
+
+    if (data.out_of_semester) {
+      html += '<div class="rpt-empty-block">';
+      html += '<div class="rpt-empty-title">ยังไม่สามารถสร้างรายงานจากช่วงวันที่นี้ได้</div>';
+      html += '<div class="rpt-empty-text">กรุณากลับไปเลือกช่วงวันที่ที่อยู่ในภาคเรียนที่ใช้งานอยู่ แล้วโหลดข้อมูลใหม่อีกครั้ง</div>';
+      html += '<div class="rpt-empty-text" style="margin-top:.65rem;color:#57534e"><strong>สิ่งที่ควรทำต่อ:</strong> กลับไปหน้า reports แล้วเลือกช่วงวันที่ใหม่ให้ตรงกับภาคเรียนปัจจุบัน</div>';
+      html += '</div>';
+    } else if (data.rows.length === 0) {
+      html += '<div class="rpt-empty-block"><div class="rpt-empty-title">ไม่พบนักเรียนที่เข้าข่ายต้องติดตามเพิ่ม</div><div class="rpt-empty-text">จากเกณฑ์คัดกรองที่เลือกในช่วงวันที่นี้ ยังไม่พบรายชื่อนักเรียนที่ขาดเรียนถึงเกณฑ์หรือมีเปอร์เซ็นต์มาเรียนต่ำกว่า 80%</div><div class="rpt-empty-text" style="margin-top:.65rem;color:#57534e"><strong>สิ่งที่ควรทำต่อ:</strong> ลองขยายช่วงวันที่ หรือกลับไปยืนยันข้อมูลย้อนหลังเพิ่ม หากต้องการดูแนวโน้มการขาดเรียนต่อเนื่อง</div></div>';
+    } else {
+      html += '<p style="font-size:13px;margin:10px 0">นักเรียนที่ขาดเรียน ≥ ' + data.threshold + ' วัน หรือ มาเรียนต่ำกว่า 80% — จำนวน <b>' + data.total_flagged + '</b> คน</p>';
+
+      html += '<table class="rpt-tbl">';
+      html += '<thead><tr>';
+      html += '<th>ที่</th><th style="text-align:left">ชื่อ - สกุล</th>';
+      html += '<th>มา</th><th>สาย</th><th>ขาด</th><th>ป่วย</th><th>กิจ</th>';
+      html += '<th>รวม</th><th>%มาเรียน</th>';
+      html += '</tr></thead><tbody>';
+
+      data.rows.forEach(function(r, i) {
+        html += '<tr class="row-below">';
+        html += '<td class="num">' + (i + 1) + '</td>';
+        html += '<td class="left">' + esc(r.full_name);
+        if (r.nickname) html += ' (' + esc(r.nickname) + ')';
+        html += '</td>';
+        html += '<td>' + r.present_count + '</td>';
+        html += '<td>' + r.late_count + '</td>';
+        html += '<td><b>' + r.absent_count + '</b></td>';
+        html += '<td>' + r.sick_leave_count + '</td>';
+        html += '<td>' + r.personal_leave_count + '</td>';
+        html += '<td>' + r.total_days + '</td>';
+        html += '<td style="color:red;font-weight:700">' + formatPercentText(r.attendance_percent) + '</td>';
+        html += '</tr>';
+      });
+
+      html += '</tbody></table>';
+    }
+
+    html += '<div class="rpt-footnotes">';
+    html += '<div class="rpt-footnotes-title">หมายเหตุ</div>';
+    html += '<ol class="rpt-footnote-list">';
+    html += '<li>รายงานนี้ใช้สำหรับคัดกรองนักเรียนที่ควรติดตามเพิ่มเติม ไม่ใช่การตัดสินผลการเรียน</li>';
+    html += '<li>สายนับเป็นการมาเรียน ส่วนลาป่วยและลากิจไม่นับเป็นฐานคำนวณร้อยละการมาเรียน</li>';
+    html += '</ol>';
+    html += '</div>';
+
+    // Signature
+    html += '<div class="rpt-sig">';
+    html += sigBox('ครูประจำชั้น', data.teacher_name);
+    html += sigBox('หัวหน้าฝ่ายวิชาการ', '');
+    html += '</div>';
+
+    html += '<div class="rpt-page-meta">';
+    html += '<span>รายงานเพื่อใช้ติดตามนักเรียนที่ควรดูแลเพิ่มเติม</span>';
+    html += '</div>';
+
+    html += '</div>';
+    renderReportHtml(html);
+  }
+
+  // Helpers
+
+  function sumItem(label, value) {
+    return '<div class="rpt-summary-item"><span class="rpt-summary-label">' + label + '</span><span class="rpt-summary-value">' + value + '</span></div>';
+  }
+
+  function sigBox(title, name) {
+    return '<div class="rpt-sig-box">' +
+      '<div class="rpt-sig-line"></div>' +
+      '<div class="rpt-sig-name">(' + (name ? esc(name) : '..............................') + ')</div>' +
+      '<div class="rpt-sig-title">' + title + '</div></div>';
+  }
+
+})();
+</script>
+</body>
+</html>

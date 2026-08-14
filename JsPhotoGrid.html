@@ -1,0 +1,300 @@
+<script>
+/* ═══════════════════════════════════════════════════
+   Photo Grid Attendance View — JsPhotoGrid.html
+   ═══════════════════════════════════════════════════ */
+
+(function() {
+  'use strict';
+
+  var STATUS_CYCLE = ['', 'present', 'late', 'absent', 'sick_leave', 'personal_leave'];
+  var STATUS_INFO = {
+    present: { label: 'มาเรียน', color: 'green' },
+    late: { label: 'สาย', color: 'amber' },
+    absent: { label: 'ขาด', color: 'red' },
+    sick_leave: { label: 'ลาป่วย', color: 'blue' },
+    personal_leave: { label: 'ลากิจ', color: 'indigo' }
+  };
+  var PALETTE = ['#f87171','#fb923c','#fbbf24','#a3e635','#34d399','#22d3ee','#60a5fa','#a78bfa','#f472b6','#e879f9'];
+  var longPressTimer = null;
+  var longPressTarget = null;
+  var LONG_PRESS_MS = 500;
+  var lazyImageObserver = null;
+
+  function esc(str) {
+    if (!str) return '';
+    var div = document.createElement('div'); div.textContent = String(str); return div.innerHTML;
+  }
+
+  function renderPhotoIcon(kind) {
+    var svg = '';
+    if (kind === 'present') {
+      svg = '<circle cx="12" cy="12" r="9"></circle><path d="m8.5 12 2.5 2.5 4.5-5"></path>';
+    } else if (kind === 'late') {
+      svg = '<circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path>';
+    } else if (kind === 'absent') {
+      svg = '<circle cx="12" cy="12" r="9"></circle><path d="m9 9 6 6"></path><path d="m15 9-6 6"></path>';
+    } else if (kind === 'sick_leave') {
+      svg = '<circle cx="12" cy="12" r="9"></circle><path d="M12 8v8"></path><path d="M8 12h8"></path>';
+    } else if (kind === 'personal_leave') {
+      svg = '<path d="M9 3h6v3H9z"></path><path d="M7 6h10a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z"></path><path d="M9 11h6"></path><path d="M9 15h6"></path>';
+    } else if (kind === 'search') {
+      svg = '<circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path>';
+    } else if (kind === 'flag') {
+      svg = '<path d="M4 21V4"></path><path d="M4 4h12l-2.5 4L16 12H4"></path>';
+    } else if (kind === 'user') {
+      svg = '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle>';
+    } else if (kind === 'undo') {
+      svg = '<path d="M9 14 4 9l5-5"></path><path d="M4 9h9a5 5 0 0 1 0 10h-1"></path>';
+    }
+    if (!svg) return '';
+    return '<span class="inline-ui-icon" aria-hidden="true"><svg viewBox="0 0 24 24">' + svg + '</svg></span>';
+  }
+
+  function loadPhotoImage_(img) {
+    if (!img || img.getAttribute('data-photo-loaded') === 'true') return;
+    var src = img.getAttribute('data-photo-src');
+    if (!src) return;
+    img.setAttribute('data-photo-loaded', 'true');
+    img.src = src;
+  }
+
+  function getPhotoCardPlaceholder_(bgColor) {
+    return '<div class="photo-avatar" style="background-color:' + bgColor + ';overflow:hidden;padding:0">' +
+      '<span class="photo-avatar-icon">' + renderPhotoIcon('user') + '</span>' +
+      '</div>';
+  }
+
+  function ensureLazyObserver_() {
+    if (lazyImageObserver || typeof IntersectionObserver !== 'function') return lazyImageObserver;
+    lazyImageObserver = new IntersectionObserver(function(entries) {
+      entries.forEach(function(entry) {
+        if (!entry.isIntersecting && entry.intersectionRatio <= 0) return;
+        var target = entry.target;
+        loadPhotoImage_(target);
+        try { lazyImageObserver.unobserve(target); } catch (e) {}
+      });
+    }, {
+      root: null,
+      rootMargin: '220px 0px',
+      threshold: 0.01
+    });
+    return lazyImageObserver;
+  }
+
+  function hydrateGridImages_(root) {
+    root = root || document;
+    var images = root.querySelectorAll ? root.querySelectorAll('img[data-photo-src]') : [];
+    if (!images || !images.length) return;
+
+    var observer = ensureLazyObserver_();
+    if (!observer) {
+      Array.prototype.forEach.call(images, function(img) {
+        loadPhotoImage_(img);
+      });
+      return;
+    }
+
+    Array.prototype.forEach.call(images, function(img) {
+      if (img.getAttribute('data-photo-loaded') === 'true') return;
+      observer.observe(img);
+    });
+  }
+
+  function renderGrid(students, isConfirmed) {
+    var filtered = Array.isArray(students) ? students : [];
+
+    if (filtered.length === 0) {
+      return '<div class="empty-state"><div class="empty-icon">' + renderPhotoIcon('search') + '</div><div class="empty-title">ไม่พบนักเรียน</div></div>';
+    }
+
+    var html = '<div class="photo-grid">';
+    filtered.forEach(function(s) {
+      var att = s.attendance;
+      var statusCode = att ? att.status_code : '';
+      var info = STATUS_INFO[statusCode];
+      var bgColor = PALETTE[(s.student_number - 1) % PALETTE.length];
+
+      var cardClass = 'photo-card';
+      if (att) cardClass += ' photo-card-checked';
+      if (info) cardClass += ' photo-card-' + info.color;
+      if (s.is_flagged) cardClass += ' photo-card-flagged';
+
+      html += '<div class="' + cardClass + '" data-snum="' + s.student_number + '"';
+      if (!isConfirmed) {
+        html += ' onclick="PhotoGrid.tap(' + s.student_number + ')"';
+        html += ' oncontextmenu="PhotoGrid.longPress(' + s.student_number + ',event);return false"';
+      }
+      html += '>';
+
+      // Avatar
+      var photoUrl = window.AppState && window.AppState.studentPhotos ? window.AppState.studentPhotos[s.student_number] : null;
+      if (photoUrl) {
+        html += '<div class="photo-avatar" style="background-color:' + bgColor + ';overflow:hidden;padding:0">';
+        html += '<span class="photo-avatar-icon">' + renderPhotoIcon('user') + '</span>';
+        html += '<img data-photo-src="' + esc(photoUrl) + '" alt="' + esc(s.full_name || '') + '" loading="lazy" decoding="async" fetchpriority="low" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block" onload="this.previousElementSibling.style.display=\'none\';this.style.opacity=\'1\'" onerror="this.style.display=\'none\';this.previousElementSibling.style.display=\'inline-flex\'">';
+        html += '</div>';
+      } else {
+        html += getPhotoCardPlaceholder_(bgColor);
+      }
+
+      // Status badge overlay
+      if (info) {
+        html += '<div class="photo-badge photo-badge-' + info.color + '">' + renderPhotoIcon(statusCode) + '</div>';
+      }
+
+      // Info
+      html += '<div class="photo-info">';
+      html += '<div class="photo-num">' + s.student_number + '</div>';
+      html += '<div class="photo-name">' + esc(s.nickname || s.full_name.split(' ')[0].replace(/^ด\.\w\./, '')) + '</div>';
+      if (info) {
+        html += '<div class="photo-status-text photo-status-' + info.color + '">' + info.label + '</div>';
+      }
+      html += '</div>';
+
+      // Flag indicator
+      if (s.is_flagged) {
+        html += '<div class="photo-flag">' + renderPhotoIcon('flag') + '</div>';
+      }
+
+      html += '</div>';
+    });
+    html += '</div>';
+
+    return html;
+  }
+
+  function tap(studentNumber) {
+    var S = window.AppState;
+    if (!S.attendance) return;
+    var isConfirmed = S.attendance.day_status && S.attendance.day_status.status === 'confirmed';
+    if (isConfirmed) return;
+
+    var student = S.attendance.students.find(function(s) { return s.student_number === studentNumber; });
+    if (!student) return;
+
+    var currentCode = student.attendance ? student.attendance.status_code : '';
+    var currentIdx = STATUS_CYCLE.indexOf(currentCode);
+    var nextIdx = (currentIdx + 1) % STATUS_CYCLE.length;
+    var nextCode = STATUS_CYCLE[nextIdx];
+
+    if (nextCode === '') {
+      // Undo
+      window.App.undoStatus(studentNumber);
+    } else {
+      window.App.markStatus(studentNumber, nextCode);
+    }
+  }
+
+  function longPress(studentNumber, event) {
+    if (event) event.preventDefault();
+    showQuickMenu(studentNumber, event);
+  }
+
+  function showQuickMenu(studentNumber, event) {
+    removeQuickMenu();
+
+    var S = window.AppState;
+    if (!S.attendance) return;
+    var isConfirmed = S.attendance.day_status && S.attendance.day_status.status === 'confirmed';
+    if (isConfirmed) return;
+
+    var student = S.attendance.students.find(function(s) { return s.student_number === studentNumber; });
+    if (!student) return;
+
+    var currentCode = student.attendance ? student.attendance.status_code : '';
+
+    // Create backdrop
+    var backdrop = document.createElement('div');
+    backdrop.className = 'photo-menu-backdrop';
+    backdrop.onclick = removeQuickMenu;
+
+    // Create menu
+    var menu = document.createElement('div');
+    menu.className = 'photo-menu';
+
+    // Header
+    menu.innerHTML = '<div class="photo-menu-header">เลขที่ ' + studentNumber + ' ' + esc(student.nickname || student.full_name) + '</div>';
+
+    // Status buttons
+    var btnWrap = document.createElement('div');
+    btnWrap.className = 'photo-menu-buttons';
+
+    Object.keys(STATUS_INFO).forEach(function(code) {
+      var info = STATUS_INFO[code];
+      var btn = document.createElement('button');
+      btn.className = 'photo-menu-btn photo-menu-btn-' + info.color;
+      if (currentCode === code) btn.classList.add('active');
+      btn.innerHTML = renderPhotoIcon(code) + ' ' + info.label;
+      btn.onclick = function() {
+        removeQuickMenu();
+        if (currentCode === code) {
+          window.App.undoStatus(studentNumber);
+        } else {
+          window.App.markStatus(studentNumber, code);
+        }
+      };
+      btnWrap.appendChild(btn);
+    });
+    menu.appendChild(btnWrap);
+
+    // Undo button
+    if (currentCode) {
+      var undoBtn = document.createElement('button');
+      undoBtn.className = 'photo-menu-btn photo-menu-btn-undo';
+      undoBtn.innerHTML = renderPhotoIcon('undo') + ' ยกเลิก';
+      undoBtn.onclick = function() { removeQuickMenu(); window.App.undoStatus(studentNumber); };
+      menu.appendChild(undoBtn);
+    }
+
+    document.body.appendChild(backdrop);
+    document.body.appendChild(menu);
+
+    // Position near tap
+    if (event && event.clientY) {
+      var top = Math.min(event.clientY - 40, window.innerHeight - menu.offsetHeight - 20);
+      menu.style.top = Math.max(20, top) + 'px';
+    }
+  }
+
+  function removeQuickMenu() {
+    var existing = document.querySelectorAll('.photo-menu, .photo-menu-backdrop');
+    existing.forEach(function(el) { el.remove(); });
+  }
+
+  // Setup long press via touch events
+  function setupTouchHandlers() {
+    document.addEventListener('touchstart', function(e) {
+      var card = e.target.closest('.photo-card[data-snum]');
+      if (!card) return;
+      var snum = parseInt(card.getAttribute('data-snum'), 10);
+      longPressTarget = snum;
+      longPressTimer = setTimeout(function() {
+        longPress(snum, e.touches[0]);
+        longPressTarget = null;
+      }, LONG_PRESS_MS);
+    }, { passive: true });
+
+    document.addEventListener('touchend', function() {
+      if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+    }, { passive: true });
+
+    document.addEventListener('touchmove', function() {
+      if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+    }, { passive: true });
+  }
+
+  // Init once
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setupTouchHandlers);
+  } else {
+    setupTouchHandlers();
+  }
+
+  window.PhotoGrid = {
+    renderGrid: renderGrid,
+    tap: tap,
+    longPress: longPress,
+    afterRender: hydrateGridImages_
+  };
+})();
+</script>
