@@ -198,6 +198,48 @@ function deleteRow_(sheetName, rowIndex) {
   sheet.deleteRow(rowIndex);
 }
 
+/**
+ * Delete rows by 1-based row index. Header row (1) is never deleted.
+ * Contiguous rows are deleted as one block, bottom-up, so the remaining
+ * indexes stay valid while deleting.
+ * @returns {number} จำนวนแถวที่ลบจริง
+ */
+function deleteSheetRowsByIndexes_(sheet, rowIndexes) {
+  if (!sheet) return 0;
+
+  var uniqueRows = {};
+  (rowIndexes || []).forEach(function(rowIndex) {
+    rowIndex = parseInt(rowIndex, 10) || 0;
+    if (rowIndex > 1) uniqueRows[rowIndex] = true;
+  });
+
+  var rows = Object.keys(uniqueRows).map(function(rowIndex) {
+    return parseInt(rowIndex, 10);
+  }).sort(function(a, b) {
+    return b - a;
+  });
+  if (!rows.length) return 0;
+
+  var deleted = 0;
+  var blockEnd = rows[0];
+  var blockStart = rows[0];
+
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i] === blockStart - 1) {
+      blockStart = rows[i];
+      continue;
+    }
+    sheet.deleteRows(blockStart, blockEnd - blockStart + 1);
+    deleted += blockEnd - blockStart + 1;
+    blockStart = rows[i];
+    blockEnd = rows[i];
+  }
+
+  sheet.deleteRows(blockStart, blockEnd - blockStart + 1);
+  deleted += blockEnd - blockStart + 1;
+  return deleted;
+}
+
 // ─── Settings Helpers ────────────────────────────
 
 function getSettings_() {

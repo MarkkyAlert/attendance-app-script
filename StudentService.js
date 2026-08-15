@@ -1404,8 +1404,9 @@ function ensureStudentRosterColumns_() {
 }
 
 function ensureSheetColumnHeader_(sheet, colIndex, headerLabel) {
-  if (sheet.getLastColumn() < colIndex) {
-    sheet.insertColumnsAfter(sheet.getLastColumn(), colIndex - sheet.getLastColumn());
+  var maxColumns = sheet.getMaxColumns();
+  if (maxColumns < colIndex) {
+    sheet.insertColumnsAfter(maxColumns, colIndex - maxColumns);
   }
   var header = String(sheet.getRange(1, colIndex).getValue() || '').trim();
   if (header !== headerLabel) {

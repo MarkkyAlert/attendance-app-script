@@ -187,8 +187,8 @@ function restoreBackup(previewToken, auth) {
     lock.waitLock(30000);
     try {
       var beforeSnapshot = buildBackupSnapshot_();
-      setupSystem_();
       try {
+        ensureSystemSheets_();
         restoreBackupSnapshotUnsafe_(snapshot);
       } catch (restoreError) {
         try {

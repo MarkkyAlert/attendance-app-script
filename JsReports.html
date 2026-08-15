@@ -1442,13 +1442,13 @@
           return;
         }
 
-        var downloadWindow = E.openDownloadWindow(result.url, 'เบราว์เซอร์บล็อกหน้าดาวน์โหลด กรุณาอนุญาต pop-up แล้วลองใหม่');
-        if (!downloadWindow) {
-          E.toast('เบราว์เซอร์บล็อกหน้าดาวน์โหลด กรุณาอนุญาต pop-up แล้วลองใหม่', 'error');
-          return;
+        // openDownloadWindow แจ้ง toast เองอยู่แล้วเมื่อถูกบล็อก จึงไม่ต้องแจ้งซ้ำ
+        var opened = E.openDownloadWindow(result.url, 'เบราว์เซอร์บล็อกหน้าดาวน์โหลด กรุณาอนุญาต pop-up แล้วลองใหม่');
+        if (opened) {
+          E.toast('ดาวน์โหลด ' + (result.filename || 'CSV') + ' สำเร็จ', 'success');
         }
 
-        E.toast('ดาวน์โหลด ' + (result.filename || 'CSV') + ' สำเร็จ', 'success');
+        // ต้องนัดลบไฟล์ชั่วคราวเสมอ แม้ pop-up ถูกบล็อก ไม่งั้นไฟล์ค้างใน Drive ของครูถาวร
         if (result.file_id) {
           setTimeout(function () {
             E.serverCall('cleanupCSVFile', [result.file_id], function () {});

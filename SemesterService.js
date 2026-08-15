@@ -542,8 +542,9 @@ function ensureSemesterSchema_(sheet) {
     sheet.insertColumnBefore(1);
   }
 
-  if (sheet.getLastColumn() < SEMESTER_COL.ACTIVE) {
-    sheet.insertColumnsAfter(sheet.getLastColumn(), SEMESTER_COL.ACTIVE - sheet.getLastColumn());
+  var maxColumns = sheet.getMaxColumns();
+  if (maxColumns < SEMESTER_COL.ACTIVE) {
+    sheet.insertColumnsAfter(maxColumns, SEMESTER_COL.ACTIVE - maxColumns);
   }
 
   sheet.getRange(1, 1, 1, SEMESTER_COL.ACTIVE).setValues([['id', 'ชื่อภาคเรียน', 'วันเริ่มต้น', 'วันสิ้นสุด', 'ใช้งาน']]);

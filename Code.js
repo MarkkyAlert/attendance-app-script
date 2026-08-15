@@ -328,7 +328,12 @@ function getSettingsDetails(auth) {
   });
 }
 
-function runPreReleaseSmokeChecks() {
+/**
+ * Diagnostic only — รันจาก Apps Script editor เท่านั้น
+ * ต้องลงท้ายด้วย _ เพราะ runAsTrustedTeacher_ ข้ามการตรวจสิทธิ์ทั้งหมด
+ * ถ้าไม่มี _ จะเรียกได้จากอินเทอร์เน็ตผ่าน google.script.run
+ */
+function runPreReleaseSmokeChecks_() {
   ensureSecurityMigration_();
   return runAsTrustedTeacher_(function() {
     var startedAt = new Date().getTime();
@@ -488,7 +493,7 @@ function runPreReleaseSmokeChecks() {
         duration_ms: durationMs,
         status: summary.success ? 'ok' : 'error',
         page: 'admin',
-        fn_name: 'runPreReleaseSmokeChecks',
+        fn_name: 'runPreReleaseSmokeChecks_',
         date: context.attendance_date || '',
         range_from: context.range_from || '',
         range_to: context.range_to || '',

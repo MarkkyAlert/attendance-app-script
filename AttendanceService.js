@@ -75,26 +75,7 @@ function doesAttendanceRecordMatchStudent_(record, studentId, studentNumber, stu
 }
 
 function deleteAttendanceDuplicateRows_(sheet, rowIndexes) {
-  if (!sheet) return 0;
-  var uniqueRows = {};
-  (rowIndexes || []).forEach(function(rowIndex) {
-    rowIndex = parseInt(rowIndex, 10) || 0;
-    if (rowIndex > 1) uniqueRows[rowIndex] = true;
-  });
-
-  var rows = Object.keys(uniqueRows).map(function(rowIndex) {
-    return parseInt(rowIndex, 10) || 0;
-  }).filter(function(rowIndex) {
-    return rowIndex > 1;
-  }).sort(function(a, b) {
-    return b - a;
-  });
-
-  rows.forEach(function(rowIndex) {
-    sheet.deleteRow(rowIndex);
-  });
-
-  return rows.length;
+  return deleteSheetRowsByIndexes_(sheet, rowIndexes);
 }
 
  function buildAttendanceDailyPayload_(date, options) {
@@ -677,8 +658,11 @@ function getAttendanceArchiveDaySheetName_(semester) {
 }
 
 function ensureAttendanceArchiveSheetSchema_(sheet) {
-  if (sheet.getLastColumn() < COL.ATTENDANCE.STUDENT_ID) {
-    sheet.insertColumnsAfter(sheet.getLastColumn(), COL.ATTENDANCE.STUDENT_ID - sheet.getLastColumn());
+  // ต้องใช้ getMaxColumns ไม่ใช่ getLastColumn เพราะชีตที่เพิ่งสร้างยังว่าง
+  // getLastColumn จะคืน 0 แล้ว insertColumnsAfter(0, n) จะ throw
+  var maxColumns = sheet.getMaxColumns();
+  if (maxColumns < COL.ATTENDANCE.STUDENT_ID) {
+    sheet.insertColumnsAfter(maxColumns, COL.ATTENDANCE.STUDENT_ID - maxColumns);
   }
   sheet.getRange(1, 1, 1, COL.ATTENDANCE.STUDENT_ID).setValues([[
     'ID', 'เลขที่', 'วันที่', 'สถานะ', 'หมายเหตุ', 'Batch ID', 'บันทึกเมื่อ', 'แก้ไขเมื่อ', 'student_id'
@@ -690,8 +674,9 @@ function ensureAttendanceArchiveSheetSchema_(sheet) {
 }
 
 function ensureAttendanceArchiveDaySheetSchema_(sheet) {
-  if (sheet.getLastColumn() < COL.ATT_DAYS.CONFIRMED_AT) {
-    sheet.insertColumnsAfter(sheet.getLastColumn(), COL.ATT_DAYS.CONFIRMED_AT - sheet.getLastColumn());
+  var maxColumns = sheet.getMaxColumns();
+  if (maxColumns < COL.ATT_DAYS.CONFIRMED_AT) {
+    sheet.insertColumnsAfter(maxColumns, COL.ATT_DAYS.CONFIRMED_AT - maxColumns);
   }
   sheet.getRange(1, 1, 1, COL.ATT_DAYS.CONFIRMED_AT).setValues([[
     'วันที่', 'สถานะ', 'ยืนยันเมื่อ'

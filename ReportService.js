@@ -200,13 +200,18 @@ function getDailyGrid(startDate, endDate, auth) {
     rate_limit_limit: 120,
     rate_limit_window_sec: 60
   }, function() {
-    var range = clampRangeToActiveSemester_(normalizeDateRange_(startDate, endDate));
-    if (isEffectiveRangeEmpty_(range)) {
-      return buildEmptyDailyGrid_(range);
-    }
-    return getOrBuildCachedJson_('daily_grid', [range.from, range.to], 180, function() {
-      return buildDailyGridData_(range);
-    });
+    return getCachedDailyGridDataForRange_(
+      clampRangeToActiveSemester_(normalizeDateRange_(startDate, endDate))
+    );
+  });
+}
+
+function getCachedDailyGridDataForRange_(range) {
+  if (isEffectiveRangeEmpty_(range)) {
+    return buildEmptyDailyGrid_(range);
+  }
+  return getOrBuildCachedJson_('daily_grid', [range.from, range.to], 180, function() {
+    return buildDailyGridData_(range);
   });
 }
 
@@ -346,9 +351,7 @@ function warmLikelyDerivedCachesForDate_(date) {
       var monthRange = getEffectiveMonthRange_(month);
       if (!isEffectiveRangeEmpty_(monthRange)) {
         getCachedSummaryTableDataForRange_(monthRange, true);
-        getOrBuildCachedJson_('daily_grid', [monthRange.from, monthRange.to], 180, function() {
-          return buildDailyGridData_(monthRange);
-        });
+        getCachedDailyGridDataForRange_(monthRange);
       }
     });
   } catch (e) {
@@ -364,6 +367,147 @@ function exportCSV(reportType, params, auth) {
   }, function() {
     return exportCSVData_(reportType, params);
   });
+}
+
+/**
+ * สร้างไฟล์ CSV ชั่วคราวบน Drive แล้วส่ง URL ดาวน์โหลดกลับให้ client
+ * client จะเรียก cleanupCSVFile ลบไฟล์ทิ้งหลังดาวน์โหลดเสร็จ
+ */
+function downloadCSV(reportType, params, auth) {
+  return runAsTeacher_(auth, {
+    require_csrf: true,
+    rate_limit_key: 'download_csv',
+    rate_limit_limit: 20,
+    rate_limit_window_sec: 300
+  }, function(session) {
+    var exportData;
+    try {
+      exportData = exportCSVData_(reportType, params);
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+
+    var file = DriveApp.createFile(
+      Utilities.newBlob(exportData.content, 'text/csv', exportData.filename)
+    );
+    registerTempDriveFile_(file.getId(), session, 'csv_export', 1800);
+
+    return {
+      success: true,
+      url: file.getDownloadUrl(),
+      filename: file.getName(),
+      file_id: file.getId()
+    };
+  });
+}
+
+function cleanupCSVFile(fileId, auth) {
+  return runAsTeacher_(auth, {
+    require_csrf: true,
+    rate_limit_key: 'cleanup_csv_file',
+    rate_limit_limit: 30,
+    rate_limit_window_sec: 300
+  }, function(session) {
+    if (!canCleanupTempDriveFile_(fileId, session, 'csv_export')) {
+      return { success: false, message: 'ไม่พบไฟล์ CSV ชั่วคราวที่อนุญาตให้ลบ' };
+    }
+    try {
+      DriveApp.getFileById(fileId).setTrashed(true);
+    } catch (e) {}
+    clearTempDriveFileRegistration_(fileId);
+    return { success: true };
+  });
+}
+
+function exportCSVData_(reportType, params) {
+  reportType = String(reportType || '').trim();
+  params = params || {};
+
+  if (reportType === 'monthly') {
+    return buildSummaryCsvExport_(
+      clampRangeToActiveSemester_(normalizeDateRange_(params.start_date, params.end_date))
+    );
+  }
+  if (reportType === 'daily') {
+    return buildDailyGridCsvExport_(
+      clampRangeToActiveSemester_(normalizeDateRange_(params.from, params.to))
+    );
+  }
+  throw new Error('ประเภทรายงานไม่ถูกต้อง');
+}
+
+function buildSummaryCsvExport_(range) {
+  if (isEffectiveRangeEmpty_(range)) {
+    throw new Error('ช่วงวันที่ที่เลือกอยู่นอกภาคเรียนที่ใช้งานอยู่');
+  }
+
+  var data = getCachedSummaryTableDataForRange_(range, false);
+  var rows = [[
+    'เลขที่', 'ชื่อ-สกุล', 'ชื่อเล่น', 'มาเรียน', 'สาย', 'ขาด', 'ลาป่วย', 'ลากิจ',
+    'วันที่มีบันทึก', 'วันเรียนทั้งหมด', 'ร้อยละการมาเรียน'
+  ]];
+
+  (data.rows || []).forEach(function(row) {
+    rows.push([
+      row.student_number,
+      row.full_name,
+      row.nickname || '',
+      row.present_count,
+      row.late_count,
+      row.absent_count,
+      row.sick_leave_count,
+      row.personal_leave_count,
+      row.confirmed_record_days,
+      row.total_days,
+      row.attendance_percent == null ? '' : row.attendance_percent
+    ]);
+  });
+
+  var totals = data.totals || {};
+  rows.push([
+    '', 'รวม', '',
+    totals.present || 0,
+    totals.late || 0,
+    totals.absent || 0,
+    totals.sick_leave || 0,
+    totals.personal_leave || 0,
+    '',
+    totals.total_days || 0,
+    totals.attendance_percent == null ? '' : totals.attendance_percent
+  ]);
+
+  return {
+    filename: 'attendance-summary-' + range.from + '_' + range.to + '.csv',
+    content: buildCSVString_(rows)
+  };
+}
+
+function buildDailyGridCsvExport_(range) {
+  if (isEffectiveRangeEmpty_(range)) {
+    throw new Error('ช่วงวันที่ที่เลือกอยู่นอกภาคเรียนที่ใช้งานอยู่');
+  }
+
+  var data = getCachedDailyGridDataForRange_(range);
+  var dates = data.dates || [];
+  var header = ['เลขที่', 'ชื่อ-สกุล', 'ชื่อเล่น'];
+  dates.forEach(function(dateInfo) {
+    header.push(dateInfo.date);
+  });
+
+  var rows = [header];
+  (data.students || []).forEach(function(student) {
+    var row = [student.student_number, student.full_name, student.nickname || ''];
+    dates.forEach(function(dateInfo) {
+      var status = student.statuses ? student.statuses[dateInfo.date] : null;
+      row.push(status ? status.label : '');
+    });
+    rows.push(row);
+  });
+
+  return {
+    filename: 'attendance-daily-' + range.from + '_' + range.to + '.csv',
+    content: buildCSVString_(rows)
+  };
 }
 
 function getAllAttendanceRecords_(sourceInfo) {

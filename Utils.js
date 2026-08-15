@@ -482,9 +482,22 @@ function getGreetingByTime_() {
 // System Setup
 
 /**
- * Run this once to create all required sheets
+ * Run this once to create all required sheets (menu entry point).
+ * แสดงผลผ่าน SpreadsheetApp.getUi() จึงเรียกได้จากเมนูในชีตเท่านั้น
+ * ถ้าเรียกจาก Web App ให้ใช้ ensureSystemSheets_() แทน
  */
 function setupSystem_() {
+  var result = ensureSystemSheets_();
+  var initialTeacherKey = result.initial_teacher_key;
+
+  SpreadsheetApp.getUi().alert('✅ ติดตั้งระบบเสร็จเรียบร้อย!\n\nขั้นตอนถัดไป:\n1. Deploy > New deployment > Web app\n2. Execute as: Me\n3. Who has access: Anyone with Google account\n4. ' + (initialTeacherKey ? ('รหัสครูเริ่มต้น: ' + initialTeacherKey + '\n5. เข้าระบบครั้งแรกแล้วเปลี่ยนรหัสครูทันที') : 'รหัสครูมีอยู่แล้วในระบบ — ถ้าลืมรหัส ใช้เมนู 🎓 ระบบเช็คชื่อ > 🔑 รีเซ็ตรหัสครู (ลืมรหัส / ฉุกเฉิน)') + '\n6. Deploy แล้วเปิด URL');
+}
+
+/**
+ * สร้างชีตและค่าตั้งต้นทั้งหมด โดยไม่แตะ UI — ปลอดภัยที่จะเรียกจาก Web App
+ * @returns {{initial_teacher_key: string}} รหัสครูที่เพิ่งสร้าง ('' ถ้ามีอยู่แล้ว)
+ */
+function ensureSystemSheets_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
   // 1. นักเรียน
@@ -541,7 +554,7 @@ function setupSystem_() {
   formatStudentSheet_();
   formatAttendanceSheet_();
 
-  SpreadsheetApp.getUi().alert('✅ ติดตั้งระบบเสร็จเรียบร้อย!\n\nขั้นตอนถัดไป:\n1. Deploy > New deployment > Web app\n2. Execute as: Me\n3. Who has access: Anyone with Google account\n4. ' + (initialTeacherKey ? ('รหัสครูเริ่มต้น: ' + initialTeacherKey + '\n5. เข้าระบบครั้งแรกแล้วเปลี่ยนรหัสครูทันที') : 'รหัสครูมีอยู่แล้วในระบบ — ถ้าลืมรหัส ใช้เมนู 🎓 ระบบเช็คชื่อ > 🔑 รีเซ็ตรหัสครู (ลืมรหัส / ฉุกเฉิน)') + '\n6. Deploy แล้วเปิด URL');
+  return { initial_teacher_key: initialTeacherKey };
 }
 
 /**

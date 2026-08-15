@@ -4280,8 +4280,9 @@
         if (btn) { btn.disabled = false; btn.innerHTML = backupLabel; }
         if (result.success) {
           var backupMeta = writeBackupMeta_(result.filename || 'ไฟล์สำรอง');
-          openDownloadWindow(result.url, 'เบราว์เซอร์บล็อกไฟล์ดาวน์โหลด กรุณาอนุญาต pop-up แล้วลองใหม่');
-          toast('ดาวน์โหลด ' + result.filename, 'success');
+          if (openDownloadWindow(result.url, 'เบราว์เซอร์บล็อกไฟล์ดาวน์โหลด กรุณาอนุญาต pop-up แล้วลองใหม่')) {
+            toast('ดาวน์โหลด ' + result.filename, 'success');
+          }
           var latestBackupEl = document.getElementById('settings-backup-latest-value');
           if (latestBackupEl) latestBackupEl.textContent = formatBackupMetaLabel_(backupMeta);
 
