@@ -802,6 +802,9 @@ function onOpen() {
     .addItem('🔑 รีเซ็ตรหัสครู (ลืมรหัส / ฉุกเฉิน)', 'resetTeacherAccessKeyFromSheet_')
     .addSeparator()
     .addItem('🌐 เปิด Web App', 'openWebApp_')
+    .addSeparator()
+    // ชั่วคราว — ลบบรรทัดนี้พร้อมไฟล์ Diagnostics.gs เมื่อทดสอบงานแก้ P0 ผ่านแล้ว
+    .addItem('🧪 ตรวจงานแก้ P0 (dev)', 'runP0Diagnostics')
     .addToUi();
 }
 
