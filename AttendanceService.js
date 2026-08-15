@@ -186,7 +186,8 @@ function deleteAttendanceDuplicateRows_(sheet, rowIndexes) {
     day_status: dayStatus,
     active_batch: batchInfo,
     alerts: alerts,
-    alert_threshold: threshold
+    alert_threshold: threshold,
+    calendar_state: buildAttendanceCalendarState_(date)
   };
 
   return options.capture_timing_detail ? attachAttendanceTimingDetail_(payload, detail) : payload;
@@ -784,6 +785,37 @@ function ensureAttendanceActionDate_(date, label, options) {
     throw new Error((label || 'วันที่') + ' ตรงกับวันหยุดในปฏิทินวันเรียน');
   }
   return date;
+}
+
+/**
+ * บอกหน้าเช็คชื่อว่าวันที่กำลังเช็คอยู่ในปฏิทินวันเรียนหรือยัง
+ *
+ * ที่ต้องมีเพราะเดิมครูเช็คชื่อในวันที่ไม่อยู่ในปฏิทินได้ตามปกติ กดยืนยันได้ ไม่มีอะไรเตือน
+ * แต่ข้อมูลจะไม่ถูกนับในรายงานและบนเอกสาร ปพ.6 กว่าจะรู้ก็ตอนสิ้นเทอม
+ *
+ * เตือนเฉพาะกรณีที่ "มีปฏิทินอยู่แล้วแต่วันนี้ไม่อยู่ในนั้น" เท่านั้น
+ */
+function buildAttendanceCalendarState_(date) {
+  var calendarState = {
+    has_calendar: false,
+    in_calendar: false,
+    type: '',
+    needs_calendar_fix: false
+  };
+
+  try {
+    calendarState.has_calendar = hasAnySchoolCalendarEntries_();
+    var entry = getSchoolCalendarEntryByDate_(date);
+    if (entry) {
+      calendarState.in_calendar = true;
+      calendarState.type = String(entry.type || '');
+    }
+  } catch (e) {
+    return calendarState;
+  }
+
+  calendarState.needs_calendar_fix = calendarState.has_calendar && !calendarState.in_calendar;
+  return calendarState;
 }
 
 function getAttendanceAlertLookbackDates_(date, threshold) {

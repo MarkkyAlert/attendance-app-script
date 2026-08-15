@@ -1765,6 +1765,31 @@
       return html;
     }
 
+    /**
+     * เตือนตอนเช็คชื่อในวันที่ไม่อยู่ในปฏิทินวันเรียน พร้อมปุ่มเพิ่มเข้าปฏิทินให้เลย
+     *
+     * เดิมครูเช็คได้ตามปกติ กดยืนยันได้ ไม่มีอะไรบอก แต่ข้อมูลจะไม่ถูกนับในรายงาน
+     * และบนเอกสาร ปพ.6 กว่าจะรู้ก็ตอนสิ้นเทอม จึงต้องบอกตั้งแต่ตอนที่ยังแก้ง่าย
+     */
+    function renderAttendanceCalendarWarningHtml_(att) {
+      var calendarState = (att && att.calendar_state) || {};
+      if (!calendarState.needs_calendar_fix) return '';
+
+      var dateLabel = esc(att.date_th || state.currentDate || '');
+      var html = '';
+      html += '<section class="attendance-alerts">';
+      html += '<div class="alert alert-warning attendance-alert-box">';
+      html += '<strong>' + renderUiIcon('warning') + ' ' + dateLabel + ' ยังไม่อยู่ในปฏิทินวันเรียน</strong>';
+      html += '<div class="attendance-alert-note">เช็คชื่อและยืนยันได้ตามปกติ แต่ข้อมูลของวันนี้จะไม่ถูกนับในรายงานและบนเอกสาร ปพ.6 จนกว่าจะเพิ่มวันนี้เข้าปฏิทิน</div>';
+      html += '<div class="attendance-alert-actions">';
+      html += '<button class="btn btn-primary btn-sm" onclick="App.addCurrentDateToCalendar(this)">เพิ่มเป็นวันเรียน</button>';
+      html += '<button class="btn btn-ghost btn-sm" onclick="window.AppShared.navigateTo(\'settings\')">เปิดปฏิทินวันเรียน</button>';
+      html += '</div>';
+      html += '</div>';
+      html += '</section>';
+      return html;
+    }
+
     function renderAttendancePage() {
       var att = state.attendance;
       if (!att) {
@@ -1842,6 +1867,8 @@
       html += '</div>';
       html += '</div>';
       html += '</section>';
+
+      html += renderAttendanceCalendarWarningHtml_(att);
 
       if (att.alerts && att.alerts.length > 0) {
         html += '<section class="attendance-alerts">';
@@ -2427,7 +2454,13 @@
     }
 
     function confirmDay() {
-      confirm_dialog('ยืนยันวันนี้? หลังยืนยัน ระบบจะล็อกวันนี้ไว้ก่อน และคุณยังยกเลิกการยืนยันเพื่อกลับมาแก้ไขได้อีกครั้ง', function () {
+      var confirmMessage = 'ยืนยันวันนี้? หลังยืนยัน ระบบจะล็อกวันนี้ไว้ก่อน และคุณยังยกเลิกการยืนยันเพื่อกลับมาแก้ไขได้อีกครั้ง';
+      // เตือนซ้ำตรงนี้ด้วย เพราะเป็นจังหวะที่ครูตัดสินใจจริงว่าวันนี้ "เสร็จแล้ว"
+      var calendarState = (state.attendance && state.attendance.calendar_state) || {};
+      if (calendarState.needs_calendar_fix) {
+        confirmMessage += '\n\n⚠️ วันนี้ยังไม่อยู่ในปฏิทินวันเรียน ยืนยันได้ตามปกติ แต่ข้อมูลจะยังไม่ถูกนับในรายงานและบนเอกสาร ปพ.6 จนกว่าจะกด "เพิ่มเป็นวันเรียน"';
+      }
+      confirm_dialog(confirmMessage, function () {
         serverCall('confirmDay', [state.currentDate], function (result) {
           if (result.success) {
             state.attendance.day_status = state.attendance.day_status || {};
@@ -3274,25 +3307,15 @@
       if (!schoolCalendarEntries.length && !settingsDetailsLoading && !settingsDetailsError) {
         html += '<div class="empty-state"><div class="empty-icon">' + renderUiIcon('calendar') + '</div><div class="empty-title">ยังไม่มีข้อมูลปฏิทินวันเรียน</div><div class="empty-desc">เริ่มจากสร้างวันจันทร์-ศุกร์ทั้งภาคเรียนก่อน แล้วค่อยเพิ่มวันหยุดหรือวันสอนชดเชยทีละวัน</div></div>';
       } else if (schoolCalendarEntries.length) {
-        html += '<div class="settings-semester-list">';
-        schoolCalendarEntries.slice(0, 10).forEach(function (entry) {
-          html += '<div class="settings-semester-item">';
-          html += '<div class="settings-semester-copy">';
-          html += '<div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">';
-          html += '<div class="settings-semester-name">' + esc(entry.date || '') + '</div>';
-          html += '<span class="student-badge ' + (entry.type === 'holiday' ? 'badge-red' : 'badge-green') + '">' + (entry.type === 'holiday' ? 'วันหยุด/งดเรียน' : 'วันเรียน') + '</span>';
-          html += '</div>';
-          html += '<div class="settings-semester-range">' + esc(entry.label || '-') + '</div>';
-          html += '</div>';
-          html += '<div class="settings-semester-actions">';
-          html += '<button class="btn btn-ghost btn-xs" onclick="App.showCalendarEntryModal(\'' + escAttr(entry.date || '') + '\',\'' + escAttr(entry.type || 'school_day') + '\',\'' + escAttr(entry.label || '') + '\')">แก้ไข</button>';
-          html += '<button class="btn btn-danger btn-xs" onclick="App.deleteSchoolCalendarEntry(\'' + escAttr(entry.date || '') + '\')">ลบ</button>';
-          html += '</div>';
-          html += '</div>';
-        });
-        if (schoolCalendarEntries.length > 10) {
-          html += '<div class="settings-note settings-note-stone">' + renderUiIcon('note') + '<span>แสดง 10 รายการแรกจากทั้งหมด ' + schoolCalendarEntries.length + ' รายการ</span></div>';
-        }
+        var calendarFilter = getSchoolCalendarFilter_();
+        // ช่องค้นหาและตัวกรองอยู่นอกคอนเทนเนอร์รายการ เวลาพิมพ์จึงอัปเดตเฉพาะรายการ
+        // ไม่ re-render ทั้งหน้า ช่องค้นหาจะได้ไม่หลุด focus กลางคัน
+        html += '<div class="settings-calendar-tools">';
+        html += '<input type="search" class="input" id="settings-calendar-search" placeholder="ค้นหาวันที่ เช่น 15 ส.ค. หรือ 2026-08-15" autocomplete="off" enterkeyhint="search" oninput="App.calendarSearch(this.value)" value="' + escAttr(calendarFilter.query) + '">';
+        html += '<label class="settings-calendar-toggle"><input type="checkbox" onchange="App.toggleCalendarHolidayOnly(this.checked)"' + (calendarFilter.holidays_only ? ' checked' : '') + '> เฉพาะวันหยุด</label>';
+        html += '</div>';
+        html += '<div class="settings-semester-list" id="settings-calendar-list">';
+        html += renderSchoolCalendarListItems_(schoolCalendarEntries);
         html += '</div>';
       }
       html += '</section>';
@@ -3569,6 +3592,31 @@
       ], { width: 'min(92vw, 480px)' });
     }
 
+    /**
+     * เพิ่มวันที่กำลังเช็คชื่ออยู่เข้าปฏิทินเป็นวันเรียน แล้วโหลดหน้าเช็คชื่อใหม่
+     * ฝั่ง server ยอมให้เพิ่มเป็นวันเรียนย้อนหลังได้ แม้วันนั้นจะยืนยันข้อมูลไปแล้ว
+     * เพราะทิศทางนี้ทำให้ข้อมูลถูกนับเข้ามา ไม่ได้ทำให้อะไรหาย
+     */
+    function addCurrentDateToCalendar(buttonEl) {
+      var date = String(state.currentDate || '').trim();
+      if (!date) {
+        toast('ยังไม่ทราบว่ากำลังดูวันไหนอยู่', 'error');
+        return;
+      }
+      setActionButtonState(buttonEl, true, 'กำลังเพิ่ม...');
+      serverCall('saveSchoolCalendarEntry', [{ date: date, type: 'school_day', label: 'วันเรียน' }], function (result) {
+        setActionButtonState(buttonEl, false);
+        if (result && result.success) {
+          toast('เพิ่มวันนี้เข้าปฏิทินแล้ว ข้อมูลของวันนี้จะถูกนับในรายงาน', 'success');
+          loadPage('attendance');
+        } else {
+          toast((result && result.message) || 'เพิ่มวันนี้เข้าปฏิทินไม่สำเร็จ', 'error');
+        }
+      }, function () {
+        setActionButtonState(buttonEl, false);
+      });
+    }
+
     function saveCalendarEntry(buttonEl) {
       var payload = {
         date: String(document.getElementById('school-calendar-date').value || '').trim(),
@@ -3693,6 +3741,89 @@
           toast(message || 'รีเซ็ตอุปกรณ์ครูทั้งหมดไม่สำเร็จ', 'error');
         });
       });
+    }
+
+    var SCHOOL_CALENDAR_PAGE_SIZE = 20;
+
+    function getSchoolCalendarFilter_() {
+      if (!state.calendarFilter) {
+        state.calendarFilter = { query: '', holidays_only: false, visible: SCHOOL_CALENDAR_PAGE_SIZE };
+      }
+      return state.calendarFilter;
+    }
+
+    /**
+     * กรองรายการปฏิทินตามคำค้นและตัวกรองวันหยุด
+     * ค้นได้ทั้งวันที่แบบ ISO (2026-08-15) วันที่ไทย (15 ส.ค. 2569) และรายละเอียดวัน
+     */
+    function filterSchoolCalendarEntries_(entries, filter) {
+      var query = String(filter.query || '').trim().toLowerCase();
+      return (entries || []).filter(function (entry) {
+        if (filter.holidays_only && entry.type !== 'holiday') return false;
+        if (!query) return true;
+        var haystack = [
+          String(entry.date || ''),
+          String(entry.date_label || ''),
+          String(entry.label || '')
+        ].join(' ').toLowerCase();
+        return haystack.indexOf(query) >= 0;
+      });
+    }
+
+    function renderSchoolCalendarListItems_(entries) {
+      var filter = getSchoolCalendarFilter_();
+      var matched = filterSchoolCalendarEntries_(entries, filter);
+      var total = (entries || []).length;
+
+      if (!matched.length) {
+        return '<div class="settings-note settings-note-stone">' + renderUiIcon('note')
+          + '<span>ไม่พบวันที่ตรงกับที่ค้น จากทั้งหมด ' + total + ' รายการ</span></div>';
+      }
+
+      var visible = Math.min(matched.length, Math.max(SCHOOL_CALENDAR_PAGE_SIZE, filter.visible || SCHOOL_CALENDAR_PAGE_SIZE));
+      var html = '';
+      matched.slice(0, visible).forEach(function (entry) {
+        var isHoliday = entry.type === 'holiday';
+        var badgeText = isHoliday ? 'วันหยุด/งดเรียน' : 'วันเรียน';
+        // แสดงวันที่แบบไทยถ้า server ส่งมา ถ้าเป็นข้อมูลจาก cache รุ่นเก่าค่อยตกกลับไปใช้ ISO
+        var dateText = entry.date_label || entry.date || '';
+        html += '<div class="settings-semester-item">';
+        html += '<div class="settings-semester-copy">';
+        html += '<div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">';
+        html += '<div class="settings-semester-name">' + esc(dateText) + '</div>';
+        html += '<span class="student-badge ' + (isHoliday ? 'badge-red' : 'badge-green') + '">' + badgeText + '</span>';
+        html += '</div>';
+        // ไม่ต้องเขียนรายละเอียดซ้ำกับป้ายสถานะที่อยู่ข้างบนพอดี
+        if (entry.label && entry.label !== badgeText) {
+          html += '<div class="settings-semester-range">' + esc(entry.label) + '</div>';
+        }
+        html += '</div>';
+        html += '<div class="settings-semester-actions">';
+        html += '<button class="btn btn-ghost btn-xs" onclick="App.showCalendarEntryModal(\'' + escAttr(entry.date || '') + '\',\'' + escAttr(entry.type || 'school_day') + '\',\'' + escAttr(entry.label || '') + '\')">แก้ไข</button>';
+        html += '<button class="btn btn-danger btn-xs" onclick="App.deleteSchoolCalendarEntry(\'' + escAttr(entry.date || '') + '\')">ลบ</button>';
+        html += '</div>';
+        html += '</div>';
+      });
+
+      var scopeNote = matched.length === total
+        ? ('แสดง ' + visible + ' จาก ' + total + ' รายการ')
+        : ('แสดง ' + visible + ' จาก ' + matched.length + ' รายการที่ตรงกับที่ค้น (ทั้งหมด ' + total + ' รายการ)');
+      html += '<div class="settings-note settings-note-stone">' + renderUiIcon('note') + '<span>' + scopeNote + '</span></div>';
+
+      if (visible < matched.length) {
+        var nextChunk = Math.min(SCHOOL_CALENDAR_PAGE_SIZE, matched.length - visible);
+        html += '<button class="btn btn-ghost btn-sm" onclick="App.showMoreCalendarEntries()">ดูเพิ่มอีก ' + nextChunk + ' รายการ</button>';
+      }
+
+      return html;
+    }
+
+    /** อัปเดตเฉพาะรายการปฏิทิน ไม่แตะส่วนอื่นของหน้า ช่องค้นหาจึงคง focus ไว้ได้ */
+    function refreshSchoolCalendarList_() {
+      var host = document.getElementById('settings-calendar-list');
+      if (!host) return;
+      var data = state.schoolCalendar || {};
+      host.innerHTML = renderSchoolCalendarListItems_(data.entries || []);
     }
 
     function toggleAdvancedSettings() {
@@ -5179,6 +5310,23 @@
         state.studentsSearchQuery = q;
         scheduleStudentsPageRender_();
       },
+      calendarSearch: function (q) {
+        var filter = getSchoolCalendarFilter_();
+        filter.query = q;
+        filter.visible = SCHOOL_CALENDAR_PAGE_SIZE;
+        refreshSchoolCalendarList_();
+      },
+      toggleCalendarHolidayOnly: function (checked) {
+        var filter = getSchoolCalendarFilter_();
+        filter.holidays_only = !!checked;
+        filter.visible = SCHOOL_CALENDAR_PAGE_SIZE;
+        refreshSchoolCalendarList_();
+      },
+      showMoreCalendarEntries: function () {
+        var filter = getSchoolCalendarFilter_();
+        filter.visible = (filter.visible || SCHOOL_CALENDAR_PAGE_SIZE) + SCHOOL_CALENDAR_PAGE_SIZE;
+        refreshSchoolCalendarList_();
+      },
       studentFilterGroup: function (group) {
         state.studentsFilterGroup = group;
         renderStudentsPage();
@@ -5208,6 +5356,7 @@
       resetTeacherDevice: resetTeacherDevice,
       showCalendarEntryModal: showCalendarEntryModal,
       saveCalendarEntry: saveCalendarEntry,
+      addCurrentDateToCalendar: addCurrentDateToCalendar,
       deleteSchoolCalendarEntry: deleteSchoolCalendarEntry,
       generateSchoolCalendar: generateSchoolCalendar,
       openReadinessAction: openReadinessAction,

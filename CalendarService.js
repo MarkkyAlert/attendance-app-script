@@ -90,10 +90,16 @@ function saveSchoolCalendarEntry(payload, auth) {
       var sheet = getOrCreateSchoolCalendarSheet_();
       var existing = getSchoolCalendarRowByDate_(date);
       var changesSchedule = !existing || String(existing.type || '') !== type;
-      if (changesSchedule && getSchoolCalendarConfirmedAttendanceConflictForDates_([date], sourceInfo)) {
+      // สองทิศทางนี้อันตรายไม่เท่ากัน จึงกันแค่ทิศเดียว
+      //   ตั้งเป็นวันหยุด  → ข้อมูลที่ยืนยันแล้วหลุดออกจากรายงาน ต้องกันต่อไป
+      //   ตั้งเป็นวันเรียน → ข้อมูลถูกนับเข้ามา ไม่มีอะไรหาย จึงปล่อยผ่าน
+      // ถ้ากันทั้งสองทิศ ครูที่เผลอเช็คชื่อในวันนอกปฏิทินจะแก้กลับไม่ได้เลย
+      var dropsConfirmedData = changesSchedule && type === 'holiday';
+      if (dropsConfirmedData && getSchoolCalendarConfirmedAttendanceConflictForDates_([date], sourceInfo)) {
         return {
           success: false,
-          message: 'เพิ่มหรือแก้ประเภทวันย้อนหลังไม่ได้ เพราะวันที่ ' + date + ' มีข้อมูลเช็คชื่อที่ยืนยันแล้ว'
+          message: 'ตั้งวันที่ ' + date + ' เป็นวันหยุดไม่ได้ เพราะมีข้อมูลเช็คชื่อที่ยืนยันแล้วในวันนั้น'
+            + ' ถ้าต้องการให้เป็นวันหยุดจริง ให้ล้างข้อมูลเช็คชื่อของวันนั้นก่อน'
         };
       }
       if (existing) {
@@ -299,6 +305,23 @@ function readSchoolCalendarEntryByDate_(date) {
   return selected;
 }
 
+/**
+ * มีข้อมูลปฏิทินอยู่ในระบบแล้วหรือยัง
+ *
+ * ใช้ตัดสินว่าควรเตือนเรื่อง "เช็คชื่อในวันที่ไม่อยู่ในปฏิทิน" หรือไม่
+ * ถ้าครูยังไม่ได้สร้างปฏิทินเลย รายงานจะใช้จำนวนวันที่ยืนยันแล้วเป็นค่าอ้างอิงแทน
+ * ข้อมูลไม่หายไปไหน จึงไม่ควรไปเตือนให้ครูตกใจเปล่าๆ ทุกวัน
+ */
+function hasAnySchoolCalendarEntries_() {
+  var cached = getOrBuildCachedJson_('school_calendar_has_entries', [], 300, function() {
+    var sheet = getSchoolCalendarSheetForRead_();
+    if (!sheet) return { has: false };
+    if (sheet.getLastColumn() < SCHOOL_CALENDAR_COL.LABEL) return { has: false };
+    return { has: sheet.getLastRow() > 1 };
+  });
+  return !!(cached && cached.has);
+}
+
 function getSchoolCalendarEntryByDate_(date) {
   date = String(date || '').slice(0, 10);
   if (!date) return null;
@@ -403,6 +426,8 @@ function buildSchoolCalendarEntry_(row, rowIndex) {
   return {
     id: parseInt(row[SCHOOL_CALENDAR_COL.ID - 1], 10) || 0,
     date: date,
+    // ส่งวันที่แบบไทยไปด้วย ฝั่ง client จะได้ไม่ต้องแสดง 2025-11-03 ให้ครูอ่านเอง
+    date_label: date ? thaiDate(date, 'short', true) : '',
     type: normalizeSchoolCalendarType_(row[SCHOOL_CALENDAR_COL.TYPE - 1] || 'school_day'),
     label: String(row[SCHOOL_CALENDAR_COL.LABEL - 1] || ''),
     row_index: rowIndex
