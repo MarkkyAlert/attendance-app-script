@@ -306,6 +306,7 @@ function buildSummaryTableData_(range, skipComparison) {
         extra_confirmed_count: (context.extra_confirmed_dates || []).length,
         message: context.warning_message || ''
       },
+      missing_confirmed: buildMissingConfirmedDateSample_(context, 10),
       holiday_conflicts: (context.extra_confirmed_dates || []).map(function(date) {
         return {
           date: date,
@@ -578,6 +579,23 @@ function readAllAttendanceRecords_(sourceInfo) {
   }
 }
 
+/**
+ * รายชื่อวันเรียนที่ยังไม่ได้ยืนยัน แบบระบุเป็นวันที่ ไม่ใช่บอกแค่จำนวน
+ *
+ * เดิมรายงานบอกว่า "ยังไม่ได้ยืนยัน 156 วัน" ซึ่งครูเอาไปทำอะไรต่อไม่ได้
+ * ต้องบอกด้วยว่าเป็นวันไหนบ้าง ถึงจะกลับไปยืนยันได้จริง
+ */
+function buildMissingConfirmedDateSample_(context, limit) {
+  limit = parseInt(limit, 10) || 10;
+  var dates = ((context && context.missing_confirmed_dates) || []).slice().sort();
+  return {
+    total: dates.length,
+    sample: dates.slice(0, limit).map(function(date) {
+      return { date: date, date_th: thaiDate(date, 'short', true) };
+    })
+  };
+}
+
 function buildDailyGridData_(range) {
   return measureTiming_('report_build_ms', {
     page: 'reports',
@@ -607,14 +625,27 @@ function buildDailyGridData_(range) {
       displayDateSet[date] = true;
     });
 
+    // สถานะรายวันของทั้งชีต ใช้แยก "วันร่าง" ออกจาก "วันที่ไม่มีข้อมูลเลย"
+    // เดิมสองอย่างนี้แสดงเป็น – เหมือนกัน ครูที่ลืมกดยืนยันจะคิดว่าระบบทำข้อมูลหาย
+    var dayStatusMap = {};
+    try {
+      dayStatusMap = getCachedAttendanceDayStatusMap_(getCurrentAttendanceSourceInfo_()) || {};
+    } catch (eDayStatus) {
+      dayStatusMap = {};
+    }
+
     var dates = Object.keys(displayDateSet).sort().map(function(date) {
       var calendarEntry = calendarMap[date] || null;
       var isoWeekday = getIsoWeekday_(date);
+      var dayStatus = String((dayStatusMap[date] || {}).status || '').trim();
       return {
         date: date,
         label: thaiDate(date, 'short', true),
         is_weekend: isoWeekday === 0 || isoWeekday === 6,
-        is_holiday: !!holidayConflictSet[date] || !!(calendarEntry && calendarEntry.type === 'holiday')
+        is_holiday: !!holidayConflictSet[date] || !!(calendarEntry && calendarEntry.type === 'holiday'),
+        // '' = ไม่เคยแตะวันนี้เลย, 'draft' = เช็คไว้แล้วแต่ยังไม่ยืนยัน, 'confirmed' = เข้ารายงานแล้ว
+        day_status: dayStatus,
+        is_draft: dayStatus === 'draft'
       };
     });
 
@@ -655,6 +686,7 @@ function buildDailyGridData_(range) {
         extra_confirmed_count: (context.extra_confirmed_dates || []).length,
         message: context.warning_message || ''
       },
+      missing_confirmed: buildMissingConfirmedDateSample_(context, 10),
       holiday_conflicts: (context.extra_confirmed_dates || []).map(function(date) {
         return {
           date: date,

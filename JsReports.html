@@ -329,14 +329,44 @@
           var st = student.statuses && student.statuses[dt.date];
           if (st) {
             html += '<td class="rpt-day-cell rpt-day-' + esc(st.color || 'stone') + '" title="' + esc(st.label || '') + '">' + renderReportsIcon(st.status_code) + '</td>';
+          } else if (dt.is_holiday) {
+            html += '<td class="rpt-day-cell rpt-holiday"><span class="reports-day-badge">หยุด</span></td>';
+          } else if (dt.is_draft) {
+            // เช็คไว้แล้วแต่ยังไม่ยืนยัน ต้องหน้าตาไม่เหมือน "ไม่มีข้อมูลเลย"
+            // ไม่งั้นครูที่ลืมกดยืนยันจะคิดว่าระบบทำข้อมูลหาย
+            html += '<td class="rpt-day-cell rpt-draft" title="เช็คชื่อไว้แล้วแต่ยังไม่ได้ยืนยัน จึงยังไม่ถูกนับในรายงาน">·</td>';
           } else {
-            html += '<td class="rpt-day-cell' + (dt.is_weekend ? ' rpt-weekend' : '') + (dt.is_holiday ? ' rpt-holiday' : '') + '">' + (dt.is_holiday ? '<span class="reports-day-badge">หยุด</span>' : '-') + '</td>';
+            html += '<td class="rpt-day-cell' + (dt.is_weekend ? ' rpt-weekend' : '') + '" title="ยังไม่มีข้อมูลเช็คชื่อของวันนี้">-</td>';
           }
         });
         html += '</tr>';
       });
 
-      html += '</tbody></table></div></div>';
+      html += '</tbody></table></div>';
+      html += renderDailyGridLegend_(d);
+      html += '</div>';
+      return html;
+    }
+
+    /**
+     * คำอธิบายสัญลักษณ์ใต้ตาราง
+     * แสดงบรรทัด "ยังไม่ยืนยัน" เฉพาะเมื่อมีวันร่างจริงในช่วงที่ดูอยู่ จะได้ไม่รกเปล่าๆ
+     */
+    function renderDailyGridLegend_(d) {
+      var dates = (d && d.dates) || [];
+      var draftCount = 0;
+      dates.forEach(function (dt) {
+        if (dt && dt.is_draft) draftCount++;
+      });
+
+      var html = '<div class="rpt-legend">';
+      html += '<span class="rpt-legend-item"><span class="rpt-legend-key">-</span> ยังไม่มีข้อมูลเช็คชื่อ</span>';
+      if (draftCount > 0) {
+        html += '<span class="rpt-legend-item"><span class="rpt-legend-key rpt-legend-key-draft">·</span> เช็คแล้วแต่ยังไม่ยืนยัน '
+          + draftCount + ' วัน จึงยังไม่ถูกนับในรายงาน</span>';
+      }
+      html += '<span class="rpt-legend-item"><span class="reports-day-badge">หยุด</span> วันหยุดตามปฏิทิน</span>';
+      html += '</div>';
       return html;
     }
 
@@ -510,6 +540,29 @@
       return html;
     }
 
+    /**
+     * ระบุวันเรียนที่ยังไม่ได้ยืนยันเป็นวันที่จริง ไม่ใช่บอกแค่ "ยังไม่ได้ยืนยัน 156 วัน"
+     * ครูจะได้รู้ว่าต้องกลับไปยืนยันวันไหน แทนที่จะได้ตัวเลขที่เอาไปทำอะไรต่อไม่ได้
+     */
+    function renderMissingConfirmedDates_(data) {
+      var missing = (data && data.missing_confirmed) || {};
+      var sample = missing.sample || [];
+      var total = parseInt(missing.total, 10) || 0;
+      if (!total || !sample.length) return '';
+
+      var labels = sample.map(function (item) {
+        return esc(item.date_th || item.date || '');
+      }).join(' · ');
+
+      var html = '<div class="reports-missing-confirmed">';
+      html += '<div class="reports-missing-confirmed-title">วันเรียนที่ยังไม่ได้ยืนยัน ' + total + ' วัน</div>';
+      html += '<div class="reports-missing-confirmed-list">' + labels
+        + (total > sample.length ? ' และอีก ' + (total - sample.length) + ' วัน' : '') + '</div>';
+      html += '<div class="reports-missing-confirmed-note">วันเหล่านี้ยังไม่ถูกนับในรายงานและบนเอกสาร ปพ.6 เปิดหน้าเช็คชื่อของวันนั้นแล้วกดยืนยันเพื่อให้เข้ารายงาน</div>';
+      html += '</div>';
+      return html;
+    }
+
     function renderHolidayConflictSection(data, mode) {
       var conflicts = data && data.holiday_conflicts ? data.holiday_conflicts : [];
       var warning = data && data.calendar_warning ? data.calendar_warning : null;
@@ -521,17 +574,22 @@
       html += '<div class="reports-section-head">';
       html += '<div><h2 class="reports-section-title">ตรวจพบข้อมูลที่ควรแก้จากปฏิทิน</h2><p class="reports-section-text">' + esc((warning && warning.message) || 'มีวันเรียนตามปฏิทินและข้อมูลเช็คชื่อที่ไม่ตรงกัน') + '</p></div>';
       html += '</div>';
-      html += '<div class="empty-next-step" style="margin:0 0 1rem 0;max-width:none;"><div class="empty-next-step-title">สิ่งที่ควรทำต่อ</div><div class="empty-next-step-text">ตรวจวันที่ที่แสดงด้านล่าง ถ้าวันนั้นเป็นวันหยุดจริงให้กดล้างข้อมูลวันหยุด แล้วโหลดรายงานใหม่อีกครั้ง</div></div>';
+      html += '<div class="empty-next-step" style="margin:0 0 1rem 0;max-width:none;"><div class="empty-next-step-title">สิ่งที่ควรทำต่อ</div><div class="empty-next-step-text">ถ้าวันนั้นมีการเรียนจริง ให้กด "นับเป็นวันเรียน" แล้วข้อมูลจะเข้ารายงานทันที ถ้าเป็นวันหยุดจริงจึงค่อยล้างข้อมูลทิ้ง</div></div>';
       if (conflicts.length) {
         html += '<div class="reports-holiday-conflicts">';
         conflicts.forEach(function (item) {
           html += '<div class="reports-holiday-conflict-item">';
-          html += '<div><div class="reports-holiday-conflict-date">' + esc(item.date_th || item.date || '') + '</div><div class="reports-holiday-conflict-meta">พบข้อมูลเช็คชื่อ ' + esc(String(item.record_count || 0)) + ' รายการในวันที่ตั้งเป็นวันหยุด</div></div>';
-          html += '<button class="btn btn-ghost btn-sm" type="button" onclick="ReportsPage.clearHolidayAttendance(\'' + esc(item.date || '') + '\', this, \'' + esc(mode || 'summary') + '\')">ล้างข้อมูลวันหยุด</button>';
+          html += '<div><div class="reports-holiday-conflict-date">' + esc(item.date_th || item.date || '') + '</div><div class="reports-holiday-conflict-meta">พบข้อมูลเช็คชื่อ ' + esc(String(item.record_count || 0)) + ' รายการในวันที่ไม่ได้เป็นวันเรียน</div></div>';
+          html += '<div class="reports-holiday-conflict-actions">';
+          // ทางเลือกที่ไม่ทำลายข้อมูลต้องมาก่อนเสมอ
+          html += '<button class="btn btn-primary btn-sm" type="button" onclick="ReportsPage.markDateAsSchoolDay(\'' + esc(item.date || '') + '\', this, \'' + esc(mode || 'summary') + '\')">นับเป็นวันเรียน</button>';
+          html += '<button class="btn btn-ghost btn-sm" type="button" onclick="ReportsPage.clearHolidayAttendance(\'' + esc(item.date || '') + '\', this, \'' + esc(mode || 'summary') + '\')">ล้างข้อมูลทิ้ง</button>';
+          html += '</div>';
           html += '</div>';
         });
         html += '</div>';
       }
+      html += renderMissingConfirmedDates_(data);
       html += '</div>';
       html += '</section>';
       return html;
@@ -1135,7 +1193,26 @@
           to: S.reportBootstrap.default_daily_range.to || ''
         };
       }
+      // ตารางรายวันเริ่มที่เดือนปัจจุบัน ไม่ใช่ทั้งภาคเรียน
+      // ทั้งภาคเรียนคือ 217 คอลัมน์ที่เริ่มจากเดือนที่ยังไม่มีข้อมูล ครูจะเจอแต่ช่องว่างเต็มจอ
+      // และต้องเลื่อนขวาอีก ~200 คอลัมน์ถึงจะเจอของจริง กดปุ่มขยายเป็นทั้งภาคเรียนเองได้
+      var monthRange = getCurrentMonthRange_();
+      if (monthRange.from && monthRange.to) return monthRange;
       return getDefaultSummaryRange_();
+    }
+
+    /** ช่วงของเดือนปัจจุบัน หนีบไว้ไม่ให้เลยขอบภาคเรียนที่ใช้งานอยู่ */
+    function getCurrentMonthRange_() {
+      var today = E && typeof E.todayStr === 'function' ? E.todayStr() : '';
+      if (!today) return { from: '', to: '' };
+
+      var from = String(today).slice(0, 7) + '-01';
+      var to = String(today);
+      var semester = S.activeSemester || null;
+      if (semester && semester.start_date && from < semester.start_date) from = semester.start_date;
+      if (semester && semester.end_date && to > semester.end_date) to = semester.end_date;
+      if (from > to) return { from: '', to: '' };
+      return { from: from, to: to };
     }
 
     function getDailyPrintDate_() {
@@ -1285,8 +1362,10 @@
         return;
       }
       if (tab === 'daily' && !S.dailyGrid) {
-        render(S);
-        loadDailyGrid(null, { silent: true, quiet: true, preserveView: true });
+        // เดิม render(S) ก่อนแล้วส่ง preserveView:true ทำให้สถานะ "กำลังโหลด" ไม่ได้ถูก render
+        // ครูจึงเห็น "ยังไม่มีรายงานรายวัน" ค้างอยู่ตลอดเวลาที่ระบบกำลังโหลด ซึ่งอ่านว่า "ไม่มีข้อมูล"
+        // ปล่อยให้ loadDailyGrid render เองหลังตั้งสถานะ จะได้เห็น "กำลังโหลด" จริงๆ
+        loadDailyGrid(null, { silent: true, quiet: true });
         return;
       }
       render(S);
@@ -1368,6 +1447,35 @@
         if (E.setActionButtonState) E.setActionButtonState(buttonEl, false);
         if (E.setPageDataStatus) E.setPageDataStatus('reports', 'daily', 'error', msg || 'ยังโหลดรายงานรายวันไม่สำเร็จ');
         render(S);
+      });
+    }
+
+    /**
+     * นับวันที่หลุดปฏิทินเป็นวันเรียน ข้อมูลที่ครูเช็คไว้แล้วจะเข้ารายงานทันที
+     * เป็นทางเลือกที่ไม่ทำลายข้อมูล คู่กับ clearHolidayAttendance ที่ลบทิ้ง
+     */
+    function markDateAsSchoolDay(date, buttonEl, sourceTab) {
+      init();
+      if (!date) {
+        E.toast('ไม่พบวันที่ของรายการที่ต้องการแก้', 'error');
+        return;
+      }
+      if (E.setActionButtonState) E.setActionButtonState(buttonEl, true, 'กำลังเพิ่ม...');
+      E.serverCall('saveSchoolCalendarEntry', [{ date: date, type: 'school_day', label: 'วันเรียน' }], function (result) {
+        if (E.setActionButtonState) E.setActionButtonState(buttonEl, false);
+        if (!result || !result.success) {
+          E.toast((result && result.message) || 'เพิ่มเป็นวันเรียนไม่สำเร็จ', 'error');
+          return;
+        }
+        E.toast('นับ ' + date + ' เป็นวันเรียนแล้ว ข้อมูลของวันนี้จะเข้ารายงาน', 'success');
+        if (sourceTab === 'daily') {
+          loadDailyGrid(null, { silent: true });
+        } else {
+          loadSummary(null, { silent: true });
+        }
+      }, function (msg) {
+        if (E.setActionButtonState) E.setActionButtonState(buttonEl, false);
+        E.toast(msg || 'เพิ่มเป็นวันเรียนไม่สำเร็จ', 'error');
       });
     }
 
@@ -1578,6 +1686,7 @@
       loadSummary: loadSummary,
       loadDailyGrid: loadDailyGrid,
       clearHolidayAttendance: clearHolidayAttendance,
+      markDateAsSchoolDay: markDateAsSchoolDay,
       exportCSV: exportCSV,
       openPrint: openPrint,
       setSearch: setSearch,
