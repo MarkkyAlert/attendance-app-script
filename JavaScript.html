@@ -109,6 +109,8 @@
     var studentsSearchDebounceId = 0;
     var ATTENDANCE_SEARCH_DEBOUNCE_MS = 120;
     var STUDENTS_SEARCH_DEBOUNCE_MS = 120;
+    // ยาวกว่าช่องค้นหาเพราะช่องวันที่ต้องพิมพ์หลายช่อง (วัน/เดือน/ปี) กว่าจะครบ
+    var ATTENDANCE_DATE_TYPING_DEBOUNCE_MS = 800;
 
     function loadStoredTeacherAuth_() {
       var raw = '';
@@ -1860,7 +1862,7 @@
       html += '<button class="date-btn" onclick="App.shiftDate(-1)">&#9664;</button>';
       // ต้องมีทั้ง oninput และ onchange: บางเบราว์เซอร์ยิง change ตอน blur/Enter เท่านั้น
       // ครูที่พิมพ์วันที่แล้วไม่กด Enter จะเห็นหน้าจอค้างวันเดิมและคิดว่าระบบแฮงก์
-      html += '<input class="date-input" type="date" value="' + esc(state.currentDate) + '" max="' + esc(todayStr()) + '" oninput="App.goDate(this.value)" onchange="App.goDate(this.value)">';
+      html += '<input class="date-input" type="date" value="' + esc(state.currentDate) + '" max="' + esc(todayStr()) + '" oninput="App.goDateTyped(this.value)" onchange="App.goDate(this.value)">';
       html += '<button class="date-btn" onclick="App.shiftDate(1)">&#9654;</button>';
       html += '</div>';
       html += '</div>';
@@ -2026,6 +2028,35 @@
         attendanceSearchDebounceId = 0;
         refreshAttendanceList_();
       }, ATTENDANCE_SEARCH_DEBOUNCE_MS);
+    }
+
+    var attendanceDateDebounceId = 0;
+
+    function goAttendanceDate_(date) {
+      if (attendanceDateDebounceId) {
+        window.clearTimeout(attendanceDateDebounceId);
+        attendanceDateDebounceId = 0;
+      }
+      if (!date) return;
+      if (date > todayStr()) date = todayStr();
+      // input[type=date] ยิงทั้ง input และ change กันโหลดซ้ำและกันกดเลือกวันเดิม
+      if (date === state.currentDate) return;
+      loadAttendance(date);
+    }
+
+    /**
+     * ใช้ตอนพิมพ์วันที่ในช่อง (oninput)
+     *
+     * ช่อง date เป็นแบบแยกช่อง วัน/เดือน/ปี พอพิมพ์เลขวันตัวแรกก็ได้วันที่ที่สมบูรณ์แล้ว
+     * ถ้าเปลี่ยนหน้าทันทีจะเด้งไปวันที่ 1 ตั้งแต่ยังพิมพ์ไม่จบ แล้วเลขที่เหลือหายไปกับการ re-render
+     * จึงรอให้พิมพ์นิ่งก่อนค่อยโหลด ส่วน onchange (blur/Enter) ยังเปลี่ยนทันทีเหมือนเดิม
+     */
+    function goAttendanceDateTyped_(date) {
+      if (attendanceDateDebounceId) window.clearTimeout(attendanceDateDebounceId);
+      attendanceDateDebounceId = window.setTimeout(function () {
+        attendanceDateDebounceId = 0;
+        goAttendanceDate_(date);
+      }, ATTENDANCE_DATE_TYPING_DEBOUNCE_MS);
     }
 
     function scheduleStudentsPageRender_() {
@@ -2279,6 +2310,10 @@
       if (!target) return;
 
       var oldAttendance = target.attendance ? JSON.parse(JSON.stringify(target.attendance)) : null;
+
+      // แตะสถานะเดิมซ้ำไม่ต้องทำอะไร กันไม่ให้เขียนประวัติเปล่าแบบ "สาย → สาย"
+      // เปิดช่องได้ง่ายตั้งแต่ปุ่มสถานะแสดงตลอดแม้เช็คไปแล้ว
+      if (oldAttendance && oldAttendance.status_code === statusCode) return;
 
       // optimistic UI
       var noteAllowed = ['late', 'absent', 'sick_leave', 'personal_leave'].indexOf(statusCode) >= 0;
@@ -5260,14 +5295,8 @@
         loadAttendance(newDate);
       },
       goToday: function () { loadAttendance(todayStr()); },
-      goDate: function (date) {
-        if (!date) return;
-        if (date > todayStr()) date = todayStr();
-        // input[type=date] ยิง oninput ทันทีที่กรอกครบ และยิง onchange ตามอีกที
-        // กันไม่ให้โหลดซ้ำสองรอบ และกันกรณีกดเลือกวันเดิม
-        if (date === state.currentDate) return;
-        loadAttendance(date);
-      },
+      goDate: goAttendanceDate_,
+      goDateTyped: goAttendanceDateTyped_,
       markStatus: markStatus,
       undoStatus: undoStatus,
       saveNote: saveNote,
