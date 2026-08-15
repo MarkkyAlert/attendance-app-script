@@ -234,6 +234,42 @@ function runP0Diagnostics_() {
       }
     }));
 
+    // 2.7 กติกากันแก้ปฏิทินย้อนหลัง — ต้องกันเฉพาะทิศที่ทำให้ข้อมูลหลุดออกจากรายงาน
+    checks.push(runPreReleaseSmokeCheck_('calendar:guard_direction', function() {
+      var sourceInfo = getCurrentAttendanceSourceInfo_();
+      var confirmedMap = getConfirmedAttendanceDateMap_(sourceInfo) || {};
+      var confirmedDates = Object.keys(confirmedMap).sort();
+      assertPreReleaseSmoke_(
+        confirmedDates.length > 0,
+        'ไม่มีวันที่ยืนยันแล้วเลย ทดสอบกติกานี้ไม่ได้'
+      );
+
+      // ใช้วันจริงที่ยืนยันข้อมูลไปแล้ว เพื่อให้เงื่อนไข conflict เป็นจริงแน่ๆ
+      var date = confirmedDates[confirmedDates.length - 1];
+      var asSchoolDay = { type: 'school_day' };
+      var asHoliday = { type: 'holiday' };
+
+      var cases = [
+        { name: 'ยังไม่มีในปฏิทิน → ตั้งเป็นวันหยุด', existing: null, type: 'holiday', want_block: true },
+        { name: 'ยังไม่มีในปฏิทิน → เพิ่มเป็นวันเรียน', existing: null, type: 'school_day', want_block: false },
+        { name: 'เป็นวันเรียนอยู่ → เปลี่ยนเป็นวันหยุด', existing: asSchoolDay, type: 'holiday', want_block: true },
+        { name: 'เป็นวันหยุดอยู่ → เปลี่ยนเป็นวันเรียน', existing: asHoliday, type: 'school_day', want_block: false },
+        { name: 'เป็นวันเรียนอยู่ → บันทึกซ้ำเป็นวันเรียน', existing: asSchoolDay, type: 'school_day', want_block: false },
+        { name: 'เป็นวันหยุดอยู่ → บันทึกซ้ำเป็นวันหยุด', existing: asHoliday, type: 'holiday', want_block: false }
+      ];
+
+      var wrong = [];
+      cases.forEach(function(testCase) {
+        var blocked = shouldBlockSchoolCalendarChange_(testCase.existing, testCase.type, date, sourceInfo);
+        if (blocked !== testCase.want_block) {
+          wrong.push(testCase.name + ' → ได้ ' + (blocked ? 'กัน' : 'ผ่าน') + ' แต่ควร ' + (testCase.want_block ? 'กัน' : 'ผ่าน'));
+        }
+      });
+
+      assertPreReleaseSmoke_(wrong.length === 0, 'กติกากันปฏิทินผิดทิศ: ' + wrong.join(' ; '));
+      return { tested_date: date, cases_checked: cases.length };
+    }));
+
     // 3-4. CSV ทั้งสองแบบ สร้างจากช่วงภาคเรียนที่ใช้งานอยู่ (ไม่สร้างไฟล์บน Drive)
     checks.push(runPreReleaseSmokeCheck_('csv:monthly', function() {
       monthlyCsv = summarizeP0Csv_(

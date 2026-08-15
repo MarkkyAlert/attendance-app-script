@@ -71,6 +71,24 @@ function getSchoolCalendarConfirmedAttendanceConflictForRange_(from, to, sourceI
   };
 }
 
+/**
+ * ควรกันการแก้ปฏิทินของวันนี้หรือไม่
+ *
+ * สองทิศทางนี้อันตรายไม่เท่ากัน จึงกันแค่ทิศเดียว
+ *   ตั้งเป็นวันหยุด  → ข้อมูลที่ยืนยันแล้วหลุดออกจากรายงาน ต้องกัน
+ *   ตั้งเป็นวันเรียน → ข้อมูลถูกนับเข้ามา ไม่มีอะไรหาย จึงปล่อยผ่าน
+ * ถ้ากันทั้งสองทิศ ครูที่เผลอเช็คชื่อในวันนอกปฏิทินจะแก้กลับไม่ได้เลย
+ *
+ * แยกออกมาเป็นฟังก์ชันเพราะเป็นกติกาที่ทำข้อมูลหายได้ถ้าเขียนผิด
+ * และทดสอบผ่านหน้าจอไม่จบ (dropdown ใน iframe ข้ามโดเมนสั่งด้วยคีย์บอร์ดไม่ได้)
+ */
+function shouldBlockSchoolCalendarChange_(existing, type, date, sourceInfo) {
+  var changesSchedule = !existing || String(existing.type || '') !== type;
+  if (!changesSchedule) return false;
+  if (type !== 'holiday') return false;
+  return !!getSchoolCalendarConfirmedAttendanceConflictForDates_([date], sourceInfo);
+}
+
 function saveSchoolCalendarEntry(payload, auth) {
   return runAsTeacher_(auth, {
     require_csrf: true,
@@ -89,13 +107,7 @@ function saveSchoolCalendarEntry(payload, auth) {
       var sourceInfo = getCurrentAttendanceSourceInfo_();
       var sheet = getOrCreateSchoolCalendarSheet_();
       var existing = getSchoolCalendarRowByDate_(date);
-      var changesSchedule = !existing || String(existing.type || '') !== type;
-      // สองทิศทางนี้อันตรายไม่เท่ากัน จึงกันแค่ทิศเดียว
-      //   ตั้งเป็นวันหยุด  → ข้อมูลที่ยืนยันแล้วหลุดออกจากรายงาน ต้องกันต่อไป
-      //   ตั้งเป็นวันเรียน → ข้อมูลถูกนับเข้ามา ไม่มีอะไรหาย จึงปล่อยผ่าน
-      // ถ้ากันทั้งสองทิศ ครูที่เผลอเช็คชื่อในวันนอกปฏิทินจะแก้กลับไม่ได้เลย
-      var dropsConfirmedData = changesSchedule && type === 'holiday';
-      if (dropsConfirmedData && getSchoolCalendarConfirmedAttendanceConflictForDates_([date], sourceInfo)) {
+      if (shouldBlockSchoolCalendarChange_(existing, type, date, sourceInfo)) {
         return {
           success: false,
           message: 'ตั้งวันที่ ' + date + ' เป็นวันหยุดไม่ได้ เพราะมีข้อมูลเช็คชื่อที่ยืนยันแล้วในวันนั้น'
