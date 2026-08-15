@@ -253,10 +253,29 @@ function getReportsBootstrapData_(params) {
     : { from: monthRange.from, to: monthRange.to };
   var requestedTab = params && params.tab ? String(params.tab) : '';
 
+  // ตารางรายวันเริ่มที่เดือนปัจจุบัน ไม่ใช่ทั้งภาคเรียนเหมือนหน้าสรุป
+  // ทั้งภาคเรียนคือ ~217 คอลัมน์ที่เริ่มจากเดือนแรกซึ่งมักยังไม่มีข้อมูล
+  // ครูเปิดมาจะเจอแต่ช่องว่างเต็มจอ และต้องเลื่อนขวาอีก ~200 คอลัมน์ถึงจะเจอของจริง
+  var dailyRange = summaryRange;
+  if (monthRange && monthRange.from && monthRange.to) {
+    var dailyFrom = monthRange.from;
+    var dailyTo = monthRange.to;
+    if (activeSemester && activeSemester.start_date && dailyFrom < activeSemester.start_date) {
+      dailyFrom = activeSemester.start_date;
+    }
+    if (activeSemester && activeSemester.end_date && dailyTo > activeSemester.end_date) {
+      dailyTo = activeSemester.end_date;
+    }
+    // ไม่ต้องลากไปถึงวันในอนาคตที่ยังไม่มีทางมีข้อมูล
+    var todayValue = todayString_();
+    if (todayValue && dailyTo > todayValue && dailyFrom <= todayValue) dailyTo = todayValue;
+    if (dailyFrom <= dailyTo) dailyRange = { from: dailyFrom, to: dailyTo };
+  }
+
   return {
     activeSemester: activeSemester || null,
     default_summary_range: summaryRange,
-    default_daily_range: summaryRange,
+    default_daily_range: dailyRange,
     initial_report_tab: requestedTab === 'daily' ? 'daily' : 'summary'
   };
 }
