@@ -726,6 +726,12 @@ function onOpen() {
     .addSeparator()
     // ชั่วคราว — ลบบรรทัดนี้พร้อมไฟล์ Diagnostics.gs เมื่อทดสอบงานแก้ P0 ผ่านแล้ว
     .addItem('🧪 ตรวจงานแก้ P0 (dev)', 'runP0Diagnostics')
+    .addSeparator()
+    // ★ ชุดทดสอบ — ลบ 4 บรรทัดนี้พร้อมไฟล์ SeedTestData.gs ก่อนส่งมอบให้ลูกค้าทุกครั้ง
+    .addItem('🧪 [ทดสอบ] เตรียมภาคเรียนทดสอบ', 'prepareTestSemester')
+    .addItem('🧪 [ทดสอบ] สร้างข้อมูลจำลอง', 'seedTestData')
+    .addItem('🧪 [ทดสอบ] ดูสถานะข้อมูล', 'seedTestDataStatus')
+    .addItem('🧪 [ทดสอบ] ล้างข้อมูลเช็คชื่อ', 'clearTestData')
     .addToUi();
 }
 
