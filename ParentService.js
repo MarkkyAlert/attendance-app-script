@@ -13,16 +13,6 @@ var PARENT_LINK_COL = {
   STUDENT_ID: 7
 };
 
-function resetParentLinks(auth) {
-  return runAsTeacher_(auth, {
-    require_csrf: true,
-    rate_limit_key: 'reset_parent_links'
-  }, function() {
-    revokeAllParentLinks_();
-    return { success: true, message: 'รีเซ็ตลิงก์ผู้ปกครองทั้งหมดแล้ว' };
-  });
-}
-
 function revokeAllParentLinks_() {
   var lock = LockService.getDocumentLock();
   lock.waitLock(30000);
@@ -52,38 +42,8 @@ function revokeAllParentLinks_() {
   }
 }
 
-function getParentLinks(auth) {
-  return runAsTeacher_(auth, {
-    rate_limit_key: 'get_parent_links',
-    rate_limit_limit: 60,
-    rate_limit_window_sec: 60
-  }, function() {
-    ensureStudentIdentityMigration_();
-    var students = getStudentListData_().students || [];
-
-    return {
-      success: true,
-      links: students.map(function(student) {
-        var link = findActiveParentLinkByStudent_(student);
-        return {
-          student_number: student.student_number,
-          full_name: student.full_name,
-          nickname: student.nickname || '',
-          has_parent_email: !!String(student.parent_email || '').trim(),
-          has_active_link: !!link,
-          expires_at: link ? link.expires_at : ''
-        };
-      })
-    };
-  });
-}
-
 function getParentLink(studentNumber, auth) {
   return issueParentLinkForTeacher_(studentNumber, auth, 'get_parent_link');
-}
-
-function rotateParentLink(studentNumber, auth) {
-  return issueParentLinkForTeacher_(studentNumber, auth, 'rotate_parent_link');
 }
 
 function openParentSession(token, month) {
@@ -111,10 +71,6 @@ function openParentSession(token, month) {
 
   data.auth = buildParentSessionPayload_(session);
   return data;
-}
-
-function getParentViewData(token, month) {
-  return openParentSession(token, month);
 }
 
 function getParentViewDataBySession(sessionToken, month) {

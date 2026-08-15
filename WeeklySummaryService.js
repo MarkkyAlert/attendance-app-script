@@ -88,16 +88,6 @@ function disableWeeklySummary(auth) {
   });
 }
 
-function isWeeklySummaryEnabled(auth) {
-  return runAsTeacher_(auth, {
-    rate_limit_key: 'is_weekly_summary_enabled',
-    rate_limit_limit: 60,
-    rate_limit_window_sec: 60
-  }, function() {
-    return getSettings_().weekly_summary_enabled === 'true';
-  });
-}
-
 function isWeeklySummaryTriggerEvent_(e) {
   var triggerUid = String(e && e.triggerUid || '').trim();
   if (!triggerUid) return false;

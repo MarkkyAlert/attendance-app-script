@@ -26,7 +26,6 @@
 - `PinService.js` — PIN ล็อกหน้าจอ
 - `PhotoService.js` — ผูก Drive folder รูปนักเรียน
 - `ProfileService.js` — หน้าประวัตินักเรียนรายคน (ฝั่งครู)
-- `AttendanceSummaryService.js` — ชั้นสรุปถาวรรายภาคเรียน **ไม่มีไฟล์ไหนเรียกใช้เลย = dead code ทั้งไฟล์**
 - `Diagnostics.js` — ไฟล์ทดสอบชั่วคราวสำหรับงานแก้ P0 (`runP0Diagnostics`) ลบทิ้งได้เมื่อทดสอบผ่านแล้ว
 
 ### Client
@@ -72,7 +71,8 @@
   `teacher_access_key_salt`, `teacher_trusted_devices`, `teacher_owner_email`, `teacher_session_generation`,
   `pin_hash`, `pin_salt`, `pin_failed_count`, `pin_lock_until` + flag เวอร์ชัน migration และ `derived_cache_version`
 - Session ทุกชนิด (ครู / ผู้ปกครอง / print) เก็บใน CacheService ไม่ใช่ที่ถาวร ถูก evict ได้ตลอดเวลา
-- ขนาดข้อมูล: 50 คน/ห้อง, 2 ภาคเรียน/ปี, เก็บหลายปี → `เช็คชื่อ` +~10,000 แถว/ปี, `ประวัติแก้ไข` +~10,000–20,000 แถว/ปี โดยไม่มีการตัดทิ้ง
+- ขนาดข้อมูล: 50 คน/ห้อง, 2 ภาคเรียน/ปี, เก็บหลายปี → `เช็คชื่อ` +~10,000 แถว/ปี ระบายด้วยการ archive ภาคเรียนเก่า
+  ส่วน `ประวัติแก้ไข` ถูกตัดอัตโนมัติที่ `CHANGE_LOG_MAX_ROWS` (5,000 แถว)
 
 ## กติกาก่อนแก้โค้ด
 - `clasp push` / `pull` **เขียนทับทั้งไฟล์ ไม่ merge แบบ git** → `clasp pull` ก่อนเริ่มงานทุกครั้ง
@@ -96,5 +96,5 @@
   จะรันใหม่กับข้อมูลจริงของครู
 - `restoreBackup` — เป็นช่องทางเดียวที่ครูซึ่งซื้อไปแล้วจะได้รับโค้ดเวอร์ชันใหม่
   `setupSystem_` ใช้ `getUi()` จึงเรียกได้จากเมนูในชีตเท่านั้น โค้ดฝั่ง Web App ต้องเรียก `ensureSystemSheets_` เสมอ
-- `Utils.js` มี `onOpen`, `resetTeacherAccessKeyFromSheet_`, `resetTeacherDeviceBindingFromSheet_` อย่างละ 2 ชุด
-  **ชุดหลังคือตัวที่ทำงานจริง** ชุดแรกเป็น dead code
+- `isTrustedTeacherDeviceQuotaFull_` — อนุญาตอุปกรณ์ได้ 5 เครื่อง พอเต็มแล้วปฏิเสธเครื่องใหม่
+  ห้ามเปลี่ยนกลับไปเบียดเครื่องเก่าออก ไม่งั้นคนที่รู้รหัสครูจะแทรกตัวเข้ามาได้เสมอ

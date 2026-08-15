@@ -15,18 +15,6 @@ function getActiveSemester(auth) {
   });
 }
 
-function getActiveSemesterRange(auth) {
-  return runAsTeacher_(auth, {
-    rate_limit_key: 'get_active_semester_range',
-    rate_limit_limit: 120,
-    rate_limit_window_sec: 60
-  }, function() {
-    var semester = getActiveSemesterRow_();
-    if (!semester) return null;
-    return { from: semester.start_date, to: semester.end_date, name: semester.name, id: semester.id };
-  });
-}
-
 function getSemesterList(auth) {
   return runAsTeacher_(auth, {
     rate_limit_key: 'get_semester_list',

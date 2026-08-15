@@ -97,48 +97,6 @@ function getSheetByNameOrNull_(name) {
 // ─── Generic Sheet CRUD ──────────────────────────
 
 /**
- * Get all rows as objects (skip header row)
- */
-function getAllRows_(sheetName, colDef) {
-  var sheet = getSheet_(sheetName);
-  var lastRow = sheet.getLastRow();
-  if (lastRow <= 1) return [];
-  
-  var data = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
-  var keys = Object.keys(colDef);
-  
-  return data.map(function(row) {
-    var obj = {};
-    keys.forEach(function(key) {
-      var colIndex = colDef[key] - 1;
-      obj[key.toLowerCase()] = colIndex < row.length ? row[colIndex] : '';
-    });
-    return obj;
-  });
-}
-
-/**
- * Find row index (1-based, includes header) by column value
- */
-function findRowIndex_(sheetName, colNumber, value) {
-  var sheet = getSheet_(sheetName);
-  var lastRow = sheet.getLastRow();
-  if (lastRow <= 1) return -1;
-  
-  var data = sheet.getRange(2, colNumber, lastRow - 1, 1).getValues();
-  for (var i = 0; i < data.length; i++) {
-    var cellValue = data[i][0];
-    if (Object.prototype.toString.call(cellValue) === '[object Date]') {
-      cellValue = formatDate_(cellValue);
-    }
-    if (String(cellValue) === String(value)) {
-      return i + 2; // 1-based + header
-    }
-  }
-  return -1;
-}
-
-/**
  * Get next auto-increment ID for a sheet
  */
 function getNextId_(sheetName) {
@@ -188,14 +146,6 @@ function updateCells_(sheetName, rowIndex, updates) {
       sheet.getRange(rowIndex, u.col).setValue(u.value);
     }
   });
-}
-
-/**
- * Delete a row by index
- */
-function deleteRow_(sheetName, rowIndex) {
-  var sheet = getSheet_(sheetName);
-  sheet.deleteRow(rowIndex);
 }
 
 /**
@@ -307,14 +257,3 @@ function removeSetting_(key) {
 
 // ─── UUID Generator ──────────────────────────────
 
-function generateUUID_() {
-  var chars = 'abcdef0123456789';
-  var segments = [8, 4, 4, 4, 12];
-  return segments.map(function(len) {
-    var s = '';
-    for (var i = 0; i < len; i++) {
-      s += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return s;
-  }).join('-');
-}

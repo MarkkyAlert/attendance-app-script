@@ -2,6 +2,11 @@
  * Attendance reads, writes, and derived day summaries.
  */
 
+// เพดานของชีตประวัติแก้ไข ~50 คน/ห้อง เขียนวันละ 1 แถวต่อการแก้ 1 ครั้ง
+// 5000 แถวจึงครอบคลุมย้อนหลังหลายเดือน โดยที่หน้าประวัติยังอ่านได้เร็ว
+var CHANGE_LOG_MAX_ROWS = 5000;
+var CHANGE_LOG_TRIM_SLACK_ROWS = 500;
+
 var ATTENDANCE_ARCHIVE_SHEET_PREFIX = '_att_archive_';
 var ATTENDANCE_DAY_ARCHIVE_SHEET_PREFIX = '_att_day_archive_';
 var ATTENDANCE_DAY_STATUS_MAP_MEMO_ = {};
@@ -253,9 +258,6 @@ function recordAttendance(payload, auth) {
     if (!student) return { success: false, message: 'ไม่พบนักเรียนในวันที่เลือก' };
     if (!STATUS_MAP[statusCode]) return { success: false, message: 'สถานะไม่ถูกต้อง' };
     if (['late', 'absent', 'sick_leave', 'personal_leave'].indexOf(statusCode) < 0) note = '';
-    if (false && hasDayNotificationActivity_(date)) {
-      return { success: false, message: 'วันนี้มีการแจ้งผู้ปกครองแล้ว จึงล้างข้อมูลวันหยุดนี้ไม่ได้' };
-    }
 
     return withAttendanceMutationLock_(function() {
       if (isDayConfirmed_(date)) return { success: false, message: 'วันนี้ถูกยืนยันแล้ว แก้ไขไม่ได้' };
@@ -618,31 +620,6 @@ function getCachedSettings_() {
   var data = getSettings_();
   try { cache.put('st', JSON.stringify(data), 300); } catch (e) {}
   return data;
-}
-
-function getActiveBatchInfo_(records) {
-  records = Array.isArray(records) ? records : [];
-  var latestBatchId = '';
-  for (var i = records.length - 1; i >= 0; i--) {
-    var candidateBatchId = String(records[i] && records[i].batch_id || '').trim();
-    if (!candidateBatchId) continue;
-    latestBatchId = candidateBatchId;
-    break;
-  }
-  if (!latestBatchId) return null;
-
-  var count = 0;
-  records.forEach(function(record) {
-    if (String(record && record.batch_id || '').trim() === latestBatchId) {
-      count++;
-    }
-  });
-
-  return {
-    batch_id: latestBatchId,
-    count: count,
-    pending: false
-  };
 }
 
 function getAttendanceArchiveSheetName_(semester) {
@@ -1179,10 +1156,32 @@ function saveDayStatus_(date, status, confirmedAt) {
   return alerts;
 }
 
+/**
+ * id ถัดไปของชีตประวัติแก้ไข อ่านเฉพาะแถวล่างสุดแทนการสแกนทั้งคอลัมน์
+ * ใช้ได้เพราะเราต่อท้ายอย่างเดียวและตัดทิ้งจากด้านบน แถวล่างสุดจึงมี id มากที่สุดเสมอ
+ */
+function getNextChangeLogId_(sheet) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return 1;
+  return (parseInt(sheet.getRange(lastRow, COL.LOG.ID).getValue(), 10) || 0) + 1;
+}
+
+/**
+ * ตัดประวัติเก่าทิ้งเมื่อเกินเพดาน โดยปล่อยให้ล้นได้ระดับหนึ่งก่อนค่อยตัดทีเดียว
+ * จะได้ไม่ต้องเรียก deleteRows ทุกครั้งที่เช็คชื่อ
+ */
+function trimChangeLogSheet_(sheet) {
+  var overflow = sheet.getLastRow() - (CHANGE_LOG_MAX_ROWS + 1);
+  if (overflow < CHANGE_LOG_TRIM_SLACK_ROWS) return 0;
+  sheet.deleteRows(2, overflow);
+  return overflow;
+}
+
 function logAsync_(studentNumber, studentId, date, oldStatus, newStatus, oldNote, newNote, action) {
   try {
-    appendRow_(SHEET.CHANGE_LOG, [
-      getNextId_(SHEET.CHANGE_LOG),
+    var sheet = getSheet_(SHEET.CHANGE_LOG);
+    sheet.appendRow([
+      getNextChangeLogId_(sheet),
       studentNumber,
       date,
       oldStatus || '',
@@ -1193,6 +1192,7 @@ function logAsync_(studentNumber, studentId, date, oldStatus, newStatus, oldNote
       nowString_(),
       studentId || ''
     ]);
+    trimChangeLogSheet_(sheet);
   } catch (e) {}
 }
 
@@ -1290,32 +1290,6 @@ function getCachedAttendanceDayStatusMap_(sourceInfo) {
   return dayStatusMap;
 }
 
-function readAttendanceDayStatusByDate_(date, sourceInfo) {
-  var sheet = getAttendanceDaySourceSheet_(sourceInfo);
-  var lastRow = sheet ? sheet.getLastRow() : 0;
-  if (lastRow <= 1) return null;
-
-  var matches = sheet.getRange(2, COL.ATT_DAYS.DATE, lastRow - 1, 1)
-    .createTextFinder(String(date || ''))
-    .matchEntireCell(true)
-    .findAll();
-  if (!matches.length) return null;
-
-  var selected = null;
-  matches.forEach(function(range) {
-    var row = sheet.getRange(range.getRow(), COL.ATT_DAYS.DATE, 1, COL.ATT_DAYS.CONFIRMED_AT).getValues()[0];
-    var rowDate = row[COL.ATT_DAYS.DATE - 1] instanceof Date
-      ? formatDate_(row[COL.ATT_DAYS.DATE - 1])
-      : String(row[COL.ATT_DAYS.DATE - 1] || '').slice(0, 10);
-    if (rowDate !== date) return;
-    selected = {
-      status: String(row[COL.ATT_DAYS.STATUS - 1] || 'draft'),
-      confirmed_at: String(row[COL.ATT_DAYS.CONFIRMED_AT - 1] || '')
-    };
-  });
-  return selected;
-}
-
 function getCachedAttendanceDayStatusByDate_(date, sourceInfo) {
   sourceInfo = sourceInfo || getCurrentAttendanceSourceInfo_();
   date = String(date || '').slice(0, 10);
@@ -1380,13 +1354,6 @@ function getCachedConfirmedAttendanceRange_(from, to, sourceInfo) {
     });
     return getUniqueLatestRecords_(records);
   });
-}
-
-function getConfirmedAttendanceRecords_() {
-  var sourceInfo = getCurrentAttendanceSourceInfo_();
-  var confirmedDates = getConfirmedAttendanceDateMap_(sourceInfo);
-  if (!Object.keys(confirmedDates).length) return [];
-  return getCachedConfirmedAttendanceRecords_(sourceInfo);
 }
 
 function getAttendanceBasisDays_(totalDays, excusedLeaveDays) {

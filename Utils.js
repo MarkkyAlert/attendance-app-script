@@ -469,16 +469,6 @@ function normalizeAttentionThresholdDays_(value) {
   return value;
 }
 
-function getGreetingByTime_() {
-  var now = new Date();
-  var bangkokTime = new Date(now.toLocaleString('en-US', { timeZone: APP_TIMEZONE }));
-  var hour = bangkokTime.getHours();
-
-  if (hour < 12) return { emoji: '🌅', text: 'สวัสดีตอนเช้า' };
-  if (hour < 17) return { emoji: '☀️', text: 'สวัสดีตอนบ่าย' };
-  return { emoji: '🌆', text: 'สวัสดีตอนเย็น' };
-}
-
 // System Setup
 
 /**
@@ -555,62 +545,6 @@ function ensureSystemSheets_() {
   formatAttendanceSheet_();
 
   return { initial_teacher_key: initialTeacherKey };
-}
-
-/**
- * สร้างรหัสครูใหม่จาก Google Sheets เมื่อลืมรหัสหรือไม่ได้จดจาก popup (รหัสเดิมใช้ไม่ได้)
- */
-function resetTeacherAccessKeyFromSheet_() {
-  var ui = SpreadsheetApp.getUi();
-  var response = ui.alert(
-    'รีเซ็ตรหัสครู',
-    'จะสร้างรหัสครูใหม่ รหัสเดิมจะใช้ไม่ได้ และ session ที่ล็อกอินอยู่จะหมดอายุ\n' +
-      'จะยกเลิกการผูกอุปกรณ์หลักด้วย (ให้เข้าได้จากเครื่อง/เบราว์เซอร์ใหม่ด้วยรหัสใหม่)\n\n' +
-      'ดำเนินการต่อหรือไม่?',
-    ui.ButtonSet.OK_CANCEL
-  );
-  if (response !== ui.Button.OK) {
-    return;
-  }
-
-  ensureSecurityMigration_();
-  var newKey = generateSecureToken_(16);
-  setTeacherAccessKey_(newKey);
-  clearTeacherOwnerDeviceId_();
-
-  ui.alert(
-    '✅ สร้างรหัสครูใหม่แล้ว\n\nรหัสใหม่: ' + newKey + '\n\nกรุณาบันทึกรหัสนี้ไว้ในที่ปลอดภัย แล้วเข้า Web App ด้วยบัญชี Google เดิมที่เคยใช้งานระบบ'
-  );
-}
-
-/**
- * รีเซ็ตการผูกอุปกรณ์หลักของครู โดยไม่เปลี่ยนรหัสครู
- */
-function resetTeacherDeviceBindingFromSheet_() {
-  var ui = SpreadsheetApp.getUi();
-  var response = ui.alert(
-    'รีเซ็ตอุปกรณ์ครู',
-    'ใช้เมื่อเคยเข้า Web App ผ่านเครื่องหรือเบราว์เซอร์เดิม แล้วกลับเข้าไม่ได้ เช่น ใช้ incognito หรือเปลี่ยนเครื่อง\n\n' +
-      'ระบบจะยกเลิกการผูกอุปกรณ์หลักเดิม และบังคับให้อุปกรณ์ที่ล็อกอินค้างอยู่ต้องเข้าสู่ระบบใหม่\n\n' +
-      'รหัสครูจะไม่ถูกเปลี่ยน\n\n' +
-      'ดำเนินการต่อหรือไม่?',
-    ui.ButtonSet.OK_CANCEL
-  );
-  if (response !== ui.Button.OK) {
-    return;
-  }
-
-  ensureSecurityMigration_();
-  clearTeacherOwnerDeviceId_();
-  rotateTeacherSessionGeneration_();
-
-  ui.alert(
-    '✅ รีเซ็ตอุปกรณ์ครูแล้ว\n\n' +
-      'ขั้นต่อไป:\n' +
-      '1. กลับไปเปิด Web App\n' +
-      '2. เข้าสู่ระบบด้วยรหัสครูเดิม\n' +
-      '3. เครื่องหรือเบราว์เซอร์ที่เข้าได้ครั้งถัดไปจะถูกผูกเป็นอุปกรณ์หลักใหม่'
-  );
 }
 
 function createSheetIfNotExists_(ss, name, headers) {
@@ -717,19 +651,6 @@ function insertSampleData_() {
 }
 
 // Add Custom Menu
-
-function onOpen() {
-  SpreadsheetApp.getUi()
-    .createMenu('🎓 ระบบเช็คชื่อ')
-    .addItem('⚙️ ติดตั้งระบบ (ครั้งแรก)', 'setupSystem_')
-    .addItem('📋 เพิ่มข้อมูลตัวอย่าง', 'insertSampleData_')
-    .addSeparator()
-    .addItem('📱 รีเซ็ตอุปกรณ์ครู (ฉุกเฉิน)', 'resetTeacherDeviceBindingFromSheet_')
-    .addItem('🔑 รีเซ็ตรหัสครู (ลืมรหัส / ฉุกเฉิน)', 'resetTeacherAccessKeyFromSheet_')
-    .addSeparator()
-    .addItem('🌐 เปิด Web App', 'openWebApp_')
-    .addToUi();
-}
 
 function openWebApp_() {
   var url = ScriptApp.getService().getUrl();

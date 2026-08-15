@@ -61,10 +61,6 @@ function getTeacherOwnerDeviceId_() {
   return String(getSecureProperty_(SECURITY_PROP.TEACHER_DEVICE_ID) || '').trim();
 }
 
-function setTeacherOwnerDeviceId_(deviceId) {
-  setSecureProperty_(SECURITY_PROP.TEACHER_DEVICE_ID, String(deviceId || '').trim());
-}
-
 function clearTeacherOwnerDeviceId_() {
   deleteSecureProperty_(SECURITY_PROP.TEACHER_DEVICE_ID);
 }
@@ -127,6 +123,17 @@ function hasTrustedTeacherDevice_(deviceId) {
   deviceId = String(deviceId || '').trim();
   if (!isValidTeacherDeviceId_(deviceId)) return false;
   return getTrustedTeacherDeviceIds_().indexOf(deviceId) !== -1;
+}
+
+/**
+ * โควตาอุปกรณ์เต็มหรือยัง — เครื่องที่อยู่ในรายการแล้วไม่นับกินโควตาเพิ่ม
+ * ใช้ปฏิเสธเครื่องใหม่แทนการเบียดเครื่องเก่าออกเงียบๆ ไม่งั้นคนที่รู้รหัสครู
+ * จะแทรกตัวเข้ามาได้เสมอไม่ว่ารายการจะเต็มแค่ไหน
+ */
+function isTrustedTeacherDeviceQuotaFull_(deviceId) {
+  deviceId = String(deviceId || '').trim();
+  if (hasTrustedTeacherDevice_(deviceId)) return false;
+  return getTrustedTeacherDevices_().length >= SECURITY.MAX_TRUSTED_TEACHER_DEVICES;
 }
 
 function rememberTrustedTeacherDevice_(deviceId) {
@@ -248,10 +255,6 @@ function getTeacherAccessKeyHash_() {
   return getSecureProperty_(SECURITY_PROP.TEACHER_ACCESS_KEY_HASH);
 }
 
-function getTeacherKeyLoginEnabled_() {
-  return true;
-}
-
 function getSingleTeacherEmail_() {
   var email = '';
   try {
@@ -342,12 +345,6 @@ function verifyTeacherAccessKey_(teacherKey) {
     hashTeacherAccessKey_(teacherKey, ensureTeacherAccessKeySalt_()),
     getTeacherAccessKeyHash_()
   );
-}
-
-function getTeacherLaunchUrl_() {
-  var url = ScriptApp.getService().getUrl();
-  if (!url) return '';
-  return url;
 }
 
 function getTeacherLoginOptions() {
@@ -1102,9 +1099,13 @@ function bootstrapTeacherSession(teacherKey, deviceId) {
     return { success: false, message: 'รหัสเข้าใช้งานไม่ถูกต้อง' };
   }
 
-  var ownerDeviceId = '';
-  if (ownerDeviceId && ownerDeviceId !== deviceId) {
-    return { success: false, message: 'บัญชีครูถูกผูกกับอุปกรณ์หลักเครื่องอื่นอยู่แล้ว' };
+  if (isTrustedTeacherDeviceQuotaFull_(deviceId)) {
+    return {
+      success: false,
+      message: 'อนุญาตอุปกรณ์ครบ ' + SECURITY.MAX_TRUSTED_TEACHER_DEVICES + ' เครื่องแล้ว ' +
+        'ถ้าต้องการใช้จากเครื่องใหม่ กรุณาเปิด Google Sheets แล้วใช้เมนู ' +
+        '🎓 ระบบเช็คชื่อ > 📱 รีเซ็ตอุปกรณ์ครูทั้งหมด (ฉุกเฉิน) ก่อน'
+    };
   }
 
   var principalEmail = getVerifiedTeacherPrincipalEmail_();
@@ -1120,9 +1121,6 @@ function bootstrapTeacherSession(teacherKey, deviceId) {
     setTeacherOwnerEmail_(resolvedEmail);
   }
   rememberTrustedTeacherDevice_(deviceId);
-  if (false && !ownerDeviceId) {
-    setTeacherOwnerDeviceId_(deviceId);
-  }
 
   var session = createTeacherSession_({
     method: 'key',

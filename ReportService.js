@@ -359,16 +359,6 @@ function warmLikelyDerivedCachesForDate_(date) {
   }
 }
 
-function exportCSV(reportType, params, auth) {
-  return runAsTeacher_(auth, {
-    rate_limit_key: 'export_csv',
-    rate_limit_limit: 40,
-    rate_limit_window_sec: 60
-  }, function() {
-    return exportCSVData_(reportType, params);
-  });
-}
-
 /**
  * สร้างไฟล์ CSV ชั่วคราวบน Drive แล้วส่ง URL ดาวน์โหลดกลับให้ client
  * client จะเรียก cleanupCSVFile ลบไฟล์ทิ้งหลังดาวน์โหลดเสร็จ
@@ -1318,13 +1308,6 @@ function isEffectiveRangeEmpty_(range) {
   return !range || !range.from || !range.to || range.out_of_semester === true;
 }
 
-function filterRecordsByRange_(records, range) {
-  if (isEffectiveRangeEmpty_(range)) return [];
-  return (records || []).filter(function(record) {
-    return record.date >= range.from && record.date <= range.to;
-  });
-}
-
 function getEffectiveRangeMonth_(range, fallbackMonth) {
   if (range && range.from) return String(range.from).substring(0, 7);
   return normalizeMonth_((range && range.requested_month) || fallbackMonth || null);
@@ -1598,14 +1581,6 @@ function generateDateList_(from, to) {
   }
 
   return dates;
-}
-
-function countDistinctDates_(records) {
-  var dates = {};
-  records.forEach(function(record) {
-    dates[record.date] = true;
-  });
-  return Object.keys(dates).length;
 }
 
 function buildCSVString_(rows) {

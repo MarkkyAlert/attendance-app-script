@@ -27,17 +27,6 @@ function doGet(e) {
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
-function getTeacherUrl(auth) {
-  return runAsTeacher_(auth, {
-    rate_limit_key: 'get_teacher_url',
-    rate_limit_limit: 30,
-    rate_limit_window_sec: 60
-  }, function() {
-    var url = ScriptApp.getService().getUrl();
-    return { url: url };
-  });
-}
-
 function include_(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
@@ -114,18 +103,6 @@ function getClientStyleContent(name, auth) {
 
 function getScriptUrl_() {
   return ScriptApp.getService().getUrl();
-}
-
-function getCurrentUser(auth) {
-  return runAsTeacher_(auth, {
-    rate_limit_key: 'get_current_user',
-    rate_limit_limit: 120,
-    rate_limit_window_sec: 60
-  }, function(session) {
-    var user = getTeacherSessionUser_(session);
-    user.pinState = getPinState();
-    return user;
-  });
 }
 
 function getInitialData(page, params, auth) {
@@ -599,6 +576,3 @@ function assertPreReleaseSmoke_(condition, message) {
   }
 }
 
-function adminBootstrapTeacherAccessOnce() {
-  throw new Error('ปิดการใช้งานฟังก์ชันนี้ในระบบจริงแล้ว กรุณาใช้ setupSystem_ จากเมนู Google Sheets เพื่อติดตั้งระบบครั้งแรก');
-}

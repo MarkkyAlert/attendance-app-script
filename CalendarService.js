@@ -99,7 +99,7 @@ function saveSchoolCalendarEntry(payload, auth) {
       if (existing) {
         sheet.getRange(existing.row_index, SCHOOL_CALENDAR_COL.TYPE, 1, 2).setValues([[type, label]]);
       } else {
-        sheet.appendRow([getNextSchoolCalendarId_(), date, type, label]);
+        sheet.appendRow([getNextSchoolCalendarId_(sheet), date, type, label]);
       }
       sortSchoolCalendarSheet_(sheet);
       invalidateSchoolCalendarCaches_();
@@ -169,12 +169,14 @@ function generateSchoolCalendarForActiveSemester(auth) {
       var sheet = getOrCreateSchoolCalendarSheet_();
       removeSchoolCalendarEntriesInRange_(semester.from, semester.to, sheet);
 
+      // คำนวณ id ตั้งต้นครั้งเดียวนอกลูป ถ้าเรียกในลูปจะอ่านทั้งคอลัมน์และเขียน schema ใหม่ทุกวัน
+      var nextId = getNextSchoolCalendarId_(sheet);
       var rows = [];
       var cursor = semester.from;
       while (cursor <= semester.to) {
         var weekday = getIsoWeekday_(cursor);
         if (weekday >= 1 && weekday <= 5) {
-          rows.push([getNextSchoolCalendarId_(rows.length), cursor, 'school_day', 'วันเรียน']);
+          rows.push([nextId + rows.length, cursor, 'school_day', 'วันเรียน']);
         }
         cursor = shiftDate_(cursor, 1);
       }
@@ -337,8 +339,11 @@ function getSchoolCalendarRowByDate_(date) {
   return getSchoolCalendarEntryByDate_(date);
 }
 
-function getNextSchoolCalendarId_(offset) {
-  var sheet = getOrCreateSchoolCalendarSheet_();
+/**
+ * @param {Sheet=} sheet ส่งชีตเข้ามาเมื่อผู้เรียกมีอยู่แล้ว จะได้ไม่ต้องรัน ensureSchoolCalendarSchema_ ซ้ำ
+ */
+function getNextSchoolCalendarId_(sheet) {
+  sheet = sheet || getOrCreateSchoolCalendarSheet_();
   var lastRow = sheet.getLastRow();
   var maxId = 0;
   if (lastRow > 1) {
@@ -348,7 +353,7 @@ function getNextSchoolCalendarId_(offset) {
       if (value > maxId) maxId = value;
     });
   }
-  return maxId + 1 + (parseInt(offset, 10) || 0);
+  return maxId + 1;
 }
 
 function getOrCreateSchoolCalendarSheet_() {

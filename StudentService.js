@@ -187,21 +187,6 @@ function normalizeStudentRosterDateInput_(value, label, options) {
   return normalized;
 }
 
-function getStudentByIdentifier_(identifier) {
-  var normalizedId = parseInt(identifier, 10) || 0;
-  if (normalizedId > 0) {
-    var byId = getStudentById_(normalizedId);
-    if (byId) return byId;
-  }
-  return getStudentByNumberAny_(identifier);
-}
-
-function findStudentRowById_(studentId) {
-  studentId = parseInt(studentId, 10) || 0;
-  var student = studentId > 0 ? getStudentById_(studentId) : null;
-  return student ? student.row_index : -1;
-}
-
 function findActiveStudentRowByIdentifier_(studentId, studentNumber) {
   var normalizedId = parseInt(studentId, 10) || 0;
   if (normalizedId > 0) {
@@ -749,51 +734,6 @@ function restoreStudent(studentIdentifier, auth) {
   });
 }
 
-function bulkUpdateGroup(studentNumbers, groupName, auth) {
-  return runAsTeacher_(auth, {
-    require_csrf: true,
-    rate_limit_key: 'bulk_update_group'
-  }, function() {
-    if (!Array.isArray(studentNumbers) || studentNumbers.length === 0) {
-      return { success: false, message: 'กรุณาเลือกนักเรียน' };
-    }
-
-    try {
-      groupName = normalizeLimitedText_(groupName, 60, 'กลุ่ม');
-    } catch (e) {
-      return { success: false, message: e.message };
-    }
-    var sheet = getSheet_(SHEET.STUDENTS);
-    var lastRow = sheet.getLastRow();
-    if (lastRow <= 1) return { success: false, message: 'ไม่มีข้อมูลนักเรียน' };
-
-    var data = sheet.getRange(2, 1, lastRow - 1, 9).getValues();
-    var targetNumbers = {};
-    studentNumbers.forEach(function(num) {
-      targetNumbers[parseInt(num, 10)] = true;
-    });
-
-    var ranges = [];
-    var count = 0;
-    for (var i = 0; i < data.length; i++) {
-      var studentNumber = parseInt(data[i][1], 10);
-      var isActive = data[i][7] === true || String(data[i][7]).toUpperCase() === 'TRUE';
-      if (isActive && targetNumbers[studentNumber]) {
-        ranges.push('F' + (i + 2));
-        count++;
-      }
-    }
-
-    if (count === 0) {
-      return { success: false, message: 'ไม่พบนักเรียนที่เลือก' };
-    }
-
-    sheet.getRangeList(ranges).setValue(groupName);
-    invalidateStudentCache_();
-    return { success: true, message: 'อัปเดตกลุ่มให้ ' + count + ' คนเรียบร้อย' };
-  });
-}
-
 function saveSettings(payload, auth) {
   return runAsTeacher_(auth, {
     require_csrf: true,
@@ -1257,10 +1197,6 @@ function getStudentRosterStartDate_(student) {
   return getStudentRosterBounds_(student).start;
 }
 
-function getStudentRosterEndDate_(student) {
-  return getStudentRosterBounds_(student).end;
-}
-
 function isStudentInRosterOnDate_(student, date) {
   if (!student) return false;
   date = String(date || '').slice(0, 10);
@@ -1286,15 +1222,6 @@ function doesStudentRosterOverlapRange_(student, range) {
     if (inclusiveEnd < range.from) return false;
   }
   return true;
-}
-
-function getGroupsForStudents_(students) {
-  var groupSet = {};
-  (students || []).forEach(function(student) {
-    var groupName = String(student.group_name || '').trim();
-    if (groupName) groupSet[groupName] = true;
-  });
-  return Object.keys(groupSet).sort();
 }
 
 function getStudentsForAttendanceDate_(date) {
@@ -1558,21 +1485,3 @@ function backfillStudentRosterDates_() {
   }
 }
 
-function getUniqueStudentIdByNumberMap_() {
-  var map = {};
-  var duplicates = {};
-  (getStudentListData_().all_students || []).forEach(function(student) {
-    var studentNumber = parseInt(student.student_number, 10) || 0;
-    var studentId = parseInt(student.id, 10) || 0;
-    if (!studentNumber || !studentId) return;
-    if (map[studentNumber] && map[studentNumber] !== studentId) {
-      duplicates[studentNumber] = true;
-      delete map[studentNumber];
-      return;
-    }
-    if (!duplicates[studentNumber]) {
-      map[studentNumber] = studentId;
-    }
-  });
-  return map;
-}
