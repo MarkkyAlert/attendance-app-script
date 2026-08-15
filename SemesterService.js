@@ -402,7 +402,7 @@ function getSemesterAttendanceDayRowsFromSheet_(sheet, semester) {
       return;
     }
     if (date < semester.start_date || date > semester.end_date) return;
-    rows.push([date, String(row[COL.ATT_DAYS.STATUS - 1] || ''), String(row[COL.ATT_DAYS.CONFIRMED_AT - 1] || '')]);
+    rows.push([date, String(row[COL.ATT_DAYS.STATUS - 1] || ''), normalizeTimestampValue_(row[COL.ATT_DAYS.CONFIRMED_AT - 1])]);
     rowIndexes.push(index + 2);
   });
 
@@ -430,7 +430,9 @@ function appendArchiveAttendanceRowsIfMissing_(sheet, rows) {
   });
   if (!pending.length) return 0;
 
-  sheet.getRange(sheet.getLastRow() + 1, 1, pending.length, COL.ATTENDANCE.STUDENT_ID).setValues(pending);
+  // ค่าที่อ่านกลับจากชีต archive เป็นข้อความดิบแล้ว (Sheets กลืน ' ไปตอนเขียนครั้งแรก)
+  // ถ้าเขียนกลับตรงๆ หมายเหตุที่ขึ้นต้นด้วย = จะกลายเป็นสูตรอีกรอบ
+  sheet.getRange(sheet.getLastRow() + 1, 1, pending.length, COL.ATTENDANCE.STUDENT_ID).setValues(sanitizeSheetRows_(pending));
   return pending.length;
 }
 
@@ -461,7 +463,7 @@ function appendArchiveDayRowsIfMissing_(sheet, rows) {
   });
   if (!pending.length) return 0;
 
-  sheet.getRange(sheet.getLastRow() + 1, 1, pending.length, COL.ATT_DAYS.CONFIRMED_AT).setValues(pending);
+  sheet.getRange(sheet.getLastRow() + 1, 1, pending.length, COL.ATT_DAYS.CONFIRMED_AT).setValues(sanitizeSheetRows_(pending));
   return pending.length;
 }
 

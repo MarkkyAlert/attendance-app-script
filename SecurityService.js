@@ -551,6 +551,37 @@ function sanitizeCsvCell_(value) {
   return text;
 }
 
+/**
+ * กันข้อความของผู้ใช้ไม่ให้ Google Sheets ตีความเป็นสูตรตอนเขียนลงชีต
+ *
+ * Sheets แปลงค่าที่เขียนผ่าน setValue/setValues เหมือนผู้ใช้พิมพ์เอง ค่าที่ขึ้นต้นด้วย
+ * = + - @ จึงกลายเป็นสูตร และแสดงเป็น #ERROR! ถ้าสูตรไม่ถูกต้อง ชื่อเด็กจะหายไปทั้งชื่อ
+ * ทั้งในระบบและบนเอกสาร ปพ.6 (setNumberFormat('@') ก่อนเขียนกันไม่อยู่ ทดสอบแล้ว)
+ *
+ * ใช้ ' นำหน้าแบบเดียวกับ sanitizeCsvCell_ ซึ่งเป็นวิธีมาตรฐานที่บอก Sheets ว่า
+ * "ค่านี้เป็นข้อความ" — ตัว ' จะถูกกลืนตอนเขียน ไม่ติดกลับมาตอน getValue()
+ *
+ * แตะเฉพาะ string เท่านั้น number / boolean / Date ส่งผ่านตามเดิม
+ * ตัวเลขติดลบจึงไม่โดนด้วย เพราะถูกเขียนเป็น number ไม่ใช่สตริง '-5'
+ */
+function sanitizeSheetText_(value) {
+  if (typeof value !== 'string' || !value) return value;
+  if (/^[=+\-@]/.test(value) || /^[\t\r]/.test(value)) {
+    return "'" + value;
+  }
+  return value;
+}
+
+/** ใช้ sanitizeSheetText_ กับทุกเซลล์ของอาร์เรย์ 2 มิติก่อนส่งเข้า setValues */
+function sanitizeSheetRows_(rows) {
+  if (!rows || !rows.length) return rows;
+  return rows.map(function(row) {
+    return (row || []).map(function(cell) {
+      return sanitizeSheetText_(cell);
+    });
+  });
+}
+
 function generateSecureToken_(length) {
   var token = '';
   while (token.length < length) {

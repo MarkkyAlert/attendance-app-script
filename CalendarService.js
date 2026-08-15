@@ -97,9 +97,9 @@ function saveSchoolCalendarEntry(payload, auth) {
         };
       }
       if (existing) {
-        sheet.getRange(existing.row_index, SCHOOL_CALENDAR_COL.TYPE, 1, 2).setValues([[type, label]]);
+        sheet.getRange(existing.row_index, SCHOOL_CALENDAR_COL.TYPE, 1, 2).setValues([[type, sanitizeSheetText_(label)]]);
       } else {
-        sheet.appendRow([getNextSchoolCalendarId_(sheet), date, type, label]);
+        sheet.appendRow([getNextSchoolCalendarId_(sheet), date, type, sanitizeSheetText_(label)]);
       }
       sortSchoolCalendarSheet_(sheet);
       invalidateSchoolCalendarCaches_();

@@ -403,7 +403,7 @@ function getParentLinkRows_() {
       student_number: parseInt(row[PARENT_LINK_COL.STUDENT_NUMBER - 1], 10) || 0,
       student_id: parseInt(row[PARENT_LINK_COL.STUDENT_ID - 1], 10) || 0,
       token_hash: tokenHash,
-      created_at: String(row[PARENT_LINK_COL.CREATED_AT - 1] || ''),
+      created_at: normalizeTimestampValue_(row[PARENT_LINK_COL.CREATED_AT - 1]),
       expires_at: String(row[PARENT_LINK_COL.EXPIRES_AT - 1] || ''),
       revoked: row[PARENT_LINK_COL.REVOKED - 1] === true || String(row[PARENT_LINK_COL.REVOKED - 1]).toUpperCase() === 'TRUE'
     };

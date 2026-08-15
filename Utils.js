@@ -365,6 +365,24 @@ function nowString_() {
   return Utilities.formatDate(new Date(), APP_TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
 }
 
+/**
+ * อ่านค่าคอลัมน์เวลากลับมาให้เป็นรูปแบบเดียวเสมอ
+ *
+ * เราเขียนเวลาลงชีตเป็นข้อความ 'yyyy-MM-dd HH:mm:ss' แต่ Sheets แปลงเป็น Date object
+ * ให้เอง พออ่านกลับด้วย String() จึงได้ค่า default ของ JS ทั้งดุ้น เช่น
+ * 'Sat Aug 15 2026 13:03:59 GMT+0700 (Indochina Time)' ซึ่งขึ้นไปโชว์บนหน้าจอครู
+ *
+ * นอกจากทำให้อ่านรู้เรื่องแล้ว ยังทำให้เรียงลำดับแบบข้อความได้ถูกต้อง
+ * เพราะที่ผ่านมาแถวที่เป็น Date กับแถวที่เป็นข้อความปนกันแล้วเทียบกันไม่ได้
+ */
+function normalizeTimestampValue_(value) {
+  if (value == null || value === '') return '';
+  if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value)) {
+    return Utilities.formatDate(value, APP_TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+  }
+  return String(value);
+}
+
 function matchDatePartsToIso_(year, month, day) {
   return String(year) + '-' + ('0' + parseInt(month, 10)).slice(-2) + '-' + ('0' + parseInt(day, 10)).slice(-2);
 }

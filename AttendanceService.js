@@ -282,7 +282,7 @@ function recordAttendance(payload, auth) {
 
       var now = nowString_();
       if (rowIndex > 0) {
-        sheet.getRange(rowIndex, COL.ATTENDANCE.STATUS_CODE, 1, 3).setValues([[statusCode, note, '']]);
+        sheet.getRange(rowIndex, COL.ATTENDANCE.STATUS_CODE, 1, 3).setValues([[statusCode, sanitizeSheetText_(note), '']]);
         sheet.getRange(rowIndex, COL.ATTENDANCE.UPDATED_AT).setValue(now);
         sheet.getRange(rowIndex, COL.ATTENDANCE.STUDENT_ID).setValue(studentId);
       } else {
@@ -1236,7 +1236,7 @@ function getAttendanceAuditTrailEntries_(date) {
       new_status_label: newStatus && STATUS_MAP[newStatus] ? STATUS_MAP[newStatus].label : '',
       old_note: String(row[COL.LOG.OLD_NOTE - 1] || ''),
       new_note: String(row[COL.LOG.NEW_NOTE - 1] || ''),
-      changed_at: String(row[COL.LOG.CHANGED_AT - 1] || ''),
+      changed_at: normalizeTimestampValue_(row[COL.LOG.CHANGED_AT - 1]),
       is_day_event: studentNumber <= 0 && studentId <= 0
     });
   });

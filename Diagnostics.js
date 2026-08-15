@@ -139,6 +139,101 @@ function runP0Diagnostics_() {
       }
     }));
 
+    // 2.5 กันสูตร: พิสูจน์บนชีตจริงว่า sanitizeSheetText_ ทำให้ค่ากลับมาครบ ไม่เป็น #ERROR!
+    checks.push(runPreReleaseSmokeCheck_('sheet_text:formula_injection', function() {
+      var ss = getSpreadsheet_();
+      var stale = ss.getSheetByName(P0_DIAG_TEMP_SHEET_);
+      if (stale) ss.deleteSheet(stale);
+
+      var sheet = ss.insertSheet(P0_DIAG_TEMP_SHEET_);
+      try {
+        // ค่าที่ Sheets จะตีความเป็นสูตรถ้าเขียนดิบๆ + ค่าปกติที่ต้องไม่ถูกแตะ
+        var samples = [
+          '=1+1',
+          '=ด.ช.สมชาย ใจดี',
+          '+66812345678',
+          '-5 วัน',
+          '@บ้าน',
+          'ด.ญ.ณิชาภัทร แก้วใส',
+          'ปุ๊กกี้'
+        ];
+
+        var raw = samples.map(function(text) { return [text]; });
+        sheet.getRange(1, 1, raw.length, 1).setValues(raw);
+
+        var guarded = samples.map(function(text) { return [sanitizeSheetText_(text)]; });
+        sheet.getRange(1, 2, guarded.length, 1).setValues(guarded);
+
+        var rawDisplay = sheet.getRange(1, 1, samples.length, 1).getDisplayValues();
+        var guardedDisplay = sheet.getRange(1, 2, samples.length, 1).getDisplayValues();
+        var guardedValues = sheet.getRange(1, 2, samples.length, 1).getValues();
+
+        var broken = [];
+        var stillWrong = [];
+        for (var i = 0; i < samples.length; i++) {
+          if (String(rawDisplay[i][0]) !== samples[i]) {
+            broken.push(samples[i] + ' → ' + rawDisplay[i][0]);
+          }
+          if (String(guardedDisplay[i][0]) !== samples[i] || String(guardedValues[i][0]) !== samples[i]) {
+            stillWrong.push(
+              samples[i] + ' → แสดง: ' + guardedDisplay[i][0] + ' | อ่านกลับ: ' + guardedValues[i][0]
+            );
+          }
+        }
+
+        // ต้องยังพังอยู่ตอนเขียนดิบ ไม่งั้นแปลว่าเทสต์นี้ไม่ได้ทดสอบอะไรเลย
+        assertPreReleaseSmoke_(
+          broken.length > 0,
+          'เขียนดิบแล้วไม่พังเลย แปลว่าเทสต์นี้พิสูจน์อะไรไม่ได้ — ตรวจสมมติฐานใหม่'
+        );
+        assertPreReleaseSmoke_(
+          stillWrong.length === 0,
+          'sanitizeSheetText_ ยังกันไม่อยู่: ' + stillWrong.join(' ; ')
+        );
+
+        return { broken_when_raw: broken, guarded_ok: samples.length };
+      } finally {
+        var temp = ss.getSheetByName(P0_DIAG_TEMP_SHEET_);
+        if (temp) ss.deleteSheet(temp);
+      }
+    }));
+
+    // 2.6 เวลา: เขียนเป็นข้อความแล้ว Sheets แปลงเป็น Date — อ่านกลับต้องได้รูปแบบเดิม
+    checks.push(runPreReleaseSmokeCheck_('timestamp:round_trip', function() {
+      var ss = getSpreadsheet_();
+      var stale = ss.getSheetByName(P0_DIAG_TEMP_SHEET_);
+      if (stale) ss.deleteSheet(stale);
+
+      var sheet = ss.insertSheet(P0_DIAG_TEMP_SHEET_);
+      try {
+        var written = nowString_();
+        sheet.getRange(1, 1).setValue(written);
+
+        var readBack = sheet.getRange(1, 1).getValue();
+        var viaString = String(readBack);
+        var normalized = normalizeTimestampValue_(readBack);
+
+        assertPreReleaseSmoke_(
+          /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(normalized),
+          'normalizeTimestampValue_ ให้รูปแบบผิด: ' + normalized
+        );
+        assertPreReleaseSmoke_(
+          normalized === written,
+          'อ่านกลับไม่ตรงกับที่เขียน — เขียน: ' + written + ' | ได้: ' + normalized
+        );
+
+        return {
+          written: written,
+          raw_string: viaString,
+          normalized: normalized,
+          sheets_converted_to_date: viaString !== written
+        };
+      } finally {
+        var temp = ss.getSheetByName(P0_DIAG_TEMP_SHEET_);
+        if (temp) ss.deleteSheet(temp);
+      }
+    }));
+
     // 3-4. CSV ทั้งสองแบบ สร้างจากช่วงภาคเรียนที่ใช้งานอยู่ (ไม่สร้างไฟล์บน Drive)
     checks.push(runPreReleaseSmokeCheck_('csv:monthly', function() {
       monthlyCsv = summarizeP0Csv_(

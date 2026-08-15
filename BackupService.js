@@ -383,11 +383,12 @@ function restoreBackupSheet_(sheetName, snapshot, fallbackHeaders) {
     sheet.setFrozenRows(1);
   }
   if (rows.length && headers.length) {
-    sheet.getRange(2, 1, rows.length, headers.length).setValues(rows.map(function(row) {
+    // ข้อมูลในไฟล์สำรองเป็นข้อความดิบ ต้องกันสูตรอีกรอบก่อนเขียนกลับลงชีต
+    sheet.getRange(2, 1, rows.length, headers.length).setValues(sanitizeSheetRows_(rows.map(function(row) {
       var normalized = row.slice(0, headers.length);
       while (normalized.length < headers.length) normalized.push('');
       return normalized;
-    }));
+    })));
   }
 }
 

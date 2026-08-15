@@ -309,7 +309,7 @@ function confirmImport(previewToken, auth) {
       });
 
       if (rows.length) {
-        sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, COL.STUDENTS.INACTIVE_AT).setValues(rows);
+        sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, COL.STUDENTS.INACTIVE_AT).setValues(sanitizeSheetRows_(rows));
       }
 
       rowsToUpdate.forEach(function(item) {

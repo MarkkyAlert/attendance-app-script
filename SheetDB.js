@@ -132,7 +132,10 @@ function getNextIdForSheet_(sheet) {
  */
 function appendRow_(sheetName, rowArray) {
   var sheet = getSheet_(sheetName);
-  sheet.appendRow(rowArray);
+  // เขียนค่าที่กันสูตรแล้ว แต่คืนค่าดิบให้ผู้เรียกเอาไปทำ payload ตอบ client
+  sheet.appendRow((rowArray || []).map(function(cell) {
+    return sanitizeSheetText_(cell);
+  }));
   return rowArray;
 }
 
@@ -143,7 +146,7 @@ function updateCells_(sheetName, rowIndex, updates) {
   var sheet = getSheet_(sheetName);
   updates.forEach(function(u) {
     if (u.col) {
-      sheet.getRange(rowIndex, u.col).setValue(u.value);
+      sheet.getRange(rowIndex, u.col).setValue(sanitizeSheetText_(u.value));
     }
   });
 }
@@ -223,15 +226,15 @@ function saveSetting_(key, value) {
     var data = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
     for (var i = 0; i < data.length; i++) {
       if (String(data[i][0]) === String(key)) {
-        sheet.getRange(i + 2, 2).setValue(value);
+        sheet.getRange(i + 2, 2).setValue(sanitizeSheetText_(value));
         try { CacheService.getScriptCache().remove('st'); } catch (e) {}
         return;
       }
     }
   }
-  
+
   // Key not found, append
-  sheet.appendRow([key, value]);
+  sheet.appendRow([key, sanitizeSheetText_(value)]);
   try { CacheService.getScriptCache().remove('st'); } catch (e) {}
 }
 
