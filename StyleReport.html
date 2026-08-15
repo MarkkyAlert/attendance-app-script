@@ -1981,8 +1981,18 @@
   position: sticky; left: 3rem; z-index: 3;
   background: white; min-width: 80px; border-right: 1px solid var(--stone-200);
 }
-thead .rpt-sticky-col, thead .rpt-sticky-col2 { background: var(--brown-50); z-index: 4; }
-.rpt-day-header { font-size: .6rem; }
+/* ต้องอยู่เหนือหัวคอลัมน์วันที่ที่เลื่อนลอดไปด้านหลัง ไม่งั้นข้อความวันที่โผล่ทับ
+   ("เลขที่ . 1" และ "2569" ลอยอยู่ระหว่างคอลัมน์ชื่อกับคอลัมน์วันแรก) */
+thead .rpt-sticky-col, thead .rpt-sticky-col2 {
+  background: var(--brown-50);
+  z-index: 6;
+}
+/* กันข้อความวันที่ล้นออกนอกเซลล์ตัวเองไปทับคอลัมน์ที่ตรึงไว้ */
+.rpt-day-header {
+  font-size: .6rem;
+  white-space: nowrap;
+  overflow: hidden;
+}
 .rpt-day-cell {
   font-size: .85rem;
 }

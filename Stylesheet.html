@@ -3494,16 +3494,29 @@
       gap: .65rem;
     }
 
+    /* สถานะมี 5 แบบ ต้องอยู่แถวเดียวให้ครบ ไม่งั้นการ์ดสูงขึ้นทุกแถวของนักเรียน 39 คน
+       จัดเป็นไอคอนบนข้อความล่าง จะได้กว้างพอสำหรับ 5 ช่องบนจอ 390px */
     .attendance-student-status:not(.attendance-student-status-static) {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: .3rem;
     }
 
     .attendance-status-btn {
       width: 100%;
+      flex-direction: column;
+      align-items: center;
       justify-content: center;
-      gap: .3rem;
-      font-size: .78rem;
+      gap: .15rem;
+      padding: .45rem .2rem;
+      font-size: .72rem;
+      min-height: 3rem;
+    }
+
+    /* ปุ่มล้างสถานะกินเต็มแถวของตัวเอง ไม่ไปเบียดปุ่มสถานะให้ตกบรรทัด */
+    .attendance-student-status:not(.attendance-student-status-static) .attendance-status-reset {
+      grid-column: 1 / -1;
+      width: 100%;
     }
   }
 

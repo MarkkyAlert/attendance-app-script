@@ -153,7 +153,9 @@ function deleteSchoolCalendarEntry(date, auth) {
       if (getSchoolCalendarConfirmedAttendanceConflictForDates_([date], sourceInfo)) {
         return {
           success: false,
-          message: 'ลบรายการปฏิทินย้อนหลังไม่ได้ เพราะวันที่ ' + date + ' มีข้อมูลเช็คชื่อที่ยืนยันแล้ว'
+          // บอกทางออกด้วย ไม่ใช่ปฏิเสธเฉยๆ ให้รูปแบบเดียวกับฝั่ง saveSchoolCalendarEntry
+          message: 'ลบวันที่ ' + date + ' ออกจากปฏิทินไม่ได้ เพราะมีข้อมูลเช็คชื่อที่ยืนยันแล้วในวันนั้น'
+            + ' ถ้าวันนั้นไม่ได้มีการเรียนจริง ให้ยกเลิกการยืนยันของวันนั้นก่อน แล้วค่อยลบ'
         };
       }
       getOrCreateSchoolCalendarSheet_().deleteRow(existing.row_index);

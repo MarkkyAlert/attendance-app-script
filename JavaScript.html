@@ -1858,7 +1858,9 @@
       html += '</div>';
       html += '<div class="date-nav attendance-date-nav">';
       html += '<button class="date-btn" onclick="App.shiftDate(-1)">&#9664;</button>';
-      html += '<input class="date-input" type="date" value="' + esc(state.currentDate) + '" max="' + esc(todayStr()) + '" onchange="App.goDate(this.value)">';
+      // ต้องมีทั้ง oninput และ onchange: บางเบราว์เซอร์ยิง change ตอน blur/Enter เท่านั้น
+      // ครูที่พิมพ์วันที่แล้วไม่กด Enter จะเห็นหน้าจอค้างวันเดิมและคิดว่าระบบแฮงก์
+      html += '<input class="date-input" type="date" value="' + esc(state.currentDate) + '" max="' + esc(todayStr()) + '" oninput="App.goDate(this.value)" onchange="App.goDate(this.value)">';
       html += '<button class="date-btn" onclick="App.shiftDate(1)">&#9654;</button>';
       html += '</div>';
       html += '</div>';
@@ -2065,29 +2067,32 @@
         }
         html += '</div>';
 
-        html += '<div class="student-status attendance-student-status' + (hasAtt ? ' attendance-student-status-static' : '') + '">';
-        if (hasAtt) {
-          html += '<div class="attendance-selected-status">';
-          html += '<span class="student-badge badge-' + s.attendance.status_color + '">';
-          html += renderUiIcon(s.attendance.status_code) + ' ' + esc(s.attendance.status_label || '');
-          html += '</span>';
-          if (!isConfirmed) {
-            html += '<button class="attendance-status-reset" onclick="App.undoStatus(' + s.student_number + ')" title="ล้างสถานะ" aria-label="ล้างสถานะ">';
-            html += '<span class="attendance-status-icon">' + renderUiIcon('undo') + '</span>';
-            html += '<span>ล้างสถานะ</span>';
-            html += '</button>';
-          }
-          html += '</div>';
-        } else if (!isConfirmed) {
+        // วันที่ยังไม่ยืนยัน แสดงปุ่มสถานะไว้เสมอ แม้เช็คไปแล้ว
+        // ครูจะได้กดทับได้เลยในจังหวะเดียว ไม่ต้องกด "ล้างสถานะ" ก่อนแล้วค่อยเลือกใหม่
+        // และประวัติแก้ไขจะได้ 1 บรรทัด (update เดิม→ใหม่) แทนที่จะเป็น 2 บรรทัด
+        html += '<div class="student-status attendance-student-status' + (hasAtt && isConfirmed ? ' attendance-student-status-static' : '') + '">';
+        if (!isConfirmed) {
           var statuses = state.attendance.statuses || [];
           statuses.forEach(function (st) {
             var isActive = hasAtt && s.attendance.status_code === st.code;
-            html += '<button class="status-btn attendance-status-btn' + (isActive ? ' active-' + st.color : '') + '" onclick="App.markStatus(' + s.student_number + ',\'' + st.code + '\')" title="' + esc(st.label) + '" aria-label="' + esc(st.label) + '">';
+            html += '<button class="status-btn attendance-status-btn' + (isActive ? ' active-' + st.color : '') + '" onclick="App.markStatus(' + s.student_number + ',\'' + st.code + '\')" title="' + esc(st.label) + '" aria-label="' + esc(st.label) + '"' + (isActive ? ' aria-pressed="true"' : '') + '>';
             html += '<span class="attendance-status-icon">' + renderUiIcon(st.code) + '</span>';
             html += '<span class="show-mobile-inline">' + esc(getCompactAttendanceLabel(st.code, st.label)) + '</span>';
             html += '<span class="hide-mobile">' + esc(st.label) + '</span>';
             html += '</button>';
           });
+          if (hasAtt) {
+            html += '<button class="attendance-status-reset" onclick="App.undoStatus(' + s.student_number + ')" title="ล้างสถานะ" aria-label="ล้างสถานะ">';
+            html += '<span class="attendance-status-icon">' + renderUiIcon('undo') + '</span>';
+            html += '<span>ล้างสถานะ</span>';
+            html += '</button>';
+          }
+        } else if (hasAtt) {
+          html += '<div class="attendance-selected-status">';
+          html += '<span class="student-badge badge-' + s.attendance.status_color + '">';
+          html += renderUiIcon(s.attendance.status_code) + ' ' + esc(s.attendance.status_label || '');
+          html += '</span>';
+          html += '</div>';
         } else {
           html += '<span class="student-badge badge-stone">' + renderUiIcon('unchecked') + ' ยังไม่เช็ค</span>';
         }
@@ -5258,6 +5263,9 @@
       goDate: function (date) {
         if (!date) return;
         if (date > todayStr()) date = todayStr();
+        // input[type=date] ยิง oninput ทันทีที่กรอกครบ และยิง onchange ตามอีกที
+        // กันไม่ให้โหลดซ้ำสองรอบ และกันกรณีกดเลือกวันเดิม
+        if (date === state.currentDate) return;
         loadAttendance(date);
       },
       markStatus: markStatus,
