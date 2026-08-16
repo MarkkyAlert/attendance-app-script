@@ -173,6 +173,20 @@ function deleteSheetRowsByIndexes_(sheet, rowIndexes) {
   });
   if (!rows.length) return 0;
 
+  // Sheets ปฏิเสธการลบแถวที่ไม่ถูกตรึงจนไม่เหลือสักแถว
+  // ("Sorry, it is not possible to delete all non-frozen rows.")
+  // เข้าเงื่อนไขเมื่อครบ 3 อย่าง: หัวตารางถูกตรึง + สั่งลบแถวข้อมูลจนหมด +
+  // ชีตไม่มีแถวว่างเหลือท้ายตาราง (getMaxRows() == getLastRow())
+  // เคสจริงคือ archive ภาคเรียนตอนที่ข้อมูลทั้งชีตเป็นของภาคเรียนเดียว
+  // ซึ่งเป็นเรื่องปกติของครูปีแรกที่เก็บถาวรตอนจบเทอม
+  //
+  // เติมแถวว่างท้ายชีตไว้ 1 แถวก่อน แล้วปล่อยให้ตรรกะจัดกลุ่ม/ลำดับการลบด้านล่าง
+  // ทำงานตามเดิมทุกประการ — จงใจไม่แตะลูปนั้น เพราะถ้าลำดับเพี้ยนแถวจะเลื่อน
+  // แล้วลบผิดแถวแบบเงียบๆ (พิสูจน์ด้วยเช็ค delete_rows:all_data_rows_frozen_header)
+  if (sheet.getMaxRows() <= sheet.getLastRow()) {
+    sheet.insertRowsAfter(sheet.getMaxRows(), 1);
+  }
+
   var deleted = 0;
   var blockEnd = rows[0];
   var blockStart = rows[0];
