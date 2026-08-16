@@ -518,32 +518,47 @@ function readAllAttendanceRecords_(sourceInfo) {
   var sheet = null;
   var lastRow = 0;
   var records = [];
+  var scannedSheetNames = [];
+  var scannedRowCount = 0;
   try {
-    sheet = getAttendanceSourceSheet_(sourceInfo);
-    if (!sheet) return [];
-    lastRow = sheet.getLastRow();
-    if (lastRow <= 1) return [];
+    // อ่านรวมชีต archive ด้วย (ถ้าภาคเรียนนี้เก็บถาวรแล้ว) โดยชีตหลักถูกอ่านทีหลังเสมอ
+    // เพื่อให้แถวใหม่ในชีตหลักชนะเวลา getUniqueLatestRecords_ ตัดคีย์ซ้ำ
+    var readSheets = getAttendanceReadSheets_(sourceInfo);
+    if (!readSheets.length) return [];
 
-    var data = sheet.getRange(2, 1, lastRow - 1, COL.ATTENDANCE.STUDENT_ID).getValues();
+    readSheets.forEach(function(readSheet) {
+      sheet = readSheet;
+      scannedSheetNames.push(readSheet.getName());
+      var sheetLastRow = readSheet.getLastRow();
+      if (sheetLastRow <= 1) return;
+      scannedRowCount += sheetLastRow - 1;
+      lastRow = sheetLastRow;
 
-    data.forEach(function(row, index) {
-      var date = row[2];
-      try {
-        date = normalizeDateStringStrict_(date, 'วันที่');
-      } catch (e) {
-        return;
-      }
-      if (!isDateWithinAttendanceSource_(date, sourceInfo)) return;
+      var data = readSheet.getRange(2, 1, sheetLastRow - 1, COL.ATTENDANCE.STUDENT_ID).getValues();
 
-      records.push({
-        id: row[0],
-        student_number: parseInt(row[1], 10),
-        student_id: parseInt(row[COL.ATTENDANCE.STUDENT_ID - 1], 10) || 0,
-        date: date,
-        status_code: String(row[3] || ''),
-        note: String(row[4] || ''),
-        batch_id: String(row[5] || ''),
-        row_index: index + 2
+      data.forEach(function(row, index) {
+        var date = row[2];
+        try {
+          date = normalizeDateStringStrict_(date, 'วันที่');
+        } catch (e) {
+          return;
+        }
+        if (!isDateWithinAttendanceSource_(date, sourceInfo)) return;
+
+        records.push({
+          id: row[0],
+          student_number: parseInt(row[1], 10),
+          student_id: parseInt(row[COL.ATTENDANCE.STUDENT_ID - 1], 10) || 0,
+          date: date,
+          status_code: String(row[3] || ''),
+          note: String(row[4] || ''),
+          batch_id: String(row[5] || ''),
+          // ★ row_index ใช้ได้เฉพาะเมื่ออ่านจากชีตหลักเท่านั้น
+          // ผู้เขียนข้อมูลไม่ได้ใช้เส้นทางนี้ (ใช้ readAttendanceRecordsByDate_ ซึ่งอ่านชีตหลักอย่างเดียว)
+          // จึงติด sheet_name ไว้กันคนมาแก้ต่อเผลอเอา row_index ไปเขียนทับข้ามชีต
+          sheet_name: readSheet.getName(),
+          row_index: index + 2
+        });
       });
     });
 
@@ -559,7 +574,7 @@ function readAllAttendanceRecords_(sourceInfo) {
         range_to: String(sourceInfo.to || ''),
         semester_id: String(sourceInfo.semester_id || ''),
         semester_name: sourceInfo && sourceInfo.semester ? String(sourceInfo.semester.name || '') : '',
-        detail: 'source=' + String(sourceInfo.key || 'live') + ';sheet=' + String(sheet.getName() || '') + ';rows=' + Math.max(0, lastRow - 1) + ';records=' + records.length
+        detail: 'source=' + String(sourceInfo.key || 'live') + ';sheet=' + scannedSheetNames.join('+') + ';rows=' + scannedRowCount + ';records=' + records.length
       });
     }
 

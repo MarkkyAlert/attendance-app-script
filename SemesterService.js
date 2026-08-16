@@ -313,11 +313,9 @@ function hasSemesterAttendanceData_(semester) {
 function getSemesterAttendanceDateBounds_(semester) {
   if (!semester || !semester.start_date || !semester.end_date) return null;
 
-  var sourceInfos = [buildDefaultAttendanceSourceInfo_()];
-  var archiveSourceInfo = getAttendanceSourceInfoForSemester_(semester);
-  if (archiveSourceInfo && archiveSourceInfo.is_archived) {
-    sourceInfos.push(archiveSourceInfo);
-  }
+  // ใช้ตัวรวมชีตตัวเดียวกับฝั่งอ่านของรายงาน (ชีต archive + ชีตหลัก)
+  // เดิมที่นี่ประกอบ sourceInfo เองสองชุด ซึ่งซ้ำตรรกะและพลาดง่ายเมื่อ routing เปลี่ยน
+  var semesterSourceInfo = getAttendanceSourceInfoForSemester_(semester);
   var minDate = '';
   var maxDate = '';
 
@@ -327,17 +325,16 @@ function getSemesterAttendanceDateBounds_(semester) {
     if (!maxDate || date > maxDate) maxDate = date;
   }
 
-  sourceInfos.forEach(function(sourceInfo) {
-    var attendanceRows = getSemesterAttendanceRowsFromSheet_(getAttendanceSourceSheet_(sourceInfo), semester).rows;
-    var dayRows = getSemesterAttendanceDayRowsFromSheet_(getAttendanceDaySourceSheet_(sourceInfo), semester).rows;
-
-    attendanceRows.forEach(function(row) {
+  getAttendanceReadSheets_(semesterSourceInfo).forEach(function(sheet) {
+    getSemesterAttendanceRowsFromSheet_(sheet, semester).rows.forEach(function(row) {
       try {
         trackDate_(normalizeDateStringStrict_(row[COL.ATTENDANCE.DATE - 1], 'วันที่'));
       } catch (e) {}
     });
+  });
 
-    dayRows.forEach(function(row) {
+  getAttendanceDayReadSheets_(semesterSourceInfo).forEach(function(sheet) {
+    getSemesterAttendanceDayRowsFromSheet_(sheet, semester).rows.forEach(function(row) {
       try {
         trackDate_(normalizeDateStringStrict_(row[0], 'วันที่'));
       } catch (e) {}

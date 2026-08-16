@@ -690,16 +690,26 @@ function getAttendanceSourceInfoForSemester_(semester) {
   var semesterId = parseInt(semester && semester.id, 10) || 0;
   var startDate = String(semester && semester.start_date || '');
   var endDate = String(semester && semester.end_date || '');
-  var isArchived = !!(semester && !semester.is_active && isSemesterAttendanceArchived_(semester));
+  // เดิมเงื่อนไขนี้มี `!semester.is_active` อยู่ด้วย ซึ่งทำให้ route ไปชีต archive ไม่ได้เลย
+  // เพราะทุกเส้นทางที่แสดงผลส่งภาคเรียนที่ active เข้ามาเสมอ (ผ่าน getCurrentAttendanceSourceInfo_)
+  // ผลคือครูที่เก็บถาวรแล้วสลับกลับมาดู จะไม่เห็นข้อมูลเลย ทั้งที่กล่องยืนยันสัญญาว่าดูได้
+  var isArchived = !!(semester && isSemesterAttendanceArchived_(semester));
+
+  // แยกชีตสำหรับ "เขียน" กับ "อ่าน" ออกจากกัน
+  // เขียน → ชีตหลักเสมอ เพื่อไม่ให้ข้อมูลใหม่ไหลลงชีตซ่อน และเพื่อให้ row_index
+  //         ที่ผู้เขียนใช้อ้างอิงแถว ชี้ไปที่ชีตเดียวเสมอ
+  // อ่าน  → รวมชีต archive เข้ามาด้วยถ้ามี (ดู getAttendanceReadSheets_)
   return {
-    key: (isArchived ? 'archive|' : 'live|') + String(semesterId || 'current'),
+    key: (isArchived ? 'live+archive|' : 'live|') + String(semesterId || 'current'),
     semester: semester || null,
     semester_id: semesterId,
     from: startDate,
     to: endDate,
     is_archived: isArchived,
-    attendance_sheet_name: isArchived ? getAttendanceArchiveSheetName_(semester) : SHEET.ATTENDANCE,
-    attendance_day_sheet_name: isArchived ? getAttendanceArchiveDaySheetName_(semester) : SHEET.ATTENDANCE_DAYS
+    attendance_sheet_name: SHEET.ATTENDANCE,
+    attendance_day_sheet_name: SHEET.ATTENDANCE_DAYS,
+    attendance_archive_sheet_name: isArchived ? getAttendanceArchiveSheetName_(semester) : '',
+    attendance_day_archive_sheet_name: isArchived ? getAttendanceArchiveDaySheetName_(semester) : ''
   };
 }
 
@@ -731,6 +741,43 @@ function getAttendanceSourceSheet_(sourceInfo) {
 function getAttendanceDaySourceSheet_(sourceInfo) {
   sourceInfo = sourceInfo || getCurrentAttendanceSourceInfo_();
   return getSheet_(sourceInfo.attendance_day_sheet_name || SHEET.ATTENDANCE_DAYS);
+}
+
+/**
+ * ชีตทั้งหมดที่ต้องอ่านรวมกันสำหรับ sourceInfo นี้
+ *
+ * ★ ลำดับสำคัญ: ชีต archive มาก่อน ชีตหลักมาทีหลังเสมอ
+ * เพราะ getUniqueLatestRecords_ ใช้กติกา "แถวที่พบทีหลังชนะ" เวลามีคีย์ซ้ำ
+ * ถ้าเรียงสลับ แถวเก่าในชีต archive จะไปทับแถวใหม่ในชีตหลักแบบเงียบๆ
+ *
+ * ชีต archive อาจไม่มีอยู่จริง (ยังไม่เคยเก็บถาวร) จึงใช้ getSheetByNameOrNull_
+ */
+function getAttendanceReadSheets_(sourceInfo) {
+  sourceInfo = sourceInfo || getCurrentAttendanceSourceInfo_();
+  return collectAttendanceReadSheets_(
+    sourceInfo.attendance_archive_sheet_name,
+    sourceInfo.attendance_sheet_name || SHEET.ATTENDANCE
+  );
+}
+
+function getAttendanceDayReadSheets_(sourceInfo) {
+  sourceInfo = sourceInfo || getCurrentAttendanceSourceInfo_();
+  return collectAttendanceReadSheets_(
+    sourceInfo.attendance_day_archive_sheet_name,
+    sourceInfo.attendance_day_sheet_name || SHEET.ATTENDANCE_DAYS
+  );
+}
+
+function collectAttendanceReadSheets_(archiveName, mainName) {
+  var sheets = [];
+  archiveName = String(archiveName || '').trim();
+  if (archiveName) {
+    var archiveSheet = getSheetByNameOrNull_(archiveName);
+    if (archiveSheet) sheets.push(archiveSheet);
+  }
+  var mainSheet = getSheetByNameOrNull_(String(mainName || ''));
+  if (mainSheet) sheets.push(mainSheet);
+  return sheets;
 }
 
 function isDateWithinAttendanceSource_(date, sourceInfo) {
@@ -1301,21 +1348,23 @@ function getCachedAttendanceDayStatusMap_(sourceInfo) {
     return ATTENDANCE_DAY_STATUS_MAP_MEMO_[sourceKey];
   }
   var dayStatusMap = getOrBuildCachedJson_('attendance_day_status_map', [sourceKey], 300, function() {
-    var sheet = getAttendanceDaySourceSheet_(sourceInfo);
-    var lastRow = sheet ? sheet.getLastRow() : 0;
     var dayStatusMap = {};
-    if (lastRow <= 1) return dayStatusMap;
+    // อ่านรวมชีต archive ด้วย โดยชีตหลักมาทีหลังจึงเขียนทับค่าเดิมเมื่อวันซ้ำกัน
+    getAttendanceDayReadSheets_(sourceInfo).forEach(function(sheet) {
+      var lastRow = sheet ? sheet.getLastRow() : 0;
+      if (lastRow <= 1) return;
 
-    var data = sheet.getRange(2, 1, lastRow - 1, 3).getValues();
-    for (var i = 0; i < data.length; i++) {
-      var rowDate = data[i][0];
-      rowDate = rowDate instanceof Date ? formatDate_(rowDate) : String(rowDate || '').slice(0, 10);
-      if (!rowDate) continue;
-      dayStatusMap[rowDate] = {
-        status: String(data[i][1] || 'draft'),
-        confirmed_at: String(data[i][2] || '')
-      };
-    }
+      var data = sheet.getRange(2, 1, lastRow - 1, 3).getValues();
+      for (var i = 0; i < data.length; i++) {
+        var rowDate = data[i][0];
+        rowDate = rowDate instanceof Date ? formatDate_(rowDate) : String(rowDate || '').slice(0, 10);
+        if (!rowDate) continue;
+        dayStatusMap[rowDate] = {
+          status: String(data[i][1] || 'draft'),
+          confirmed_at: String(data[i][2] || '')
+        };
+      }
+    });
     return dayStatusMap;
   });
   ATTENDANCE_DAY_STATUS_MAP_MEMO_[sourceKey] = dayStatusMap;
