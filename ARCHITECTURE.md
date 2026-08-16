@@ -71,16 +71,16 @@
 > **ไม่มีการบังคับด่านที่ระดับ framework** เขียนฟังก์ชันใหม่แล้วลืมครอบด่าน ก็ไม่มีอะไรเตือน
 > ฟังก์ชันภายในต้องเติม `_` ต่อท้ายเสมอ
 
-ปัจจุบันมีฟังก์ชัน public **90 ตัว** และมีด่าน **4 แบบ** (ไม่ใช่แบบเดียว):
+ฟังก์ชัน public ทุกตัวต้องผ่านด่าน และด่านมี **4 แบบ** ไม่ใช่แบบเดียว — เลือกให้ตรงกับผู้เรียก:
 
-| ด่าน | จำนวน | ใช้กับ | อยู่ที่ |
-|---|---|---|---|
-| `runAsTeacher_` | 71 | งานฝั่งครูทั้งหมด | `SecurityService.js` |
-| `runAsPrintViewer_` | 4 | หน้าพิมพ์ | `PrintService.js` |
-| `runAsParentSession_` | 2 | หน้าผู้ปกครอง | `SecurityService.js` |
-| `issueParentLinkForTeacher_` | 1 | ออกลิงก์ผู้ปกครอง (ห่อด่านครูอีกที) | `ParentService.js` |
-| `requireSeedLocalContext_` / `requireP0DiagnosticLocalContext_` | 5 | เครื่องมือ dev | `SeedTestData.js` / `Diagnostics.js` |
-| **ไม่มีด่าน (ตั้งใจ)** | 9 | ดูตารางถัดไป | |
+| ด่าน | ใช้กับ | อยู่ที่ |
+|---|---|---|
+| `runAsTeacher_` | งานฝั่งครูทั้งหมด (ส่วนใหญ่ของระบบ) | `SecurityService.js` |
+| `runAsPrintViewer_` | หน้าพิมพ์ | `PrintService.js` |
+| `runAsParentSession_` | หน้าผู้ปกครอง | `SecurityService.js` |
+| `issueParentLinkForTeacher_` | ออกลิงก์ผู้ปกครอง (ห่อด่านครูอีกที) | `ParentService.js` |
+| `requireSeedLocalContext_` / `requireP0DiagnosticLocalContext_` | เครื่องมือ dev | `SeedTestData.js` / `Diagnostics.js` |
+| **ไม่มีด่าน (ตั้งใจ)** | ดูตารางถัดไป | |
 
 ### ฟังก์ชันที่เรียกได้โดยไม่มีด่านเลย
 
@@ -264,7 +264,7 @@ bucket ที่เป็น **ทั้งระบบ** (ไม่มีมิ
 `var state` ใน `JavaScript.html` ถูก export เป็น `window.AppState` — **เป็น object เดียวกัน ไม่ใช่ copy**
 โมดูล `Js*` รับมาเป็นตัวแปรชื่อ `S` และ**เขียนทับได้อิสระ** ไม่มี setter ไม่มี event ไม่มี subscription
 
-⚠️ มี key อย่างน้อย 5 ตัวที่ **ไม่อยู่ใน object literal เริ่มต้น** แต่ถูกยัดเข้าไปตอน runtime —
+⚠️ มี key ที่ **ไม่อยู่ใน object literal เริ่มต้น** แต่ถูกยัดเข้าไปตอน runtime เท่าที่พบ —
 `semesters`, `activeSemester`, `pinState`, `studentSummary`, `calendarFilter`
 อ่านจาก declaration จะไม่เห็น ต้อง `|| {}` ป้องกันเสมอ (ดู `getSchoolCalendarFilter_` เป็นตัวอย่างการป้องกัน)
 
@@ -274,7 +274,7 @@ bucket ที่เป็น **ทั้งระบบ** (ไม่มีมิ
 `renderSettingsPage`, และ `window.XxxPage.render(state)` ในโมดูล) ทุกตัวจบด้วย `panel.innerHTML = html`
 
 ผลคือ **focus, scroll position และค่าใน `<input>` ที่ยังไม่ commit หายหมด**
-จึงมี partial render 3 จุดเป็นข้อยกเว้นที่เกิดจากเจอปัญหาจริง:
+จึงมี partial render เป็นข้อยกเว้นเฉพาะจุดที่เคยเจอปัญหาจริง:
 `refreshAttendanceList_` · `recalcSummary_` · `refreshSchoolCalendarList_`
 รวมเป็น `syncAttendanceViewAfterStateChange_` ใช้หลัง optimistic update
 
@@ -323,8 +323,8 @@ bucket ที่เป็น **ทั้งระบบ** (ไม่มีมิ
 ไม่มี module system ไม่มี event bus — **ทางเดียวคือ global บน `window`**
 
 - core → โมดูล: `window.XxxPage.render(state)` (**บังคับ**) และ `renderLoading(state)` (ไม่บังคับ)
-- โมดูล → core: `window.AppShared` — surface ~34 ฟังก์ชัน (`serverCall`, `navigateTo`, `toast`,
-  `showModal`, `esc`, `ensureClientModuleLoaded`, ...)
+- โมดูล → core: `window.AppShared` — surface กลาง (`serverCall`, `navigateTo`, `toast`,
+  `showModal`, `esc`, `ensureClientModuleLoaded`, ... — ดูรายการเต็มที่ท้าย `JavaScript.html`)
 - โมดูล → state: เขียน `S.xxx = ...` ตรงๆ
 - HTML → ทุกคน: `onclick="ReportsPage.switchTab('daily')"` ในสตริง — **สัญญาที่มองไม่เห็นจาก static analysis**
 
@@ -712,7 +712,10 @@ clasp push
 
 ## 12. Checklist เพิ่มหน้าใหม่
 
-เพิ่มหน้า 1 หน้าต้องแตะ **~10 จุดใน 4 ไฟล์ และไม่มี compile-time check สักจุด** ลืมที่ไหนรู้ตอน runtime:
+> ⚠️ **ก่อนใช้ checklist นี้ ให้ `grep` ยืนยันว่าชื่อ registry ในตารางยังตรงกับโค้ดอยู่**
+> ตารางนี้ผูกกับชื่อตัวแปรโดยตรง ถ้ามีใครรีแฟกเตอร์แล้วไม่ได้แก้ที่นี่ ทำตามแล้วจะพังโดยไม่รู้สาเหตุ
+
+เพิ่มหน้า 1 หน้าต้องแตะหลายจุดใน 4 ไฟล์ **และไม่มี compile-time check สักจุด** ลืมที่ไหนรู้ตอน runtime:
 
 | # | ไฟล์ | ทำอะไร | ลืมแล้วเป็นยังไง |
 |---|---|---|---|
