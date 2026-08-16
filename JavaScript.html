@@ -1862,7 +1862,9 @@
       html += '<button class="date-btn" onclick="App.shiftDate(-1)">&#9664;</button>';
       // ต้องมีทั้ง oninput และ onchange: บางเบราว์เซอร์ยิง change ตอน blur/Enter เท่านั้น
       // ครูที่พิมพ์วันที่แล้วไม่กด Enter จะเห็นหน้าจอค้างวันเดิมและคิดว่าระบบแฮงก์
-      html += '<input class="date-input" type="date" value="' + esc(state.currentDate) + '" max="' + esc(todayStr()) + '" oninput="App.goDateTyped(this.value)" onchange="App.goDate(this.value)">';
+      // ทั้งคู่เดินผ่านตัวหน่วงเดียวกัน เพราะระหว่างพิมพ์ปี ช่องจะได้ค่าที่ "สมบูรณ์" กลางคัน
+      // (13/08/0002 → 0020 → 0202 → 2026) ถ้ายิงทันทีจะขึ้น error นอกภาคเรียนรัวๆ
+      html += '<input class="date-input" type="date" value="' + esc(state.currentDate) + '" max="' + esc(todayStr()) + '" oninput="App.goDateTyped(this.value)" onchange="App.goDateTyped(this.value)">';
       html += '<button class="date-btn" onclick="App.shiftDate(1)">&#9654;</button>';
       html += '</div>';
       html += '</div>';
