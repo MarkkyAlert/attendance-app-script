@@ -91,6 +91,9 @@
 - ทดสอบในเครื่องไม่ได้ ต้อง `clasp push` แล้วไปกด Run บน Apps Script เสมอ
 - ฟังก์ชัน global ที่ไม่มี `_` ต่อท้าย = เปิดให้เรียกจากอินเทอร์เน็ตทันที (web app เป็น anonymous)
   ฟังก์ชันภายในต้องเติม `_` ต่อท้ายเสมอ
+  **แต่ editor ไม่แสดงฟังก์ชันที่ลงท้าย `_` ในช่องเลือกฟังก์ชัน จึงกด Run ไม่ได้** — ห้ามแก้ด้วยการถอด `_` ออก
+  ให้ทำ public เป็นเปลือกบางๆ ที่เรียก `requireP0DiagnosticLocalContext_()` แล้วค่อยเรียกตัว `_` จริง
+  (แบบ `runP0Diagnostics` → `runP0Diagnostics_`) แล้วถอดออกก่อนส่งมอบ · วิธีเต็มอยู่ใน `ARCHITECTURE.md` ข้อ 12
 - เขียน mutation ใหม่ต้องครอบด้วย `withAttendanceMutationLock_` หรือ `LockService.getDocumentLock()` และ `require_csrf: true`
 
 ## จุดที่ห้ามแตะโดยไม่ถามก่อน

@@ -731,3 +731,38 @@ clasp push
 3. ถ้าเป็น mutation: ใส่ `require_csrf: true` + ครอบ lock + invalidate cache
 4. เขียนชีตผ่าน `SheetDB.js` หรือครอบ `sanitizeSheetRows_` เอง
 5. อ่าน/เขียนแบบ batch เสมอ
+
+### ⚠️ ฟังก์ชันที่ลงท้าย `_` กด Run จาก editor ไม่ได้ — แล้วจะทดสอบยังไง
+
+**ช่องเลือกฟังก์ชันของ Apps Script editor ไม่แสดงฟังก์ชันที่ลงท้ายด้วย `_`**
+และเราทดสอบในเครื่องไม่ได้ ดังนั้นวิธีเดียวที่จะรันโค้ดฝั่ง server ตรงๆ คือกด Run จาก editor
+กฎ "ฟังก์ชันภายในต้องเติม `_`" จึงชนกับความต้องการทดสอบเสมอ
+
+**อย่าแก้ด้วยการถอด `_` ออก** — นั่นคือการเปิด endpoint สู่อินเทอร์เน็ตเพื่อแลกกับความสะดวกในการทดสอบ
+(เคยเกิดขึ้นจริงแล้วกับ `runPreReleaseSmokeChecks` ซึ่งเป็น global ไม่มี `_` และตัวมันข้าม auth
+ด้วย `runAsTrustedTeacher_` — ต้องเปลี่ยนกลับเป็น `runPreReleaseSmokeChecks_` ทีหลัง)
+
+**วิธีที่ถูก: ทำ public เป็นเปลือกบางๆ ที่ผ่านด่าน local context แล้วเรียกตัว `_` จริง**
+ตรรกะทั้งหมดยังอยู่ในฟังก์ชัน `_` มีแค่ประตูที่เป็น public — แพทเทิร์นเดียวกับ `runP0Diagnostics`:
+
+```js
+// ประตูสำหรับกด Run — เห็นใน editor เพราะไม่มี _ แต่คนจากเน็ตเรียกไม่ได้
+function runMyCheck() {
+  requireP0DiagnosticLocalContext_();   // ว่างเสมอเมื่อถูกเรียกผ่าน google.script.run
+  return runMyCheck_();                 // ตรรกะจริงอยู่ในตัวนี้
+}
+
+function runMyCheck_() { /* ... */ }
+```
+
+ด่านที่ใช้ได้มี 2 ตัว — `requireP0DiagnosticLocalContext_` (แค่ต้องมีอีเมล) และ
+`requireSeedLocalContext_` (ต้องตรงกับ `getTeacherOwnerEmail_()` ด้วย ใช้กับของที่เขียนข้อมูล)
+
+**ห้ามใช้ `SpreadsheetApp.getUi()` เป็นด่าน** — มัน throw ตอนรันจาก editor ด้วย ไม่ใช่เฉพาะจาก Web App
+
+ประตูแบบนี้เป็นของชั่วคราวสำหรับ dev — **ต้องถอดออกพร้อมไฟล์ทดสอบก่อนส่งมอบลูกค้าทุกครั้ง**
+ถ้าลืมถอด อย่างน้อยยังมีด่าน local context กันอยู่ แต่ก็ไม่ควรอยู่ในมือลูกค้า
+
+> 💡 เช็ค `deploy:functions_present` ใน `Diagnostics.js` **assert ว่า `runPreReleaseSmokeChecks`
+> (ชื่อที่ไม่มี `_`) ต้องเป็น `undefined`** — คือมี regression test กันการเผลอเปิด endpoint ทิ้งไว้อยู่แล้ว
+> เพิ่มประตูชั่วคราวตัวใหม่ ให้เพิ่มบรรทัดทำนองเดียวกันด้วย จะได้รู้ตอนตรวจ ไม่ใช่ตอนลูกค้าใช้
