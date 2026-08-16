@@ -1983,12 +1983,22 @@
 }
 
 .rpt-daily-table th, .rpt-daily-table td { text-align: center; padding: .375rem .5rem; min-width: 2.5rem; }
+/* ค่า left ของคอลัมน์ที่สอง ต้องเท่ากับความกว้างจริงของคอลัมน์แรกเป๊ะๆ
+   เดิมกำหนดแค่ min-width: 3rem แล้วตรึงคอลัมน์ที่สองไว้ที่ left: 3rem
+   ความกว้างจริงของคอลัมน์แรกขึ้นกับเนื้อหา (หัวคอลัมน์ "เลขที่" กว้างกว่าเลข 1-40)
+   พอไม่ตรงกันจึงเหลือช่องว่างแคบๆ ให้เนื้อหาที่เลื่อนผ่านโผล่ขึ้นมา
+   ล็อกความกว้างด้วยตัวแปรเดียว แล้วใช้ตัวแปรนั้นเป็น left ด้วย จะได้ไม่มีทางหลุดจากกัน */
+.rpt-daily-table { --rpt-col1-w: 3.75rem; }
 .rpt-sticky-col {
   position: sticky; left: 0; z-index: 3;
-  background: white; min-width: 3rem; border-right: 1px solid var(--stone-200);
+  background: white; border-right: 1px solid var(--stone-200);
+  width: var(--rpt-col1-w, 3rem);
+  min-width: var(--rpt-col1-w, 3rem);
+  max-width: var(--rpt-col1-w, 3rem);
+  overflow: hidden;
 }
 .rpt-sticky-col2 {
-  position: sticky; left: 3rem; z-index: 3;
+  position: sticky; left: var(--rpt-col1-w, 3rem); z-index: 3;
   background: white; min-width: 80px; border-right: 1px solid var(--stone-200);
 }
 /* ต้องอยู่เหนือหัวคอลัมน์วันที่ที่เลื่อนลอดไปด้านหลัง ไม่งั้นข้อความวันที่โผล่ทับ
