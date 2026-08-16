@@ -42,7 +42,10 @@
         ปลอดภัยกว่า และปิดปัญหา cache 15 นาทีฝั่ง CSS ไปเลย แลกกับหน้าแรกหนักขึ้น
       - ตัด `include_` ออก → เหลือ lazy อย่างเดียว **เสี่ยง FOUC เพราะ CSS มาช้ากว่า HTML**
         และต้องระวัง `StyleReport`/`Phase3`/`Phase4` ใช้ `var(--...)` แต่ไม่ได้นิยามเอง ต้องให้ `Stylesheet` มาก่อนเสมอ
-      - หมายเหตุ: `styleMap` ฝั่ง server มี `pin` แต่ฝั่ง client ไม่มีใครเรียก — เป็น dead entry ลบได้เลย
+- [ ] **เก็บกวาด: ลบ `pin` ออกจาก `styleMap`** [Code.js] — เป็น dead entry
+      ฝั่ง server รับคำขอ `getClientStyleContent('pin')` ได้ แต่ฝั่ง client ไม่มี `pin` ใน `CLIENT_STYLE_REGISTRY`
+      และไม่มีที่ไหนเรียก `ensureClientStyleLoaded('pin')` เลย (`StylePin` มาทาง `include_` อย่างเดียว)
+      **ไม่เร่ง ไม่กระทบการทำงาน** แค่ทำให้คนอ่านเข้าใจผิดว่า `StylePin` โหลดแบบ lazy
 
 ### ก่อนส่งมอบให้ลูกค้าทุกครั้ง
 - [ ] ลบ `Diagnostics.gs` + เมนู 🧪 ตรวจงานแก้ P0
