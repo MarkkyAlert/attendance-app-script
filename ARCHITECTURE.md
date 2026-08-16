@@ -633,45 +633,10 @@ Sheets ตีความค่าที่เขียนผ่าน `setValue
 ทดสอบตรรกะที่ขับผ่าน UI ไม่ได้ ต้องแยกออกมาเป็นฟังก์ชันแล้วทดสอบผ่าน `Diagnostics.js` แทน
 (ตัวอย่าง: `shouldBlockSchoolCalendarChange_` ถูกแยกออกมาด้วยเหตุผลนี้)
 
-### ความไม่สม่ำเสมอในโค้ดเบส (ยังไม่แก้ — รู้ไว้ก่อนแตะ)
+### ความไม่สม่ำเสมอในโค้ดเบส
 
-**11. `esc()` มี 9 ชุด แยกเป็น 2 พฤติกรรม**
-
-| escape `"` และ `'` ด้วย | ไม่ escape quote |
-|---|---|
-| `JavaScript.html` · `JsProfile` · `ParentView` · `PrintReport` | `JsReports` · `JsDashboard` · `JsAnalytics` · `JsImport` · `JsPhotoGrid` |
-
-ทุกที่สร้าง HTML ด้วย string concat และยัดค่าลง attribute เป็นปกติ
-(ยังไม่เป็นช่องโหว่ที่ยิงได้จริงเพราะ `normalizeLimitedText_` กันไว้ที่ชั้น validation แล้ว)
-บางชุดยังใช้ `if (!str) return ''` ซึ่งทำให้เลข `0` กลายเป็นสตริงว่าง
-**ถ้าจะรวมเป็นตัวเดียว ต้องใช้เวอร์ชันที่เข้มที่สุด (`JavaScript.html`)**
-
-**12. CSS ถูกโหลดซ้ำสองรอบ** — `Index.html` `include_` ครบทั้ง 5 ไฟล์ตั้งแต่ `doGet`
-แต่ `isClientStyleLoaded_` เช็คว่ามี `<style id="client-style-*">` ซึ่ง inline **ไม่มีวันมี**
-→ เข้าหน้า dashboard/reports/analytics ครั้งแรกจะดึง CSS ก้อนเดิมกลับมา inject ซ้ำ
-ต้องเลือกทางใดทางหนึ่งแล้วลบอีกทางทิ้ง
-
-**13. การแยกประเภท error ด้วยการหาคำภาษาไทยในข้อความ** — มี 3 จุด:
-`loadPage` (หา `'โมดูล'` / `'สไตล์'` / `'โค้ดของหน้า'`) · `loadAttendance` (หา `'วันหยุดในปฏิทินวันเรียน'`) ·
-`ParentView.html` (หา `'หมดอายุ'` / `'ไม่ถูกต้อง'`)
-**แก้ข้อความ error ฝั่ง server = ตรรกะควบคุมพังแบบไม่มี error ให้เห็น**
-ระบบมี protocol `CODE|message` อยู่แล้ว (`parseServerError_`) แต่ 3 จุดนี้ไม่ได้ใช้
-
-**14. error handling ของ RPC ถูกก๊อป 4 ชุด** — `serverCall` · `serverCallQuiet` · `fetchPageInitialData_` ·
-`handlePrintFailure` (ตัวหลังรู้จัก `PRINT_AUTH_*` ที่อีก 3 ตัวไม่รู้จัก)
-เพิ่ม error code ใหม่ต้องแก้ทุกที่
-
-**15. metadata ปลอมใน registry** — `CLIENT_MODULE_REGISTRY[].page` และ `CLIENT_STYLE_REGISTRY[].pages/.uses`
-**ไม่มีโค้ดตัวไหนอ่านเลย** ตัวที่มีผลจริงคือ `PAGE_MODULE_MAP` / `PAGE_STYLE_MAP` และ `.global`
-เป็นเอกสารที่ปลอมตัวเป็นโค้ด แก้แล้วไม่มีผล
-
-**16. Chart.js โหลดจาก CDN ภายนอก** (`JsDashboard.html`) — เป็น external dependency ตัวเดียวของโปรเจกต์
-ถ้าเครือข่ายโรงเรียนบล็อก กราฟหายทั้งหมด (มี fallback อยู่)
-
-**17. `SCRIPT_URL` เป็น global จาก `Index.html`** ที่ `JsReports.html` ใช้ตรงๆ ไม่ผ่าน `AppShared`
-
-**18. `expires_at` ถูกเก็บและส่งไป-กลับ แต่หน้าครูไม่เคยเช็คเอง** (ต่างจาก `ParentView.html` ที่เช็ค)
-→ ต้องยิง request ให้เด้งก่อนถึงจะรู้ว่าหมดอายุ อาการคือ "โหลดค้างแล้วเด้งหน้า login"
+รายการความไม่สม่ำเสมอที่รู้อยู่แล้ว (ยังไม่แก้) ดู **`TODO.md`** — เป็นงานค้าง ไม่ใช่คำอธิบายสถาปัตยกรรม
+จึงเก็บไว้ที่เดียวที่จะถูกลบเองตอนปิดงาน
 
 ---
 

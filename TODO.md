@@ -31,8 +31,12 @@
       และเป็นช่องทางเดียวที่ครูซึ่งซื้อไปแล้วจะได้รับโค้ดเวอร์ชันใหม่
       ต้องทำเอง เพราะต้องเลือกไฟล์จากเครื่อง
 - [ ] **ทดสอบล็อกอินใหม่** ยืนยันว่าโควตาอุปกรณ์ 5 เครื่องไม่ได้ล็อกตัวเอง
-- [ ] **merge `fix/p0-broken-features` เข้า main** ตอนนี้ main ยังเป็นโค้ดก่อนแก้ทั้งหมด
 - [ ] **ลบไฟล์ CSV ค้างใน Drive 2 ไฟล์** จากการทดสอบก่อนแก้บั๊ก pop-up
+
+### ความไม่สม่ำเสมอในโค้ดเบส — รู้อยู่แล้ว ยังไม่แก้
+
+ไม่มีข้อไหนเร่ง แต่ควรรู้ก่อนแตะส่วนนั้น ปิดข้อไหนแล้วให้ลบออกจากที่นี่
+
 - [ ] **CSS ถูกส่งลง client ซ้ำสองรอบทุกครั้งที่โหลดหน้า** — `StyleReport` / `StylePhase3` / `StylePhase4`
       ถูก `include_` inline ตั้งแต่ `doGet` (`Index.html:125-127`) **และ** ถูกดึงซ้ำผ่าน `getClientStyleContent`
       เพราะ `isClientStyleLoaded_` เช็คว่ามี `<style id="client-style-X">` ซึ่งตัวจาก `include_` ไม่มี `id`
@@ -46,6 +50,26 @@
       ฝั่ง server รับคำขอ `getClientStyleContent('pin')` ได้ แต่ฝั่ง client ไม่มี `pin` ใน `CLIENT_STYLE_REGISTRY`
       และไม่มีที่ไหนเรียก `ensureClientStyleLoaded('pin')` เลย (`StylePin` มาทาง `include_` อย่างเดียว)
       **ไม่เร่ง ไม่กระทบการทำงาน** แค่ทำให้คนอ่านเข้าใจผิดว่า `StylePin` โหลดแบบ lazy
+- [ ] **`esc()` มีหลายชุด แยกเป็น 2 พฤติกรรม** — `JavaScript.html` / `JsProfile` / `ParentView` / `PrintReport`
+      escape `"` และ `'` ด้วย ส่วน `JsReports` / `JsDashboard` / `JsAnalytics` / `JsImport` / `JsPhotoGrid` ไม่ escape
+      ทั้งที่ทุกที่สร้าง HTML ด้วย string concat และยัดค่าลง attribute เป็นปกติ
+      (ยังไม่เป็นช่องโหว่ที่ยิงได้จริง เพราะ `normalizeLimitedText_` กันไว้ที่ชั้น validation แล้ว)
+      บางชุดใช้ `if (!str) return ''` ทำให้เลข `0` กลายเป็นสตริงว่าง
+      **ถ้าจะรวมเป็นตัวเดียว ต้องใช้เวอร์ชันที่เข้มที่สุด (`JavaScript.html`)**
+- [ ] **แยกประเภท error ด้วยการหาคำภาษาไทยในข้อความ** — `loadPage` (หา `'โมดูล'` / `'สไตล์'` / `'โค้ดของหน้า'`) ·
+      `loadAttendance` (หา `'วันหยุดในปฏิทินวันเรียน'`) · `ParentView.html` (หา `'หมดอายุ'` / `'ไม่ถูกต้อง'`)
+      **แก้ข้อความ error ฝั่ง server = ตรรกะควบคุมพังแบบไม่มี error ให้เห็น**
+      ระบบมี protocol `CODE|message` (`parseServerError_`) อยู่แล้ว แต่จุดพวกนี้ไม่ได้ใช้
+- [ ] **error handling ของ RPC ถูกก๊อปหลายชุด** — `serverCall` · `serverCallQuiet` · `fetchPageInitialData_` ·
+      `handlePrintFailure` (ตัวหลังรู้จัก `PRINT_AUTH_*` ที่ตัวอื่นไม่รู้จัก) เพิ่ม error code ใหม่ต้องแก้ทุกที่
+- [ ] **metadata ปลอมใน registry** — `CLIENT_MODULE_REGISTRY[].page` และ `CLIENT_STYLE_REGISTRY[].pages/.uses`
+      **ไม่มีโค้ดตัวไหนอ่านเลย** ตัวที่มีผลจริงคือ `PAGE_MODULE_MAP` / `PAGE_STYLE_MAP` และ `.global`
+      เป็นเอกสารที่ปลอมตัวเป็นโค้ด แก้แล้วไม่มีผล ควรลบหรือทำให้มีผลจริง
+- [ ] **Chart.js โหลดจาก CDN ภายนอก** (`JsDashboard.html`) — external dependency ตัวเดียวของโปรเจกต์
+      ถ้าเครือข่ายโรงเรียนบล็อก กราฟหายทั้งหมด (มี fallback อยู่)
+- [ ] **`SCRIPT_URL` เป็น global จาก `Index.html`** ที่ `JsReports.html` ใช้ตรงๆ ไม่ผ่าน `AppShared`
+- [ ] **`expires_at` ส่งไป-กลับแต่หน้าครูไม่เคยเช็คเอง** (ต่างจาก `ParentView.html` ที่เช็ค)
+      ต้องยิง request ให้เด้งก่อนถึงจะรู้ว่าหมดอายุ อาการคือ "โหลดค้างแล้วเด้งหน้า login"
 
 ### ก่อนส่งมอบให้ลูกค้าทุกครั้ง
 - [ ] ลบ `Diagnostics.gs` + เมนู 🧪 ตรวจงานแก้ P0
