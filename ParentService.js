@@ -137,6 +137,12 @@ function issueParentLinkForTeacher_(studentNumber, auth, rateLimitKey) {
       success: true,
       message: 'ออกลิงก์ผู้ปกครองใหม่แล้ว',
       expires_at: link.expires_at,
+      // ฝั่ง client ไม่มีตัวแปลงวันที่ไทย ต้องส่งข้อความสำเร็จรูปไปให้
+      // แปลงเป็นวันตามเขตเวลาของสคริปต์ก่อน ไม่ใช้ ISO ตรงๆ เพราะ ISO เป็น UTC
+      // ซึ่งเลื่อนไปคนละวันได้เมื่อหมดอายุตอนหัวค่ำ
+      expires_at_th: thaiDate(formatDate_(new Date(link.expires_at)), 'long', true),
+      student_number: link.student_number,
+      student_name: String(student.full_name || ''),
       url: ScriptApp.getService().getUrl() + '?page=parent&token=' + encodeURIComponent(link.token)
     };
     } finally {

@@ -32,7 +32,7 @@
       dailyGridFrom: '',
       dailyGridTo: '',
       currentDate: '',
-      filterGroup: '',
+      filterGroup: '',   // ค่าพิเศษ NO_GROUP_FILTER_ = เลือกเฉพาะคนที่ยังไม่ระบุกลุ่ม
       filterUnchecked: false,
       searchQuery: '',
       studentsSearchQuery: '',
@@ -1755,12 +1755,12 @@
           html += '<button class="btn btn-ghost" onclick="App.undoBulk()">ย้อนชุดล่าสุด (' + (att.active_batch.count || 0) + ')</button>';
         }
         if (viewState.checkedCount > 0 && viewState.uncheckedCount === 0) {
-          html += '<button class="btn btn-success btn-sm" onclick="App.confirmDay()">ยืนยันวันนี้</button>';
+          html += '<button class="btn btn-success btn-sm" onclick="App.confirmDay(this)">ยืนยันวันนี้</button>';
         } else if (viewState.checkedCount > 0) {
           html += '<span class="attendance-day-pill attendance-day-pill-neutral">ต้องเช็คชื่อให้ครบก่อนจึงจะยืนยันวันนี้ได้</span>';
         }
       } else {
-        html += '<button class="btn btn-warning btn-sm" onclick="App.unconfirmDay()">ยกเลิกการยืนยัน</button>';
+        html += '<button class="btn btn-warning btn-sm" onclick="App.unconfirmDay(this)">ยกเลิกการยืนยัน</button>';
         html += '<button class="btn btn-ghost btn-sm" onclick="App.sendEmails()">แจ้งผู้ปกครอง</button>';
       }
       html += '<button class="btn btn-ghost btn-sm" onclick="App.showAttendanceAuditTrail()">ประวัติแก้ไข</button>';
@@ -1833,8 +1833,9 @@
       var filteredStudents = getFilteredAttendanceStudents_(att.students);
       var filteredCount = filteredStudents.length;
       var groupCounts = {};
+      var ungroupedCount = 0;
       (att.students || []).forEach(function (student) {
-        if (!student || !student.group_name) return;
+        if (!student || hasNoGroup_(student)) { ungroupedCount++; return; }
         groupCounts[student.group_name] = (groupCounts[student.group_name] || 0) + 1;
       });
       var heroText = getAttendanceHeroText_(viewState);
@@ -1914,6 +1915,10 @@
         att.groups.forEach(function (g) {
           html += '<button class="chip' + (state.filterGroup === g ? ' active' : '') + '" type="button" aria-pressed="' + (state.filterGroup === g ? 'true' : 'false') + '" onclick="App.filterGroup(' + inlineJsArg(g) + ')"><span class="attendance-chip-label">' + esc(g) + '</span><span class="attendance-chip-count">' + (groupCounts[g] || 0) + '</span></button>';
         });
+        // ถ้าไม่มีชิปนี้ คนที่ยังไม่ระบุกลุ่มจะหายไปจากทุกชิปย่อย เจอได้ทางเดียวคือชิป "ทั้งหมด"
+        if (ungroupedCount > 0) {
+          html += '<button class="chip' + (state.filterGroup === NO_GROUP_FILTER_ ? ' active' : '') + '" type="button" aria-pressed="' + (state.filterGroup === NO_GROUP_FILTER_ ? 'true' : 'false') + '" onclick="App.filterGroup(' + inlineJsArg(NO_GROUP_FILTER_) + ')"><span class="attendance-chip-label">ยังไม่ระบุกลุ่ม</span><span class="attendance-chip-count">' + ungroupedCount + '</span></button>';
+        }
         html += '</div>';
       }
       html += '<div class="attendance-toolbar-view">';
@@ -1945,10 +1950,24 @@
       hydrateAttendanceGridPhotos_(panel);
     }
 
+    // ★ ค่าพิเศษสำหรับชิป "ยังไม่ระบุกลุ่ม" — ตัวกรองกลุ่มเทียบชื่อกลุ่มแบบตรงตัว
+    // จึงต้องมีค่าที่ไม่มีวันชนกับชื่อกลุ่มจริงที่ครูตั้งเอง
+    var NO_GROUP_FILTER_ = '\u0000none';
+
+    function hasNoGroup_(student) {
+      return !String((student && student.group_name) || '').trim();
+    }
+
+    function matchesGroupFilter_(student, filterValue) {
+      if (!filterValue) return true;
+      if (filterValue === NO_GROUP_FILTER_) return hasNoGroup_(student);
+      return String((student && student.group_name) || '') === filterValue;
+    }
+
     function getFilteredAttendanceStudents_(students) {
       students = Array.isArray(students) ? students : [];
       return students.filter(function (s) {
-        if (state.filterGroup && s.group_name !== state.filterGroup) return false;
+        if (!matchesGroupFilter_(s, state.filterGroup)) return false;
         if (state.filterUnchecked && s.attendance) return false;
         if (state.searchQuery) {
 
@@ -2092,7 +2111,10 @@
         if (s.nickname) html += ' <span class="student-nick">(' + esc(s.nickname) + ')</span>';
         if (s.is_flagged) html += ' <span class="student-inline-icon" title="จับตา">' + renderUiIcon('flag') + '</span>';
         html += '</div>';
-        if (s.group_name) {
+        if (hasNoGroup_(s)) {
+          // หน้านักเรียนบอกไว้ชัดอยู่แล้ว หน้านี้เคยเงียบ ทำให้การ์ดเตี้ยกว่าคนอื่นโดยไม่มีคำอธิบาย
+          html += '<div class="attendance-student-meta">ยังไม่ระบุกลุ่ม</div>';
+        } else if (s.group_name) {
           html += '<div class="attendance-student-meta">กลุ่ม ' + esc(s.group_name) + '</div>';
         }
         if (hasAtt && s.attendance.note && (isConfirmed || !needsNote)) {
@@ -2193,6 +2215,10 @@
     // Attendance Actions
 
     function loadAttendance(date) {
+      // ★ ตัวกรองผูกกับ "วันนี้ยังเช็คไม่เสร็จ" พอเปลี่ยนวันแล้วไม่ล้าง วันที่เช็คครบแล้ว
+      // จะขึ้น "แสดง 0/39 คน" ว่างเปล่า ดูเหมือนวันนั้นไม่มีข้อมูล
+      // (คำค้นหากับชิปกลุ่มไม่ล้าง เพราะครูตั้งใจใช้ข้ามวันได้)
+      if (date && date !== state.currentDate) state.filterUnchecked = false;
       setLoading(true);
       serverCall('getAttendanceDaily', [date], function (data) {
         state.attendance = data;
@@ -2495,7 +2521,7 @@
       });
     }
 
-    function confirmDay() {
+    function confirmDay(buttonEl) {
       var confirmMessage = 'ยืนยันวันนี้? หลังยืนยัน ระบบจะล็อกวันนี้ไว้ก่อน และคุณยังยกเลิกการยืนยันเพื่อกลับมาแก้ไขได้อีกครั้ง';
       // เตือนซ้ำตรงนี้ด้วย เพราะเป็นจังหวะที่ครูตัดสินใจจริงว่าวันนี้ "เสร็จแล้ว"
       var calendarState = (state.attendance && state.attendance.calendar_state) || {};
@@ -2503,7 +2529,11 @@
         confirmMessage += '\n\n⚠️ วันนี้ยังไม่อยู่ในปฏิทินวันเรียน ยืนยันได้ตามปกติ แต่ข้อมูลจะยังไม่ถูกนับในรายงานและบนเอกสาร ปพ.6 จนกว่าจะกด "เพิ่มเป็นวันเรียน"';
       }
       confirm_dialog(confirmMessage, function () {
+        // งานนี้ใช้เวลาราว 16 วินาที ถ้าไม่ขึ้นสถานะกำลังทำงาน กล่องจะปิดไปเฉยๆ
+        // แล้วจอนิ่งจนครูคิดว่าพังและกดซ้ำ
+        setActionButtonState(buttonEl, true, 'กำลังยืนยัน...');
         serverCall('confirmDay', [state.currentDate], function (result) {
+          setActionButtonState(buttonEl, false);
           if (result.success) {
             state.attendance.day_status = state.attendance.day_status || {};
             state.attendance.day_status.status = 'confirmed';
@@ -2512,13 +2542,17 @@
           } else {
             toast(result.message, 'error');
           }
+        }, function () {
+          setActionButtonState(buttonEl, false);
         });
       });
     }
 
-    function unconfirmDay() {
+    function unconfirmDay(buttonEl) {
       confirm_dialog('ยกเลิกการยืนยันวันนี้? ครูจะกลับมาแก้ไขสถานะและยืนยันใหม่ได้อีกครั้ง', function () {
+        setActionButtonState(buttonEl, true, 'กำลังยกเลิกการยืนยัน...');
         serverCall('unconfirmDay', [state.currentDate], function (result) {
+          setActionButtonState(buttonEl, false);
           if (result.success) {
             state.attendance.day_status = state.attendance.day_status || {};
             state.attendance.day_status.status = 'draft';
@@ -2527,6 +2561,8 @@
           } else {
             toast(result.message, 'error');
           }
+        }, function () {
+          setActionButtonState(buttonEl, false);
         });
       });
     }
@@ -2536,7 +2572,7 @@
     function getFilteredStudents(students) {
       var query = normalizeTextInput(state.studentsSearchQuery).toLowerCase();
       return (students || []).filter(function (s) {
-        if (state.studentsFilterGroup && String(s.group_name || '') !== state.studentsFilterGroup) return false;
+        if (!matchesGroupFilter_(s, state.studentsFilterGroup)) return false;
         if (state.studentsFilterFlagged && !s.is_flagged) return false;
         if (query) {
           var name = String(s.full_name || '').toLowerCase();
@@ -2639,6 +2675,9 @@
           groups.forEach(function (g) {
             html += '<button class="chip' + (state.studentsFilterGroup === g ? ' active' : '') + '" type="button" aria-pressed="' + (state.studentsFilterGroup === g ? 'true' : 'false') + '" onclick="App.studentFilterGroup(' + inlineJsArg(g) + ')"><span class="students-chip-label">' + esc(g) + '</span><span class="students-chip-count">' + (groupCounts[g] || 0) + '</span></button>';
           });
+          if (ungrouped > 0) {
+            html += '<button class="chip' + (state.studentsFilterGroup === NO_GROUP_FILTER_ ? ' active' : '') + '" type="button" aria-pressed="' + (state.studentsFilterGroup === NO_GROUP_FILTER_ ? 'true' : 'false') + '" onclick="App.studentFilterGroup(' + inlineJsArg(NO_GROUP_FILTER_) + ')"><span class="students-chip-label">ยังไม่ระบุกลุ่ม</span><span class="students-chip-count">' + ungrouped + '</span></button>';
+          }
           html += '</div>';
         }
         html += '</div>';
@@ -2747,26 +2786,54 @@
 
     function copyParentLink(studentNumber) {
       serverCall('getParentLink', [studentNumber], function (result) {
-        if (result.success) {
-          // Copy to clipboard
-          var ta = document.createElement('textarea');
-          ta.value = result.url;
-          ta.style.position = 'fixed';
-          ta.style.left = '-999px';
-          document.body.appendChild(ta);
-          ta.select();
-          try {
-            document.execCommand('copy');
-            toast(result.message || 'คัดลอกลิงก์ผู้ปกครองแล้ว', 'success');
-          } catch (e) {
-            prompt('คัดลอกลิงก์นี้:', result.url);
-          }
-          document.body.removeChild(ta);
-
-        } else {
-          toast(result.message || 'เกิดข้อผิดพลาด', 'error');
+        if (!result || !result.success) {
+          toast((result && result.message) || 'เกิดข้อผิดพลาด', 'error');
+          return;
         }
+        // ลิงก์นี้ server ส่งมาให้ครั้งเดียว เปิดดูซ้ำไม่ได้ และการกดปุ่มใหม่จะเพิกถอนใบนี้ทิ้ง
+        // จึงต้องแสดงบนหน้าจอเสมอ ไม่ฝากไว้กับคลิปบอร์ดหรือ toast ที่อยู่แค่ 2.5 วินาที
+        showParentLinkModal_(result);
       });
+    }
+
+    function showParentLinkModal_(result) {
+      var url = String(result.url || '');
+      var who = result.student_name
+        ? (esc(result.student_name) + ' (เลขที่ ' + esc(result.student_number) + ')')
+        : ('เลขที่ ' + esc(result.student_number));
+
+      var body = '';
+      body += '<p class="text-sm" style="margin-bottom:.75rem">ลิงก์สำหรับผู้ปกครองของ <strong>' + who + '</strong></p>';
+      body += '<textarea class="input" id="parent-link-value" readonly rows="3" style="width:100%;font-size:.8rem;word-break:break-all">' + esc(url) + '</textarea>';
+      body += '<div class="settings-note settings-note-warning" style="margin-top:.75rem">' + renderUiIcon('warning') +
+        '<span>ลิงก์นี้แสดงได้ครั้งเดียว เก็บไว้ก่อนปิดหน้าต่างนี้ · การกดปุ่ม "ลิงก์ผู้ปกครอง" ใหม่จะทำให้ลิงก์นี้ใช้ไม่ได้ทันที</span></div>';
+      if (result.expires_at_th) {
+        body += '<p class="text-xs mt-1" style="color:var(--stone-500)">ลิงก์หมดอายุ ' + esc(result.expires_at_th) + '</p>';
+      }
+
+      showModal('ลิงก์ผู้ปกครอง', body, [
+        {
+          label: 'คัดลอกลิงก์',
+          class: 'btn btn-primary',
+          onClick: function (button) {
+            copyTextToClipboard_(url, function () {
+              button.textContent = 'คัดลอกแล้ว';
+              toast('คัดลอกลิงก์ผู้ปกครองแล้ว', 'success');
+            }, function () {
+              // เลือกข้อความไว้ให้ครูกดคัดลอกเองได้ทันที ดีกว่าบอกว่าสำเร็จทั้งที่ไม่สำเร็จ
+              var field = document.getElementById('parent-link-value');
+              if (field) { field.focus(); field.select(); }
+              toast('คัดลอกอัตโนมัติไม่สำเร็จ ลิงก์ถูกเลือกไว้ให้แล้ว กรุณากดคัดลอกเอง', 'error');
+            });
+          }
+        },
+        { label: 'ปิด', class: 'btn btn-ghost', action: 'closeModal()' }
+      ], { initialFocusSelector: '#parent-link-value' });
+
+      // พยายามคัดลอกให้ตั้งแต่แรกเพื่อความสะดวก แต่ไม่บอกว่าสำเร็จถ้าไม่สำเร็จ
+      copyTextToClipboard_(url, function () {
+        toast('คัดลอกลิงก์ผู้ปกครองแล้ว', 'success');
+      }, function () {});
     }
 
     function showTrash() {
@@ -4743,8 +4810,8 @@
         if (transitionLabel) {
           html += '<span class="student-badge badge-blue">' + esc(transitionLabel) + '</span>';
         }
-        if (entry.changed_at) {
-          html += '<span class="student-badge badge-amber">' + esc(entry.changed_at) + '</span>';
+        if (entry.changed_at_th || entry.changed_at) {
+          html += '<span class="student-badge badge-amber">' + esc(entry.changed_at_th || entry.changed_at) + '</span>';
         }
         html += '</div>';
         if (detailText) {
@@ -5024,6 +5091,39 @@
       var dur = type === 'error' ? 4500 : 2500;
       setTimeout(function () { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; }, dur);
       setTimeout(function () { if (el.parentNode === container) container.removeChild(el); }, dur + 500);
+    }
+
+    // เหมือนตัวใน JsReports / JsAnalytics / JsDashboard ทุกประการ
+    // ★ ห้ามลดรูปเหลือ execCommand เปล่าๆ — มันคืน false ได้โดยไม่ throw
+    // จุดที่เรียกจะเข้าใจว่าสำเร็จทั้งที่คลิปบอร์ดยังว่าง
+    function copyTextToClipboard_(text, onSuccess, onError) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(onSuccess).catch(function () {
+          fallbackCopyText_(text, onSuccess, onError);
+        });
+        return;
+      }
+      fallbackCopyText_(text, onSuccess, onError);
+    }
+
+    function fallbackCopyText_(text, onSuccess, onError) {
+      try {
+        var textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.setAttribute('readonly', 'readonly');
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        var copied = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        if (copied) {
+          onSuccess();
+          return;
+        }
+      } catch (err) {}
+      onError();
     }
 
     function resetFileInput(inputId) {

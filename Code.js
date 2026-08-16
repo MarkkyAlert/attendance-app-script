@@ -282,14 +282,19 @@ function getReportsBootstrapData_(params) {
 
 function getImportBootstrapData_() {
   return {
-    activeSemester: getActiveSemester() || null
+    // ★ ต้องเป็น getActiveSemesterRangeSafe_ ไม่ใช่ getActiveSemester
+    // ฝั่ง client อ่าน activeSemester.from (JsImport / ฟอร์มนักเรียน) ส่วนแถวดิบจาก
+    // getActiveSemesterRow_ มีแต่ start_date/end_date ไม่มี from → ค่าเริ่มต้นของ
+    // "เริ่มอยู่ในห้องตั้งแต่" จะตกไปเป็น "วันนี้" แทนวันเปิดภาคเรียนแบบเงียบๆ
+    // ตัวนี้คืนทั้งสองรูปแบบ จึงไม่กระทบที่อ่าน start_date อยู่เดิม
+    activeSemester: getActiveSemesterRangeSafe_()
   };
 }
 
 function getSettingsBootstrapData_() {
   var settings = getUiSettings_();
   var pinState = getPinState();
-  var activeSemester = getActiveSemester();
+  var activeSemester = getActiveSemesterRangeSafe_();
   var studentSummary = getStudentSetupSummary_();
   var schoolCalendarSummary = activeSemester && activeSemester.start_date && activeSemester.end_date
     ? getSchoolCalendarSummaryForRange_({ from: activeSemester.start_date, to: activeSemester.end_date })
@@ -317,8 +322,12 @@ function getSettingsDetails(auth) {
     rate_limit_window_sec: 60
   }, function() {
     return {
+      // ต้องเป็นตัว …RangeSafe_ เหมือน bootstrap ตัวอื่น ไม่งั้นพอโหลดหน้าตั้งค่าเสร็จ
+      // state.activeSemester จะถูกทับด้วยแถวดิบที่ไม่มี from แล้วฟอร์มเพิ่มนักเรียน
+      // ในหน้าถัดไปจะกลับไปตั้งค่าเริ่มต้นเป็น "วันนี้" อีก
+      // (รายการภาคเรียนที่ต้องใช้ id สำหรับปุ่มแก้ไข/ลบ มาจาก semesters ข้างบน)
       semesters: getSemesterList(),
-      activeSemester: getActiveSemester(),
+      activeSemester: getActiveSemesterRangeSafe_(),
       schoolCalendar: getSchoolCalendar()
     };
   });

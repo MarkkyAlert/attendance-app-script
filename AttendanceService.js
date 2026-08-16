@@ -1316,6 +1316,9 @@ function getAttendanceAuditTrailEntries_(date) {
       old_note: String(row[COL.LOG.OLD_NOTE - 1] || ''),
       new_note: String(row[COL.LOG.NEW_NOTE - 1] || ''),
       changed_at: normalizeTimestampValue_(row[COL.LOG.CHANGED_AT - 1]),
+      // ★ changed_at ต้องคงรูปแบบ YYYY-MM-DD HH:mm:ss ไว้ เพราะ entries.sort ข้างล่าง
+      // เรียงด้วย localeCompare ของสตริงนี้ตรงๆ · ตัวไทยเป็นฟิลด์แยกไว้ให้หน้าจอใช้
+      changed_at_th: formatAuditTimestampTh_(normalizeTimestampValue_(row[COL.LOG.CHANGED_AT - 1])),
       is_day_event: studentNumber <= 0 && studentId <= 0
     });
   });
@@ -1324,6 +1327,20 @@ function getAttendanceAuditTrailEntries_(date) {
     return String(b.changed_at || '').localeCompare(String(a.changed_at || '')) || ((b.id || 0) - (a.id || 0));
   });
   return entries.slice(0, 120);
+}
+
+/**
+ * แปลง 'YYYY-MM-DD HH:mm:ss' เป็น 'ส. 16 ส.ค. 2569 15:11 น.'
+ * ทั้งระบบใช้ปี พ.ศ. ประวัติแก้ไขเป็นที่เดียวที่ยังโผล่ปี ค.ศ. ให้ครูเห็น
+ */
+function formatAuditTimestampTh_(value) {
+  var text = String(value || '').trim();
+  if (!text) return '';
+  var datePart = text.slice(0, 10);
+  var timePart = text.length >= 16 ? text.slice(11, 16) : '';
+  var label = thaiDate(datePart, 'short', true);
+  if (!label || label === datePart) return text;
+  return timePart ? (label + ' ' + timePart + ' น.') : label;
 }
 
 function getAttendanceAuditActionLabel_(action) {
