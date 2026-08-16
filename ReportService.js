@@ -554,7 +554,8 @@ function readAllAttendanceRecords_(sourceInfo) {
           note: String(row[4] || ''),
           batch_id: String(row[5] || ''),
           // ★ row_index ใช้ได้เฉพาะเมื่ออ่านจากชีตหลักเท่านั้น
-          // ผู้เขียนข้อมูลไม่ได้ใช้เส้นทางนี้ (ใช้ readAttendanceRecordsByDate_ ซึ่งอ่านชีตหลักอย่างเดียว)
+          // เส้นทางอ่านรายวัน (readAttendanceRecordsByDate_) ก็รวมชีต archive แล้วเช่นกัน
+          // และผู้เขียนข้อมูลทุกตัวกรองด้วย filterMainAttendanceRecords_ [AttendanceService.js] ก่อนเสมอ
           // จึงติด sheet_name ไว้กันคนมาแก้ต่อเผลอเอา row_index ไปเขียนทับข้ามชีต
           sheet_name: readSheet.getName(),
           row_index: index + 2

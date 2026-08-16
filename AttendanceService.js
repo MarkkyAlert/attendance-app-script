@@ -268,7 +268,8 @@ function recordAttendance(payload, auth) {
       var rowIndex = -1;
       var oldStatus = '';
       var oldNote = '';
-      var matches = getRecordsByDate_(date).filter(function(record) {
+      // กรองเหลือเฉพาะแถวในชีตหลัก เพราะข้างล่างเอา row_index ไปเขียนทับชีตหลัก
+      var matches = filterMainAttendanceRecords_(getRecordsByDate_(date), sourceInfo).filter(function(record) {
         return doesAttendanceRecordMatchStudent_(record, studentId, studentNumber);
       });
       if (matches.length) {
@@ -332,7 +333,7 @@ function undoAttendance(payload, auth) {
 
       var sourceInfo = getCurrentAttendanceSourceInfo_();
       var sheet = getAttendanceSourceSheet_(sourceInfo);
-      var matches = getRecordsByDate_(date).filter(function(record) {
+      var matches = filterMainAttendanceRecords_(getRecordsByDate_(date), sourceInfo).filter(function(record) {
         return doesAttendanceRecordMatchStudent_(record, studentId, studentNumber);
       });
       if (!matches.length) return { success: false, message: 'ไม่พบรายการ' };
@@ -422,7 +423,7 @@ function undoBulkPresent(date, batchId, auth) {
 
       var sourceInfo = getCurrentAttendanceSourceInfo_();
       var sheet = getAttendanceSourceSheet_(sourceInfo);
-      var rowIndexes = getRecordsByDate_(date).filter(function(record) {
+      var rowIndexes = filterMainAttendanceRecords_(getRecordsByDate_(date), sourceInfo).filter(function(record) {
         return String(record.batch_id || '').trim() === batchId;
       }).map(function(record) {
         return record.row_index;
@@ -981,25 +982,44 @@ function getRecordsByDate_(date) {
   return Array.isArray(records) ? records.slice() : [];
 }
 
+/**
+ * ★ ต้องอ่านชีต archive ด้วย ไม่ใช่ชีตหลักอย่างเดียว
+ * ไม่งั้นพอครูเก็บถาวรภาคเรียนแล้วเปิดวันเก่าในหน้าเช็คชื่อ จะเห็นทุกคนเป็น
+ * "ยังไม่เช็ค" ทั้งที่หัวข้อบอกว่า "ยืนยันแล้ว" (สถานะวันอ่านผ่าน
+ * getAttendanceDayReadSheets_ ซึ่งรวม archive อยู่แล้ว แต่ตัวเรคอร์ดไม่รวม)
+ *
+ * ★ ลำดับสำคัญ: archive มาก่อน ชีตหลักมาทีหลัง ตามกติกา "แถวที่พบทีหลังชนะ"
+ * ของ getUniqueLatestRecords_
+ *
+ * ★ ทุกแถวติด sheet_name ไว้ เพราะ row_index ของสองชีตชนกันได้
+ * ผู้ที่เอา row_index ไปเขียนต้องกรองด้วย isMainAttendanceRecord_ ก่อนเสมอ
+ */
 function readAttendanceRecordsByDate_(date, sourceInfo) {
   sourceInfo = sourceInfo || getCurrentAttendanceSourceInfo_();
-  var sheet = getAttendanceSourceSheet_(sourceInfo);
-  if (!sheet) return [];
+  var records = [];
+  getAttendanceReadSheets_(sourceInfo).forEach(function(sheet) {
+    appendAttendanceRecordsByDateFromSheet_(records, sheet, date);
+  });
+  return records;
+}
+
+function appendAttendanceRecordsByDateFromSheet_(records, sheet, date) {
+  if (!sheet) return;
   var lastRow = sheet.getLastRow();
-  if (lastRow <= 1) return [];
+  if (lastRow <= 1) return;
 
   var matchedRanges = sheet.getRange(2, COL.ATTENDANCE.DATE, lastRow - 1, 1)
     .createTextFinder(String(date || ''))
     .matchEntireCell(true)
     .findAll();
-  if (!matchedRanges.length) return [];
+  if (!matchedRanges.length) return;
 
+  var sheetName = sheet.getName();
   var rowIndexes = matchedRanges.map(function(range) {
     return range.getRow();
   }).sort(function(a, b) {
     return a - b;
   });
-  var records = [];
 
   function appendRowBlock_(fromRow, toRow) {
     var values = sheet.getRange(fromRow, 1, toRow - fromRow + 1, COL.ATTENDANCE.STUDENT_ID).getValues();
@@ -1016,6 +1036,7 @@ function readAttendanceRecordsByDate_(date, sourceInfo) {
         status_code: String(row[COL.ATTENDANCE.STATUS_CODE - 1] || ''),
         note: String(row[COL.ATTENDANCE.NOTE - 1] || ''),
         batch_id: batchId,
+        sheet_name: sheetName,
         row_index: fromRow + index
       });
     });
@@ -1033,7 +1054,22 @@ function readAttendanceRecordsByDate_(date, sourceInfo) {
     blockEnd = rowIndexes[i];
   }
   appendRowBlock_(blockStart, blockEnd);
-  return records;
+}
+
+/**
+ * แถวนี้อยู่ในชีตหลักไหม — ใช้กรองก่อนเอา row_index ไปเขียน/ลบเสมอ
+ * แถวจากชีต archive มี row_index ที่ชนกับชีตหลักได้ ถ้าเผลอเอาไปใช้จะลบผิดแถวแบบเงียบๆ
+ */
+function isMainAttendanceRecord_(record, sourceInfo) {
+  var mainName = (sourceInfo && sourceInfo.attendance_sheet_name) || SHEET.ATTENDANCE;
+  var name = record && record.sheet_name ? String(record.sheet_name) : '';
+  return !name || name === mainName;
+}
+
+function filterMainAttendanceRecords_(records, sourceInfo) {
+  return (records || []).filter(function(record) {
+    return isMainAttendanceRecord_(record, sourceInfo);
+  });
 }
 
 function getCachedRawAttendanceRecordsByDate_(date, sourceInfo) {
@@ -1726,7 +1762,7 @@ function clearHolidayAttendance(date, auth) {
       var sourceInfo = getCurrentAttendanceSourceInfo_();
       var attendanceSheet = getAttendanceSourceSheet_(sourceInfo);
       var dayStatusSheet = getAttendanceDaySourceSheet_(sourceInfo);
-      var dayRecords = getRecordsByDate_(date);
+      var dayRecords = filterMainAttendanceRecords_(getRecordsByDate_(date), sourceInfo);
       var deletedRecords = dayRecords.length;
       deleteSheetRowsByIndexes_(attendanceSheet, dayRecords.map(function(record) {
         return record.row_index;
