@@ -152,6 +152,13 @@ function runP0Diagnostics_() {
         sheet.setFrozenRows(1); // เหมือนทุกชีตจริงในระบบนี้
         sheet.getRange(1, 1, 4, 1).setValues([['header'], ['row2'], ['row3'], ['row4']]);
 
+        // ★ ต้องหั่นแถวว่างท้ายชีตทิ้งให้ getMaxRows() เท่ากับ getLastRow() ก่อน
+        // ไม่งั้นเช็คนี้เขียวหลอก — insertSheet ให้แถวว่างมา 1,000 แถวเสมอ พอลบ 3 แถว
+        // ก็ยังเหลือแถวไม่ถูกตรึงอีกเกือบพัน Sheets จึงไม่บ่น
+        // ส่วนชีตจริงอย่าง "เช็คชื่อ" โตมาจากการเขียนต่อท้ายพอดีเป๊ะ ไม่มีแถวว่างเหลือ
+        var maxRows = sheet.getMaxRows();
+        if (maxRows > 4) sheet.deleteRows(5, maxRows - 4);
+
         var threwMessage = '';
         var deleted = 0;
         try {
@@ -162,15 +169,20 @@ function runP0Diagnostics_() {
 
         assertPreReleaseSmoke_(
           !threwMessage,
-          'ลบทุกแถวข้อมูลบนชีตที่ตรึงหัวตารางไม่ผ่าน — archive ภาคเรียนจะพังในเคสที่ ' +
-          'ข้อมูลทั้งชีตเป็นของภาคเรียนเดียว · ข้อความจาก Sheets: ' + threwMessage
+          'ลบทุกแถวข้อมูลบนชีตที่ตรึงหัวตารางและไม่มีแถวว่างเหลือ ไม่ผ่าน — ' +
+          'archive ภาคเรียนจะพังในเคสที่ข้อมูลทั้งชีตเป็นของภาคเรียนเดียว · ' +
+          'ข้อความจาก Sheets: ' + threwMessage
         );
         assertPreReleaseSmoke_(deleted === 3, 'ควรลบ 3 แถว แต่ได้ ' + deleted);
         assertPreReleaseSmoke_(
           sheet.getLastRow() <= 1,
           'ลบแล้วแต่ยังเหลือข้อมูลอยู่ getLastRow=' + sheet.getLastRow()
         );
-        return { deleted: deleted, last_row_after: sheet.getLastRow() };
+        return {
+          deleted: deleted,
+          last_row_after: sheet.getLastRow(),
+          max_rows_before_delete: 4
+        };
       } finally {
         var temp = ss.getSheetByName(P0_DIAG_TEMP_SHEET_);
         if (temp) ss.deleteSheet(temp);
