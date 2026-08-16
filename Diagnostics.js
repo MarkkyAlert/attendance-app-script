@@ -106,6 +106,45 @@ function runP0Diagnostics_() {
       return presence;
     }));
 
+    // 1.5 หน้าเช็คชื่ออ่านชีต archive ได้จริงไหม (รอบ 1 · 16 ส.ค. 2569)
+    // อ่านอย่างเดียว ไม่เขียนอะไรทั้งนั้น · ถอดออกได้เมื่อปิดข้อนี้แล้ว
+    checks.push(runPreReleaseSmokeCheck_('attendance:daily_reads_archive', function() {
+      var semester = getActiveSemesterRow_();
+      assertPreReleaseSmoke_(!!semester, 'ยังไม่มีภาคเรียนที่ใช้งานอยู่');
+
+      var sourceInfo = getAttendanceSourceInfoForSemester_(semester);
+      var readSheets = getAttendanceReadSheets_(sourceInfo).map(function(sheet) {
+        return { name: sheet.getName(), last_row: sheet.getLastRow() };
+      });
+
+      // เลือกวันเรียนที่มีข้อมูลจริงจากชีตที่อ่านได้ แทนการ hard-code วันที่
+      var probeDate = '';
+      var buckets = getCachedAttendanceDateBuckets_(sourceInfo) || {};
+      Object.keys(buckets).sort().forEach(function(date) {
+        if (!probeDate && buckets[date] && buckets[date].length) probeDate = date;
+      });
+
+      var result = {
+        semester: String(semester.name || ''),
+        semester_range: String(semester.start_date || '') + ' - ' + String(semester.end_date || ''),
+        is_archived: isSemesterAttendanceArchived_(semester),
+        source_key: String(sourceInfo.key || ''),
+        archive_sheet_name: String(sourceInfo.attendance_archive_sheet_name || '(ไม่มี)'),
+        read_sheets: readSheets,
+        probe_date: probeDate || '(ไม่พบวันที่มีข้อมูลเลย)',
+        records_via_date_read: probeDate ? readAttendanceRecordsByDate_(probeDate, sourceInfo).length : 0,
+        records_via_bucket: probeDate && buckets[probeDate] ? buckets[probeDate].length : 0
+      };
+
+      assertPreReleaseSmoke_(!!probeDate, 'ไม่พบวันที่มีข้อมูลเช็คชื่อเลยในภาคเรียนนี้');
+      assertPreReleaseSmoke_(
+        result.records_via_date_read > 0,
+        'readAttendanceRecordsByDate_ คืน 0 แถวสำหรับ ' + probeDate +
+        ' ทั้งที่รวมทั้งภาคเรียนมี ' + result.records_via_bucket + ' แถวในวันนั้น'
+      );
+      return result;
+    }));
+
     // 2. หัวใจของงานชุดนี้: ลบแถวไม่ติดกัน บนชีตทดสอบที่แยกออกมาต่างหาก
     checks.push(runPreReleaseSmokeCheck_('delete_rows:non_contiguous', function() {
       var ss = getSpreadsheet_();
