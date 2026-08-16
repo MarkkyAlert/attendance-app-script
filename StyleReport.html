@@ -1972,6 +1972,16 @@
 
 .rpt-daily-scroll { max-height: 70vh; overflow: auto; }
 
+/* position: sticky บนเซลล์ตารางใช้ร่วมกับ border-collapse: collapse ไม่ได้
+   เบราว์เซอร์วาดพื้นหลังของเซลล์ที่ตรึงไว้ไม่ครบ เนื้อหาที่เลื่อนผ่านจึงทะลุขึ้นมา
+   เห็นเป็นแถบคั่นระหว่างคอลัมน์ "เลขที่" กับ "ชื่อ" ทั้งในหัวตารางและแถวข้อมูล
+   (เลขที่ | .ค | ชื่อ  และ  1 | - | ด.ช.กิตติพงศ์ ใจดี)
+   ตั้งเฉพาะตารางรายวันซึ่งเป็นตารางเดียวที่มีคอลัมน์ตรึง ตารางอื่นไม่ต้องแตะ */
+.rpt-daily-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
 .rpt-daily-table th, .rpt-daily-table td { text-align: center; padding: .375rem .5rem; min-width: 2.5rem; }
 .rpt-sticky-col {
   position: sticky; left: 0; z-index: 3;

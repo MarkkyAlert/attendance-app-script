@@ -72,6 +72,27 @@ function buildPrintedAtText_() {
   return text;
 }
 
+/**
+ * ประโยคระบุขอบเขตการคำนวณ สำหรับพิมพ์ลงบนเอกสาร ปพ.6
+ *
+ * เดิมเอกสารพิมพ์คำเตือนสีแดงลงไปตรงๆ ซึ่งผิดคน — คนที่อ่าน ปพ.6 คือวิชาการและผู้บริหาร
+ * ที่ไม่รู้ว่า "ยืนยัน" ในระบบนี้แปลว่าอะไร เห็นกรอบแดงแล้วตีความได้อย่างเดียวว่า
+ * เอกสารของครูคนนี้มีปัญหา ทั้งที่ตัวเลขบนเอกสารถูกต้องตามข้อมูลที่ยืนยันแล้ว
+ *
+ * แต่จะตัดทิ้งเฉยๆ ก็ไม่ได้ เพราะเอกสารที่ครอบคลุมไม่ครบแบบเงียบๆ แย่กว่าเอกสารที่มีกรอบแดง
+ * จึงเปลี่ยนเป็นการระบุฐานการคำนวณแบบข้อเท็จจริง ไม่ใช่คำเตือน
+ */
+function buildPrintScopeNote_(context, printedAtTh) {
+  var confirmed = parseInt(context && context.confirmed_dates_count, 10) || 0;
+  var schoolDays = parseInt(context && context.school_day_dates_count, 10) || 0;
+  if (!schoolDays) return '';
+
+  var note = 'รายงานนี้คำนวณจากวันเรียนที่ยืนยันข้อมูลแล้ว ' + confirmed
+    + ' วัน จากวันเรียนตามปฏิทินทั้งหมด ' + schoolDays + ' วัน';
+  if (printedAtTh) note += ' · ข้อมูล ณ ' + printedAtTh;
+  return note;
+}
+
 function getPP6Report(startDate, endDate, auth) {
   return runAsPrintViewer_(auth, {
     rate_limit_key: 'get_pp6_report',
@@ -205,6 +226,7 @@ function getPP6Report(startDate, endDate, auth) {
             extra_confirmed_count: (context.extra_confirmed_dates || []).length,
             message: context.warning_message || ''
           },
+          scope_note: buildPrintScopeNote_(context, thaiDate(todayString_(), 'long', false)),
           total_students: students.length,
           male_count: students.filter(function(student) { return student.gender === 'M'; }).length,
           female_count: students.filter(function(student) { return student.gender === 'F'; }).length,

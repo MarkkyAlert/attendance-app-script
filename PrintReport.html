@@ -196,6 +196,17 @@ body {
   font-weight: 700;
 }
 
+/* บรรทัดระบุฐานการคำนวณ เป็นข้อเท็จจริงไม่ใช่คำเตือน
+   จึงต้องไม่ใช้สีแดงหรือกรอบหนา ให้อ่านเหมือนหมายเหตุประกอบเอกสาร */
+.rpt-scope-note {
+  margin: 0 0 12px;
+  padding: 6px 0 0;
+  border-top: 1px solid #e7e5e4;
+  color: #57534e;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
 .rpt-empty-block {
   margin-top: 12px;
   border: 1px solid #d6d3d1;
@@ -623,8 +634,22 @@ body {
     html += infoItem('พิมพ์เมื่อ', esc(data.printed_at_text || data.printed_at_th || '-'));
     html += '</div>';
 
-    if (data.calendar_warning && data.calendar_warning.has_mismatch && data.calendar_warning.message) {
-      html += '<div class="rpt-draft-banner">' + esc(data.calendar_warning.message) + '</div>';
+    // ระบุฐานการคำนวณแบบข้อเท็จจริง แทนคำเตือนสีแดงที่คนอ่านเอกสารตีความว่าเอกสารมีปัญหา
+    if (data.scope_note) {
+      html += '<div class="rpt-scope-note">' + esc(data.scope_note) + '</div>';
+    }
+
+    // ข้อมูลที่ครูเช็คไว้แล้วแต่ตกอยู่นอกวันเรียน = เอกสารทิ้งงานที่ทำไปแล้วโดยไม่บอกใคร
+    // ต่างจากกรณี "ยืนยันไม่ครบ" ที่เป็นแค่รายงานบางส่วน กรณีนี้จึงต้องกันไม่ให้พิมพ์
+    var extraConfirmedCount = parseInt(data.calendar_warning && data.calendar_warning.extra_confirmed_count, 10) || 0;
+    if (extraConfirmedCount > 0) {
+      html += '<div class="rpt-draft-banner">';
+      html += 'ยังพิมพ์เอกสารนี้ไม่ได้ เพราะมีข้อมูลเช็คชื่อที่ยืนยันแล้วอยู่นอกวันเรียนตามปฏิทิน ' + extraConfirmedCount + ' วัน';
+      html += ' ข้อมูลของวันเหล่านั้นจะไม่ถูกนับในเอกสาร';
+      html += ' กลับไปที่หน้ารายงานแล้วกด "นับเป็นวันเรียน" ให้ครบก่อน แล้วค่อยพิมพ์ใหม่';
+      html += '</div>';
+      html += '</div>';
+      return html;
     }
 
     if (data.out_of_semester) {
