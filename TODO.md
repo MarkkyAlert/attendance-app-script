@@ -33,6 +33,16 @@
 - [ ] **ทดสอบล็อกอินใหม่** ยืนยันว่าโควตาอุปกรณ์ 5 เครื่องไม่ได้ล็อกตัวเอง
 - [ ] **merge `fix/p0-broken-features` เข้า main** ตอนนี้ main ยังเป็นโค้ดก่อนแก้ทั้งหมด
 - [ ] **ลบไฟล์ CSV ค้างใน Drive 2 ไฟล์** จากการทดสอบก่อนแก้บั๊ก pop-up
+- [ ] **CSS ถูกส่งลง client ซ้ำสองรอบทุกครั้งที่โหลดหน้า** — `StyleReport` / `StylePhase3` / `StylePhase4`
+      ถูก `include_` inline ตั้งแต่ `doGet` (`Index.html:125-127`) **และ** ถูกดึงซ้ำผ่าน `getClientStyleContent`
+      เพราะ `isClientStyleLoaded_` เช็คว่ามี `<style id="client-style-X">` ซึ่งตัวจาก `include_` ไม่มี `id`
+      → เสีย round-trip ต่อหน้า + มี CSS 2 ชุดซ้อนกัน + ตัวจาก cache (เก่าได้ถึง 15 นาที) ชนะ cascade
+      **ควรเลือกทางเดียวแล้วลบอีกทางทิ้ง**
+      - ตัดออกจาก `styleMap` [Code.js] + `PAGE_STYLE_MAP`/`CLIENT_STYLE_REGISTRY` → เหลือ inline อย่างเดียว
+        ปลอดภัยกว่า และปิดปัญหา cache 15 นาทีฝั่ง CSS ไปเลย แลกกับหน้าแรกหนักขึ้น
+      - ตัด `include_` ออก → เหลือ lazy อย่างเดียว **เสี่ยง FOUC เพราะ CSS มาช้ากว่า HTML**
+        และต้องระวัง `StyleReport`/`Phase3`/`Phase4` ใช้ `var(--...)` แต่ไม่ได้นิยามเอง ต้องให้ `Stylesheet` มาก่อนเสมอ
+      - หมายเหตุ: `styleMap` ฝั่ง server มี `pin` แต่ฝั่ง client ไม่มีใครเรียก — เป็น dead entry ลบได้เลย
 
 ### ก่อนส่งมอบให้ลูกค้าทุกครั้ง
 - [ ] ลบ `Diagnostics.gs` + เมนู 🧪 ตรวจงานแก้ P0

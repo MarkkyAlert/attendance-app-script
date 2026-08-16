@@ -31,7 +31,8 @@
 - `PinService.js` — PIN ล็อกหน้าจอ
 - `PhotoService.js` — ผูก Drive folder รูปนักเรียน
 - `ProfileService.js` — หน้าประวัตินักเรียนรายคน (ฝั่งครู)
-- `Diagnostics.js` — ไฟล์ทดสอบชั่วคราวสำหรับงานแก้ P0 (`runP0Diagnostics`) ลบทิ้งได้เมื่อทดสอบผ่านแล้ว
+- `Diagnostics.js` + `SeedTestData.js` — **ไฟล์ dev ห้ามหลุดไปสำเนาลูกค้า** (`runP0Diagnostics` / `seedTestData`)
+  ต้องลบทั้งสองไฟล์พร้อมเมนู 🧪 ทั้ง 5 รายการใน `onOpen` ก่อนส่งมอบทุกครั้ง (มี comment กำกับไว้แล้ว)
 
 ### Client
 - `Index.html` — shell ของ Web App ครู + inline CSS ทั้งชุด
@@ -86,14 +87,31 @@
 ## กติกาก่อนแก้โค้ด
 - `clasp push` / `pull` **เขียนทับทั้งไฟล์ ไม่ merge แบบ git** → `clasp pull` ก่อนเริ่มงานทุกครั้ง
   และห้ามแก้บน Apps Script editor บนเว็บพร้อมกับแก้ในเครื่อง
+- โค้ดทั้งโปรเจกต์เป็น ES5 ใช้ `var` / `function` ธรรมดา **ห้าม `let` `const` arrow function**
+  runtime เป็น V8 จึงรันผ่านหมด ไม่มีอะไรจับได้ว่าเขียนผิดสไตล์ ต้องระวังเอง
 - อ่าน/เขียน Sheet ต้องทำเป็น batch (`getValues` / `setValues`) **ห้ามวนลูป `getValue` / `setValue` ทีละเซลล์**
 - ฟังก์ชันเดียวรันได้ไม่เกิน 6 นาที ระวังงานที่สแกนทั้งชีต, restore backup, และ migration
 - ทดสอบในเครื่องไม่ได้ ต้อง `clasp push` แล้วไปกด Run บน Apps Script เสมอ
+- จังหวะทำงาน: แก้ → `clasp push` → deploy → ทดสอบบนของจริง → **ค่อย commit** (commit ก่อนทดสอบไม่มีความหมาย)
+- **โค้ดและ CSS ที่โหลดแบบ lazy ถูก cache 900 วินาที และล้างไม่ได้เลย** — `getCachedClientAssetContent_` [Code.js]
+  ใช้คีย์คงที่ (`client_module_asset|X` / `client_style_asset|X`) ไม่ผ่าน `buildDerivedCacheKey_`
+  `bumpDerivedDataCacheVersion_` จึงแตะไม่ถึง **อาการบนจอต่างกัน 2 แบบ ตอน debug ต้องแยกให้ออก**
+  - `Js*` 6 ตัว — มาทาง cache ทางเดียว → **เห็นของเก่านิ่งๆ 15 นาที ไม่มีการทับ**
+  - `StyleReport` / `StylePhase3` / `StylePhase4` — `include_` สดทุก `doGet` **และ** มาทาง cache อีกทาง
+    (`injectClientStyle_` หา `id` ไม่เจอเพราะตัวจาก `include_` ไม่มี `id` ตัวจาก cache จึง `appendChild`
+    ทีหลังแล้วชนะ cascade) → **เห็นของใหม่แวบหนึ่งแล้วโดนของเก่าทับ**
+  - `Index.html` / `JavaScript.html` / `Stylesheet` / `StylePin` — inline อย่างเดียว **สดเสมอ ไม่มีปัญหา**
+  → ใช้หน้าเช็คชื่อ / นักเรียนเป็นฐานทดสอบ (ไม่ผ่าน cache นี้ทั้ง JS และ CSS) หรือรอครบ 15 นาที
+  **ห้ามสรุปว่า "แก้ผิด" จนกว่าจะตัดข้อนี้ออกไปก่อน**
 - ฟังก์ชัน global ที่ไม่มี `_` ต่อท้าย = เปิดให้เรียกจากอินเทอร์เน็ตทันที (web app เป็น anonymous)
   ฟังก์ชันภายในต้องเติม `_` ต่อท้ายเสมอ
   **แต่ editor ไม่แสดงฟังก์ชันที่ลงท้าย `_` ในช่องเลือกฟังก์ชัน จึงกด Run ไม่ได้** — ห้ามแก้ด้วยการถอด `_` ออก
   ให้ทำ public เป็นเปลือกบางๆ ที่เรียก `requireP0DiagnosticLocalContext_()` แล้วค่อยเรียกตัว `_` จริง
   (แบบ `runP0Diagnostics` → `runP0Diagnostics_`) แล้วถอดออกก่อนส่งมอบ · วิธีเต็มอยู่ใน `ARCHITECTURE.md` ข้อ 12
+- `attendance_percent` / `basis_days` **เป็น `null` ได้** แปลว่า "ยังวัดไม่ได้" ไม่ใช่ 0%
+  **ห้ามใช้ `|| 0` หรือเทียบ `< 80` ตรงๆ** เด็กที่ยังไม่มีวันวัดผลจะกลายเป็น 0% แล้วขึ้นแดงบน ปพ.6
+  เจอ `null` ได้ทุกที่ที่อ่าน `stats.*` — `ReportService` / `PrintService` / `AnalyticsService` / `ProfileService`
+  ฝั่งแสดงผลมี `formatPercentLabel` ที่คืน `-` และ CSV เขียน `''` อยู่แล้ว อย่าทำพัง
 - เขียน mutation ใหม่ต้องครอบด้วย `withAttendanceMutationLock_` หรือ `LockService.getDocumentLock()` และ `require_csrf: true`
 
 ## จุดที่ห้ามแตะโดยไม่ถามก่อน
