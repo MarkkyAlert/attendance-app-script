@@ -510,6 +510,8 @@ function getUiSettings_(auth) {
     teacher_key_configured: isTeacherAccessKeyConfiguredFast_(settings),
     teacher_device_bound: trustedDeviceIds.length > 0,
     teacher_trusted_device_count: trustedDeviceIds.length,
+    // ส่งเพดานไปด้วย ไม่งั้นหน้าตั้งค่าบอกได้แค่ "N อุปกรณ์" ซึ่งอ่านได้ว่าเป็นโควตาที่เหลือ
+    teacher_trusted_device_max: SECURITY.MAX_TRUSTED_TEACHER_DEVICES,
     parent_token_ttl_days: getParentTokenTtlDaysFromSettings_(settings)
   };
 }

@@ -271,6 +271,9 @@ function buildSummaryTableData_(range, skipComparison) {
         confirmed_record_days: stats.recorded_days,
         total_days: totalDays,
         attendance_percent: attendancePercent,
+        // ส่งตัวหารไปด้วย ฝั่ง client จะได้รู้ว่าเปอร์เซ็นต์นี้คำนวณจากกี่วัน
+        // ใช้กันไม่ให้ต้นเทอมที่มีวันวัดผลไม่กี่วันติดเกณฑ์ "ต้องติดตาม" กันทั้งห้อง
+        basis_days: basisDays,
         is_below_threshold: basisDays > 0 && attendancePercent < alertPct
       });
 

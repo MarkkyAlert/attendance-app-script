@@ -3022,6 +3022,7 @@
       var teacherKeyConfigured = !!settings.teacher_key_configured;
       var teacherDeviceBound = !!settings.teacher_device_bound;
       var teacherTrustedDeviceCount = parseInt(settings.teacher_trusted_device_count, 10) || 0;
+      var teacherTrustedDeviceMax = parseInt(settings.teacher_trusted_device_max, 10) || 0;
       var parentTokenTtlDays = parseInt(settings.parent_token_ttl_days, 10) || 14;
       var pinSet = !!pinState.pin_set;
       var pinEnabled = !!pinState.pin_enabled && pinSet;
@@ -3248,7 +3249,7 @@
       html += '<div class="input-group"><label class="input-label">ชื่อโรงเรียน</label><input class="input" id="set-school" value="' + esc(schoolName) + '" autocomplete="organization" autocapitalize="words" enterkeyhint="next" placeholder="เช่น โรงเรียนตัวอย่าง" oninput="App.validateSettingsField(\'set-school\')" onblur="App.validateSettingsField(\'set-school\')"><div class="settings-field-help">ชื่อนี้จะแสดงบนแถบนำทางและหัวรายงาน</div><div class="settings-field-error" id="set-school-error"></div></div>';
       html += '<div class="input-group"><label class="input-label">ระดับชั้นเรียน</label><input class="input" id="set-class" value="' + esc(className) + '" autocomplete="off" autocapitalize="characters" enterkeyhint="next" placeholder="เช่น ป.3/1" oninput="App.validateSettingsField(\'set-class\')" onblur="App.validateSettingsField(\'set-class\')"><div class="settings-field-help">ระบุชื่อห้องหรือระดับชั้นให้ตรงกับที่ใช้จริง</div><div class="settings-field-error" id="set-class-error"></div></div>';
       html += '<div class="input-group"><label class="input-label">เกณฑ์แจ้งเตือนขาดเรียนต่อเนื่อง</label><input class="input" id="set-alert" type="text" inputmode="numeric" pattern="[0-9]*" value="' + esc(alertDays) + '" oninput="App.validateSettingsField(\'set-alert\')" onblur="App.validateSettingsField(\'set-alert\')"><div class="settings-field-help">แนะนำ 3-5 วัน ใช้กับรายการแจ้งเตือนที่ดูการขาด/ลาต่อเนื่อง</div><div class="settings-field-error" id="set-alert-error"></div></div>';
-      html += '<div class="input-group settings-field-span-full"><label class="input-label">เกณฑ์รายการที่ต้องติดตาม</label><input class="input" id="set-attention-threshold" type="text" inputmode="numeric" pattern="[0-9]*" value="' + esc(attentionThresholdDays) + '" oninput="App.validateSettingsField(\'set-attention-threshold\')" onblur="App.validateSettingsField(\'set-attention-threshold\')"><div class="settings-field-help">ใช้กับ dashboard เพื่อดึงรายชื่อนักเรียนที่สาย/ขาดสะสมในช่วง 30 วันล่าสุด</div><div class="settings-field-error" id="set-attention-threshold-error"></div></div>';
+      html += '<div class="input-group settings-field-span-full"><label class="input-label">เกณฑ์รายชื่อ "ขาด/สายบ่อย" บนหน้าแรก</label><input class="input" id="set-attention-threshold" type="text" inputmode="numeric" pattern="[0-9]*" value="' + esc(attentionThresholdDays) + '" oninput="App.validateSettingsField(\'set-attention-threshold\')" onblur="App.validateSettingsField(\'set-attention-threshold\')"><div class="settings-field-help">นับขาดกับสายรวมกันใน 30 วันล่าสุด ถึงจำนวนนี้จึงขึ้นรายชื่อบนหน้าแรก · ไม่เกี่ยวกับชิป "ต้องติดตาม" ในหน้ารายงาน ซึ่งใช้เกณฑ์มาเรียนต่ำกว่า 80% ตาม ปพ.6</div><div class="settings-field-error" id="set-attention-threshold-error"></div></div>';
       html += '</div>';
       html += '<div class="settings-section-actions"><button class="btn btn-primary" onclick="App.doSaveSettings(this)">บันทึกข้อมูลชั้นเรียน</button></div>';
       html += '</section>';
@@ -3403,7 +3404,7 @@
       html += '</div>';
       html += '<div class="settings-status-list">';
       html += settingsStatusItem(teacherKeyConfigured ? 'confirmed' : 'warning', 'สถานะรหัสครู', teacherKeyConfigured ? 'ตั้งค่าไว้แล้ว' : 'ยังไม่พบรหัสครู');
-      html += settingsStatusItem(teacherDeviceBound ? 'confirmed' : 'draft', 'อุปกรณ์ที่อนุญาต', teacherDeviceBound ? ('ใช้งานได้ ' + teacherTrustedDeviceCount + ' อุปกรณ์') : 'ยังไม่มีอุปกรณ์ที่อนุญาต');
+      html += settingsStatusItem(teacherDeviceBound ? 'confirmed' : 'draft', 'อุปกรณ์ที่อนุญาต', teacherDeviceBound ? ('ใช้อยู่ ' + teacherTrustedDeviceCount + (teacherTrustedDeviceMax ? (' จาก ' + teacherTrustedDeviceMax) : '') + ' เครื่อง') : 'ยังไม่มีอุปกรณ์ที่อนุญาต');
       html += settingsStatusItem('calendar', 'อายุลิงก์ผู้ปกครอง', esc(parentTokenTtlDays) + ' วัน');
       html += '</div>';
       html += '<div class="settings-note ' + (teacherKeyConfigured ? 'settings-note-success' : 'settings-note-warning') + '">' + renderUiIcon(teacherKeyConfigured ? 'confirmed' : 'warning') + '<span>' + (teacherKeyConfigured
@@ -3426,7 +3427,9 @@
       html += '</div>';
       html += '<div class="settings-status-list">';
       html += settingsStatusItem('shield', 'สถานะ PIN', pinSet ? 'ตั้งค่าแล้ว' : 'ยังไม่ตั้งค่า');
-      html += settingsStatusItem(pinEnabled ? 'confirmed' : 'draft', 'การล็อกหน้าจอ', pinEnabled ? 'เปิดใช้งาน' : 'ปิดอยู่');
+      // ตั้ง PIN แล้วแต่ยังไม่เปิดล็อก เป็นสถานะที่ครูเข้าใจผิดง่ายที่สุด จึงบอกให้ชัดว่ายังต้องกดอะไรต่อ
+      html += settingsStatusItem(pinEnabled ? 'confirmed' : 'draft', 'การล็อกหน้าจอ',
+        pinEnabled ? 'เปิดใช้งาน' : (pinSet ? 'ปิดอยู่ · ตั้ง PIN แล้วแต่ยังไม่ได้เปิดล็อก' : 'ปิดอยู่ · ต้องตั้ง PIN ก่อน'));
       html += settingsStatusItem('draft', 'เวลาล็อกอัตโนมัติ', esc(pinTimeout) + ' นาที');
       html += '</div>';
       html += '<div class="settings-actions">';

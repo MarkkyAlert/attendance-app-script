@@ -177,14 +177,7 @@
       if (hasSetupGuide || !hasMonthlyData) {
         html += renderDashboardHeroPriority(heroPriority, cov, ts);
       } else {
-        html += '<div class="dashboard-ring" style="background:conic-gradient(var(--green-500) ' + clampPercent(cov.today.percent) + '%, rgba(255,255,255,.22) 0)">';
-        html += '<div class="dashboard-ring-core">';
-        html += '<div class="dashboard-ring-value">' + esc(String(cov.today.percent || 0)) + '%</div>';
-        html += '<div class="dashboard-ring-label">เช็คชื่อแล้ววันนี้</div>';
-        html += '<div class="dashboard-ring-meta">' + esc(String(cov.today.checked || 0)) + '/' + esc(String(cov.active_students || 0)) + ' คน</div>';
-        html += '</div>';
-        html += '</div>';
-        html += '<p class="dashboard-hero-note">' + esc(ts.date_th || cov.today.date_th || '') + (ts.unchecked > 0 ? ' · เหลือ ' + esc(String(ts.unchecked)) + ' คน' : ' · เช็คครบแล้ว') + '</p>';
+        html += renderDashboardTodayHero_(cov, ts);
       }
       html += '</div>';
       html += '</section>';
@@ -436,7 +429,7 @@
       if (att && att.length > 0) {
         html += '<section id="dashboard-attention-section" class="dashboard-section">';
         html += '<div class="dashboard-section-head">';
-        html += '<div><h2 class="dashboard-section-title">นักเรียนที่ต้องดูแล</h2><p class="dashboard-section-text">อ้างอิงข้อมูลย้อนหลัง 30 วันล่าสุด เพื่อช่วยติดตามอย่างรวดเร็ว</p></div>';
+        html += '<div><h2 class="dashboard-section-title">เริ่มขาด/สายบ่อยช่วงนี้</h2><p class="dashboard-section-text">นับขาดกับสายรวมกันใน 30 วันล่าสุด เป็นสัญญาณเตือนล่วงหน้า คนละเกณฑ์กับ "ต้องติดตาม" ในหน้ารายงานซึ่งดูที่อัตราการมาเรียนทั้งภาคเรียน</p></div>';
         html += '</div>';
         html += '<div class="card dashboard-surface">';
         html += '<div class="rpt-table-wrap"><table class="rpt-table"><thead><tr>';
@@ -758,8 +751,8 @@
       if (Array.isArray(attentionList) && attentionList.length > 0) {
         return {
           kicker: 'ดูต่อจากนี้',
-          title: 'มีรายชื่อที่ควรติดตามต่อ',
-          text: 'เปิดดูรายงานสรุปหรือหน้าวิเคราะห์ เพื่อไล่ดูนักเรียนที่ต้องดูแลต่อจากข้อมูลล่าสุด',
+          title: 'มีคนเริ่มขาดหรือสายบ่อยช่วงนี้',
+          text: 'เปิดดูรายงานสรุปหรือหน้าวิเคราะห์ เพื่อไล่ดูรายชื่อที่ขาดหรือสายสะสมใน 30 วันล่าสุด',
           actionLabel: 'ดูรายงานสรุป',
           actionPage: 'reports',
           secondaryLabel: 'เปิดหน้าวิเคราะห์',
@@ -796,7 +789,7 @@
       } else if (Number(ts.unchecked || 0) > 0 || !hasMonthlyData || todayChecked === 0) {
         primaryAction = { type: 'page', value: 'attendance', label: 'ไปเช็คชื่อวันนี้' };
       } else if (Array.isArray(att) && att.length > 0) {
-        primaryAction = { type: 'section', value: 'dashboard-attention-section', label: 'ดูรายชื่อที่ต้องดูแล' };
+        primaryAction = { type: 'section', value: 'dashboard-attention-section', label: 'ดูรายชื่อที่ขาด/สายบ่อย' };
       } else if (topAbsent || topLate) {
         primaryAction = { type: 'section', value: 'dashboard-insights-section', label: 'ดูรายชื่อที่ต้องจับตา' };
       }
@@ -875,7 +868,7 @@
       html += '<div class="dashboard-sales-brief-tags">';
       html += renderDashboardSalesTag_('เช็คแล้ว ' + String(sales.todayChecked) + '/' + String(sales.activeStudents) + ' คน');
       html += renderDashboardSalesTag_('เหลือ ' + String(sales.todayUnchecked) + ' คน');
-      html += renderDashboardSalesTag_('ต้องติดตาม ' + String(sales.attentionCount) + ' คน');
+      html += renderDashboardSalesTag_('ขาด/สายบ่อย ' + String(sales.attentionCount) + ' คน');
       if (sales.absentCard) html += renderDashboardSalesTag_('ขาดเดือนนี้ ' + String(sales.absentCard.count || 0) + ' ครั้ง');
       if (sales.lateCard) html += renderDashboardSalesTag_('สายเดือนนี้ ' + String(sales.lateCard.count || 0) + ' ครั้ง');
       html += '</div>';
@@ -909,13 +902,13 @@
       });
       items.push({
         tone: sales.attentionCount > 0 ? 'red' : ((sales.topAbsent || sales.topLate) ? 'amber' : 'green'),
-        title: sales.attentionCount > 0 ? 'เริ่มติดตามรายชื่อที่ต้องดูแลก่อน' : ((sales.topAbsent || sales.topLate) ? 'มีรายชื่อที่ควรจับตา' : 'ตอนนี้ยังไม่มีกลุ่มเสี่ยงเด่น'),
+        title: sales.attentionCount > 0 ? 'เริ่มจากคนที่ขาด/สายบ่อยช่วงนี้' : ((sales.topAbsent || sales.topLate) ? 'มีรายชื่อที่ควรจับตา' : 'ตอนนี้ยังไม่มีกลุ่มเสี่ยงเด่น'),
         text: sales.attentionCount > 0
-          ? 'มีนักเรียนที่ควรติดตาม ' + String(sales.attentionCount) + ' คน' + (sales.topAttention ? ' โดย ' + sales.topAttention.full_name + ' เป็นหนึ่งในรายชื่อที่ควรดูต่อทันที' : '')
+          ? 'มีนักเรียนที่ขาดหรือสายบ่อยใน 30 วันล่าสุด ' + String(sales.attentionCount) + ' คน' + (sales.topAttention ? ' โดย ' + sales.topAttention.full_name + ' เป็นหนึ่งในรายชื่อที่ควรดูต่อทันที' : '')
           : ((sales.topAbsent || sales.topLate)
             ? ((sales.topAbsent ? (sales.topAbsent.full_name + ' ขาดสะสม ' + String(sales.topAbsent.absent || 0) + ' วัน') : '') + ((sales.topAbsent && sales.topLate) ? ' และ ' : '') + (sales.topLate ? (sales.topLate.full_name + ' สายสะสม ' + String(sales.topLate.late || 0) + ' ครั้ง') : ''))
             : 'ยังไม่พบรายชื่อที่ขาดหรือสายสะสมเด่นมากเป็นพิเศษในตอนนี้'),
-        buttonLabel: sales.attentionCount > 0 ? 'ดูรายชื่อที่ต้องดูแล' : 'ดูรายชื่อที่ต้องจับตา',
+        buttonLabel: sales.attentionCount > 0 ? 'ดูรายชื่อที่ขาด/สายบ่อย' : 'ดูรายชื่อที่ต้องจับตา',
         actionType: 'section',
         actionValue: sales.attentionCount > 0 ? 'dashboard-attention-section' : 'dashboard-insights-section'
       });
@@ -969,7 +962,7 @@
       var followLine = sales.todayUnchecked > 0
         ? 'ยังเหลืออีก ' + String(sales.todayUnchecked) + ' คนที่ยังไม่เช็คชื่อ'
         : (sales.attentionCount > 0
-          ? 'มีนักเรียนที่ควรติดตามต่อ ' + String(sales.attentionCount) + ' คน'
+          ? 'มีนักเรียนที่ขาดหรือสายบ่อยช่วงนี้ ' + String(sales.attentionCount) + ' คน'
           : 'วันนี้เช็คชื่อครบแล้วและยังไม่มีกลุ่มเสี่ยงเด่น');
       var trendLine = sales.worstDay
         ? 'วันขาดสูงสุดคือ ' + String(sales.worstDay.worst_absent_day || '-') + ' ที่ ' + String(sales.worstDay.worst_absent_pct || 0) + '%'
@@ -977,7 +970,7 @@
       if (type === 'parents') {
         return attendanceLine + ' ' + followLine + ' ' + trendLine + ' ขอความร่วมมือผู้ปกครองช่วยติดตามเวลาเข้าเรียนและแจ้งล่วงหน้าเมื่อจำเป็น ขอบคุณครับ/ค่ะ';
       }
-      return attendanceLine + ' ' + followLine + ' ' + trendLine + ' หากต้องติดตามต่อ แนะนำเริ่มจากรายชื่อที่ต้องดูแลและรายชื่อขาด/สายสะสมก่อน';
+      return attendanceLine + ' ' + followLine + ' ' + trendLine + ' หากต้องติดตามต่อ แนะนำเริ่มจากรายชื่อที่ขาดหรือสายบ่อยช่วงนี้ก่อน';
     }
 
     function renderDashboardShareCard_(label, message, type) {
@@ -999,6 +992,62 @@
       html += renderDashboardShareCard_('สำหรับหัวหน้าระดับ / ทีมครู', buildDashboardShareMessage_('staff', sales), 'staff');
       html += '</div>';
       html += '</section>';
+      return html;
+    }
+
+    /**
+     * ตัวเลขใหญ่บนหน้าแรก เปลี่ยนตามคำถามที่ครูกำลังถามอยู่จริงในจังหวะนั้น
+     *
+     * ยังเช็คไม่ครบ  → ความคืบหน้า (วงแหวน) เพราะคำถามคือ "เหลืออีกกี่คน"
+     * เช็คครบแล้ว    → จำนวนที่ขาด เพราะคำถามเปลี่ยนเป็น "วันนี้ใครไม่มา ต้องโทรหาใคร"
+     *
+     * เดิมโชว์ "100% เช็คชื่อแล้ววันนี้" ค้างไว้ทั้งวันหลังเช็คเสร็จ ซึ่งบอกแค่ว่า
+     * ครูทำงานเสร็จแล้ว ไม่ได้บอกอะไรเกี่ยวกับห้องเรียนอีกเลย
+     *
+     * นับเฉพาะ "ขาด" เป็นตัวเลขใหญ่ ไม่รวมลาป่วย/ลากิจ เพราะขาดคือสิ่งเดียวที่ต้องลงมือทำต่อวันนี้
+     * ส่วนคนที่ลา ครูรู้อยู่แล้ว จึงยกไปไว้บรรทัดรองแทนเพื่อไม่ให้ตกหล่น
+     */
+    function renderDashboardTodayHero_(cov, ts) {
+      var dateLabel = esc(ts.date_th || cov.today.date_th || '');
+      var unchecked = Number(ts.unchecked || 0);
+      var html = '';
+
+      if (unchecked > 0) {
+        html += '<div class="dashboard-ring" style="background:conic-gradient(var(--green-500) ' + clampPercent(cov.today.percent) + '%, rgba(255,255,255,.22) 0)">';
+        html += '<div class="dashboard-ring-core">';
+        html += '<div class="dashboard-ring-value">' + esc(String(cov.today.percent || 0)) + '%</div>';
+        html += '<div class="dashboard-ring-label">เช็คชื่อแล้ววันนี้</div>';
+        html += '<div class="dashboard-ring-meta">' + esc(String(cov.today.checked || 0)) + '/' + esc(String(cov.active_students || 0)) + ' คน</div>';
+        html += '</div>';
+        html += '</div>';
+        html += '<p class="dashboard-hero-note">' + dateLabel + ' · เหลือ ' + esc(String(unchecked)) + ' คน</p>';
+        return html;
+      }
+
+      var absent = Number(ts.absent || 0);
+      var late = Number(ts.late || 0);
+      var sick = Number(ts.sick_leave || 0);
+      var personal = Number(ts.personal_leave || 0);
+
+      html += '<div class="dashboard-today-hero' + (absent > 0 ? ' dashboard-today-hero-alert' : '') + '">';
+      if (absent > 0) {
+        html += '<div class="dashboard-today-hero-value">' + esc(String(absent)) + '</div>';
+        html += '<div class="dashboard-today-hero-label">คนขาดวันนี้</div>';
+      } else {
+        html += '<div class="dashboard-today-hero-value">' + esc(String(cov.today.checked || 0)) + '</div>';
+        html += '<div class="dashboard-today-hero-label">มาครบทุกคน</div>';
+      }
+
+      // บรรทัดรอง แสดงเฉพาะประเภทที่มีจริง จะได้ไม่รกด้วยเลข 0
+      var extras = [];
+      if (late > 0) extras.push('สาย ' + late);
+      if (sick > 0) extras.push('ลาป่วย ' + sick);
+      if (personal > 0) extras.push('ลากิจ ' + personal);
+      if (extras.length) {
+        html += '<div class="dashboard-today-hero-meta">' + esc(extras.join(' · ')) + '</div>';
+      }
+      html += '</div>';
+      html += '<p class="dashboard-hero-note">' + dateLabel + ' · เช็คครบแล้ว ' + esc(String(cov.today.checked || 0)) + '/' + esc(String(cov.active_students || 0)) + ' คน</p>';
       return html;
     }
 

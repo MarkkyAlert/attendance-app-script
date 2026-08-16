@@ -7,6 +7,9 @@
     var S, E;
     var reportSearchDebounceId = 0;
     var REPORT_SEARCH_DEBOUNCE_MS = 140;
+    // จำนวนวันวัดผลขั้นต่ำก่อนจะตัดสินว่าใคร "ต้องติดตาม"
+    // ต้นเทอมมีวันเรียนไม่กี่วัน ขาดวันเดียวก็ตกเกณฑ์ 80% ทันที ซึ่งยังสรุปอะไรไม่ได้
+    var FOLLOW_UP_MIN_BASIS_DAYS = 10;
 
     function init() {
       S = window.AppState;
@@ -414,6 +417,9 @@
       html += renderReportChip('excellent', 'เรียบร้อย', counts.excellent, activeFilter);
       html += '</div>';
       html += '</div>';
+      // บอกเกณฑ์ไว้ตรงนี้ครั้งเดียว ครูจะได้ไม่ต้องเดาว่า "ต้องติดตาม" นับจากอะไร
+      html += '<p class="reports-filter-note">"ต้องติดตาม" คือมาเรียนต่ำกว่า '
+        + esc(String(getSummaryAlertPercent())) + '% ซึ่งเป็นเกณฑ์เดียวกับที่ใช้บนเอกสาร ปพ.6</p>';
       html += '</div>';
       html += '</section>';
       return html;
@@ -871,11 +877,26 @@
       return haystack.indexOf(query) >= 0;
     }
 
+    /**
+     * นิยามเดียวของ "ต้องติดตาม" ทั้งระบบ = อัตราการมาเรียนต่ำกว่าเกณฑ์ (80%)
+     *
+     * เดิมชิปนี้ใช้เงื่อนไข "ขาด > 0 ครั้ง" ด้วย ใครขาดแค่วันเดียวตลอดภาคเรียนก็ติดหมด
+     * ผลคือขึ้น "ต้องติดตาม 37 จาก 40 คน" ซึ่งเตือนเกือบทั้งห้อง = ไม่ใช่สัญญาณอีกต่อไป
+     *
+     * ยึด 80% เพราะเป็นเกณฑ์เดียวกับที่ครูต้องส่งบน ปพ.6 อยู่แล้ว ไม่ต้องจำสองมาตรฐาน
+     * `is_below_threshold` คำนวณมาจาก server ด้วยเกณฑ์เดียวกันนี้ จึงใช้ค่านั้นเลย
+     */
+    function needsFollowUp(row) {
+      if (!row || !row.is_below_threshold) return false;
+      // ต้นเทอมที่มีวันวัดผลไม่กี่วัน ขาดวันเดียวก็ตกเกณฑ์ทันที รอให้มีข้อมูลพอก่อน
+      return Number(row.basis_days || 0) >= FOLLOW_UP_MIN_BASIS_DAYS;
+    }
+
     function matchesSummaryQuickFilter(row, filter) {
       var attendancePercent = getPercentValue(row.attendance_percent);
       var absentCount = Number(row.absent_count || 0);
       var lateCount = Number(row.late_count || 0);
-      if (filter === 'attention') return !!row.is_below_threshold || absentCount > 0 || lateCount > 1 || (attendancePercent !== null && attendancePercent < getSummaryAlertPercent());
+      if (filter === 'attention') return needsFollowUp(row);
       if (filter === 'absent') return absentCount > 0;
       if (filter === 'late') return lateCount > 0;
       if (filter === 'excellent') return attendancePercent !== null && attendancePercent >= 95 && absentCount === 0 && lateCount === 0;
@@ -905,7 +926,9 @@
       var attendancePercent = getPercentValue(row.attendance_percent);
       var absentCount = Number(row.absent_count || 0);
       var lateCount = Number(row.late_count || 0);
-      if (!!row.is_below_threshold || absentCount >= 2 || (attendancePercent !== null && attendancePercent < getSummaryAlertPercent())) return 'red';
+      // สีแดงต้องหมายถึงอย่างเดียวกับชิป "ต้องติดตาม" เท่านั้น
+      // เดิมใช้ absentCount >= 2 ด้วย ทำให้ป้ายรายแถวกับชิปนับคนละชุด
+      if (needsFollowUp(row)) return 'red';
       if (attendancePercent === null && absentCount === 0 && lateCount === 0) return 'amber';
       if (absentCount > 0 || lateCount > 0 || (attendancePercent !== null && attendancePercent < 95)) return 'amber';
       return 'green';

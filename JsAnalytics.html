@@ -203,6 +203,8 @@
         patterns: patterns,
         gender: gender,
         monthLabel: risk.month_th || trend.month_th || patterns.month_th || gender.month_th || analyticsMonth,
+        rangeFromTh: risk.from_th || trend.from_th || patterns.from_th || gender.from_th || '',
+        rangeToTh: risk.to_th || trend.to_th || patterns.to_th || gender.to_th || '',
         riskItems: riskItems,
         improved: improved,
         declined: declined,
@@ -783,6 +785,10 @@
       html += '<div class="analytics-month-value">' + esc(monthLabel || analyticsMonth || '-') + '</div>';
       html += '<button class="btn btn-ghost btn-xs" onclick="AnalyticsPage.shiftMonth(1)">ถัดไป</button>';
       html += '</div>';
+      // server หนีบเดือนด้วยขอบภาคเรียนอยู่เงียบๆ ถ้าไม่แสดงช่วงจริง ครูจะไม่รู้ว่ากำลังดูช่วงสั้นกว่าที่คิด
+      if (sales.rangeFromTh && sales.rangeToTh) {
+        html += '<div class="analytics-month-range">ช่วงที่ใช้จริง: ' + esc(sales.rangeFromTh) + ' – ' + esc(sales.rangeToTh) + '</div>';
+      }
       html += '<div class="analytics-signal-row">';
       html += '<span class="student-badge ' + (riskItems.length > 0 ? 'badge-red' : (hasMeasurements ? 'badge-green' : 'badge-stone')) + '">เสี่ยง ' + riskItems.length + ' คน</span>';
       html += '<span class="student-badge ' + (improved.length > 0 ? 'badge-green' : 'badge-stone') + '">ดีขึ้น ' + improved.length + ' คน</span>';
