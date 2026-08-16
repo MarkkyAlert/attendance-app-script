@@ -36,10 +36,12 @@
 - [ ] **★ เก็บถาวรภาคเรียนยังพังด้วย error เดิม และทำให้ข้อมูลซ้ำสองที่โดยไม่มี rollback**
       กด "เก็บข้อมูลเช็คชื่อ" บน `2/2569` (2,586 แถว) → ขึ้น toast แดง
       **`Sorry, it is not possible to delete all non-frozen rows.`** ภายใน ~10 วินาที
-      **ทั้งที่เช็ค `delete_rows:all_data_rows_frozen_header` เขียวแล้ว** แปลว่า guard ที่เพิ่มใน
-      `deleteSheetRowsByIndexes_` ทำงานบนชีตทดสอบ แต่ไม่ครอบเคสจริง — **ยังหาสาเหตุไม่ได้**
-      ไล่โค้ดแล้ว `archiveSemesterAttendance` เรียกลบแค่ 2 จุดและทั้งคู่ผ่าน `deleteSheetRowsByIndexes_`
-      **→ ต้องดู Execution log ของ Apps Script เพื่อหาบรรทัดที่ throw จริง**
+      **หาสาเหตุได้แล้วจาก stack trace: `deleteSheetRowsByIndexes_(SheetDB:191:9)`**
+      บรรทัด 191 ในโค้ดปัจจุบันคือ `var blockEnd = rows[0];` ซึ่งไม่ใช่คำสั่งลบ
+      แต่ในเวอร์ชัน**ก่อนแก้** (`2038abe^`) บรรทัด 191 คือ `sheet.deleteRows(blockStart, ...)` ตรงเป๊ะ
+      → **เว็บแอปรันโค้ดเวอร์ชันก่อนแก้ เพราะ `clasp push` แล้วแต่ยังไม่ได้สร้าง deployment version ใหม่**
+      → **การแก้ยังไม่ถูกพิสูจน์ว่าผิด ต้องทดสอบซ้ำหลังสร้าง version ใหม่**
+      (กับดักนี้บันทึกไว้ใน `ARCHITECTURE.md` ข้อ 7.5 และ `UAT.md` แล้ว)
 
       **ผลที่ตามมา ร้ายกว่าตัว error**
       1. `appendArchiveAttendanceRowsIfMissing_` ทำงานสำเร็จ**ก่อน**การลบ → แถวถูก copy ไปชีต archive แล้ว
