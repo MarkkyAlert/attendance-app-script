@@ -5,6 +5,11 @@
 ใช้ Google Sheets เป็นฐานข้อมูล เปิดใช้ผ่าน Web App 3 หน้า (ครู / ผู้ปกครอง / หน้าพิมพ์)
 ขายแบบครูแต่ละคน copy Spreadsheet + Script ไปเป็นของตัวเอง ไม่ใช่ระบบกลางของโรงเรียน
 
+> ไฟล์นี้ถูกโหลดเข้า context ทุก session จึงตั้งใจให้สั้น — เก็บเฉพาะกติกาและจุดห้ามแตะ
+> **ระบบทำงานยังไง / กับดักที่รู้จากของจริง** → `ARCHITECTURE.md`
+> **ทำไมถึงเป็นแบบนี้ / เคยลองทางไหนแล้วไม่ได้ผล** → `DECISIONS.md`
+> **ภาพรวมและขั้นตอนติดตั้ง** → `README.md` · **งานค้าง** → `TODO.md`
+
 ## โครงสร้างไฟล์
 ### Server
 - `Code.js` — doGet routing, bootstrap data รายหน้า, ตัวโหลด client module/style
@@ -44,11 +49,15 @@
   `resetTeacherDeviceBindingFromSheet_`, `openWebApp_`
 - `sendWeeklySummary_(e)` [WeeklySummaryService.js] — time-driven trigger ทุกศุกร์ 16:00
   **ไม่อยู่ใน appsscript.json** ถูกสร้างตอน runtime โดย `enableWeeklySummary` จึงมีเฉพาะ copy ที่ครูกดเปิดเท่านั้น
-- ฟังก์ชัน global ที่ไม่มี `_` ต่อท้าย ถูก expose ให้ `google.script.run` ทั้งหมด (~95 ตัว)
+- ฟังก์ชัน global ที่ไม่มี `_` ต่อท้าย ถูก expose ให้ `google.script.run` ทั้งหมด (ปัจจุบัน 90 ตัว)
   client เรียกผ่าน `serverCall` / `serverCallQuiet` ใน `JavaScript.html` ซึ่งแนบ auth เป็น argument ตัวสุดท้ายเสมอ
-- ด่านตรวจสิทธิ์กลางคือ `runAsTeacher_` → `requireTeacherSession_` [SecurityService.js]
-- เรียกได้โดยไม่ต้องล็อกอิน: `getTeacherLoginOptions`, `bootstrapTeacherSession`, `runInitialSetup`,
-  `resolvePrintSession`, `openParentSession`, `getParentViewDataBySession`, `logoutParentSession`
+- **ด่านตรวจสิทธิ์มี 4 แบบ ไม่ใช่แบบเดียว** — `runAsTeacher_` (71 ตัว) · `runAsPrintViewer_` (หน้าพิมพ์) ·
+  `runAsParentSession_` (หน้าผู้ปกครอง) · `requireSeedLocalContext_` / `requireP0DiagnosticLocalContext_`
+  (เครื่องมือ dev) **ไม่มีการบังคับที่ระดับ framework — ลืมครอบด่าน = เปิดสู่อินเทอร์เน็ตโดยไม่มีอะไรเตือน**
+  รายละเอียดและตารางเต็มอยู่ใน `ARCHITECTURE.md`
+- เรียกได้โดย**ไม่มีด่านใดๆ** 9 ตัว: `doGet`, `onOpen`, `getTeacherLoginOptions`, `bootstrapTeacherSession`,
+  `runInitialSetup`, `openParentSession`, `resolvePrintSession`, `thaiDate`, `thaiMonthLabel`
+  (`getParentViewDataBySession` / `logoutParentSession` ไม่ต้องล็อกอิน**ครู** แต่มีด่าน `runAsParentSession_`)
 - ไม่มี `onEdit` / `onFormSubmit` / `doPost` และไม่มี library / advanced service / `UrlFetchApp` ในโปรเจกต์นี้
 - Script Properties + OAuth authorization + trigger **ไม่ติดไปกับการ copy** ครูต้องกดเมนูติดตั้งและอนุญาตสิทธิ์เองทุกครั้ง
 
