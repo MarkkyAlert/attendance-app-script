@@ -1972,35 +1972,43 @@
 
 .rpt-daily-scroll { max-height: 70vh; overflow: auto; }
 
-/* position: sticky บนเซลล์ตารางใช้ร่วมกับ border-collapse: collapse ไม่ได้
-   เบราว์เซอร์วาดพื้นหลังของเซลล์ที่ตรึงไว้ไม่ครบ เนื้อหาที่เลื่อนผ่านจึงทะลุขึ้นมา
-   เห็นเป็นแถบคั่นระหว่างคอลัมน์ "เลขที่" กับ "ชื่อ" ทั้งในหัวตารางและแถวข้อมูล
-   (เลขที่ | .ค | ชื่อ  และ  1 | - | ด.ช.กิตติพงศ์ ใจดี)
+/* ปัญหา: คอลัมน์ที่สองถูกตรึงไว้ที่ left ค่าคงที่ แต่ความกว้างจริงของคอลัมน์แรก
+   ไม่เท่ากับค่านั้น จึงเหลือช่องว่างแคบๆ ให้เนื้อหาที่เลื่อนผ่านโผล่ขึ้นมา
+   เห็นเป็น "เลขที่ | ค. 2 | ชื่อ" และ "1 | - | ด.ช.กิตติพงศ์ ใจดี"
+
+   ที่แก้ไม่ได้ 2 รอบก่อนหน้าเพราะใน table-layout: auto ค่า width/max-width
+   บนเซลล์เป็นแค่ข้อเสนอ เบราว์เซอร์คิดความกว้างจากเนื้อหาเอง การล็อก width
+   จึงไม่มีผล ต้องเปลี่ยนเป็น table-layout: fixed ก่อน ค่า width ถึงจะมีผลจริง
+   แล้วค่อยใช้ตัวแปรเดียวคุมทั้งความกว้างคอลัมน์แรกและ left ของคอลัมน์ที่สอง
+
    ตั้งเฉพาะตารางรายวันซึ่งเป็นตารางเดียวที่มีคอลัมน์ตรึง ตารางอื่นไม่ต้องแตะ */
 .rpt-daily-table {
+  --rpt-col1-w: 3.5rem;
+  --rpt-col2-w: 9rem;
+  --rpt-day-w: 4.75rem;
   border-collapse: separate;
   border-spacing: 0;
+  table-layout: fixed;
+  width: max-content;
+  min-width: 100%;
 }
 
-.rpt-daily-table th, .rpt-daily-table td { text-align: center; padding: .375rem .5rem; min-width: 2.5rem; }
-/* ค่า left ของคอลัมน์ที่สอง ต้องเท่ากับความกว้างจริงของคอลัมน์แรกเป๊ะๆ
-   เดิมกำหนดแค่ min-width: 3rem แล้วตรึงคอลัมน์ที่สองไว้ที่ left: 3rem
-   ความกว้างจริงของคอลัมน์แรกขึ้นกับเนื้อหา (หัวคอลัมน์ "เลขที่" กว้างกว่าเลข 1-40)
-   พอไม่ตรงกันจึงเหลือช่องว่างแคบๆ ให้เนื้อหาที่เลื่อนผ่านโผล่ขึ้นมา
-   ล็อกความกว้างด้วยตัวแปรเดียว แล้วใช้ตัวแปรนั้นเป็น left ด้วย จะได้ไม่มีทางหลุดจากกัน */
-.rpt-daily-table { --rpt-col1-w: 3.75rem; }
+.rpt-daily-table th, .rpt-daily-table td { text-align: center; padding: .375rem .5rem; }
 .rpt-sticky-col {
   position: sticky; left: 0; z-index: 3;
   background: white; border-right: 1px solid var(--stone-200);
-  width: var(--rpt-col1-w, 3rem);
-  min-width: var(--rpt-col1-w, 3rem);
-  max-width: var(--rpt-col1-w, 3rem);
+  width: var(--rpt-col1-w);
   overflow: hidden;
 }
 .rpt-sticky-col2 {
-  position: sticky; left: var(--rpt-col1-w, 3rem); z-index: 3;
-  background: white; min-width: 80px; border-right: 1px solid var(--stone-200);
+  position: sticky; left: var(--rpt-col1-w); z-index: 3;
+  background: white; border-right: 1px solid var(--stone-200);
+  width: var(--rpt-col2-w);
+  overflow: hidden;
 }
+/* table-layout: fixed แบ่งความกว้างที่เหลือเท่าๆ กันถ้าไม่ระบุ
+   คอลัมน์วันจึงต้องระบุความกว้างเอง ไม่งั้น 217 คอลัมน์จะถูกบีบจนอ่านไม่ออก */
+.rpt-daily-table .rpt-day-header { width: var(--rpt-day-w); }
 /* ต้องอยู่เหนือหัวคอลัมน์วันที่ที่เลื่อนลอดไปด้านหลัง ไม่งั้นข้อความวันที่โผล่ทับ
    ("เลขที่ . 1" และ "2569" ลอยอยู่ระหว่างคอลัมน์ชื่อกับคอลัมน์วันแรก) */
 thead .rpt-sticky-col, thead .rpt-sticky-col2 {
