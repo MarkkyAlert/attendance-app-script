@@ -139,6 +139,44 @@ function runP0Diagnostics_() {
       }
     }));
 
+    // 2.2 ลบ "ทุกแถวข้อมูล" บนชีตที่ตรึงหัวตาราง — เส้นทางเดียวกับที่ archive ภาคเรียน
+    //     จะเดินเมื่อข้อมูลในชีตเป็นของภาคเรียนนั้นทั้งหมด (ครูปีแรกที่มีภาคเรียนเดียว)
+    //     ถ้าเช็คนี้แดง แปลว่า archiveSemesterAttendance จะพังในเคสนั้นจริง
+    checks.push(runPreReleaseSmokeCheck_('delete_rows:all_data_rows_frozen_header', function() {
+      var ss = getSpreadsheet_();
+      var stale = ss.getSheetByName(P0_DIAG_TEMP_SHEET_);
+      if (stale) ss.deleteSheet(stale);
+
+      var sheet = ss.insertSheet(P0_DIAG_TEMP_SHEET_);
+      try {
+        sheet.setFrozenRows(1); // เหมือนทุกชีตจริงในระบบนี้
+        sheet.getRange(1, 1, 4, 1).setValues([['header'], ['row2'], ['row3'], ['row4']]);
+
+        var threwMessage = '';
+        var deleted = 0;
+        try {
+          deleted = deleteSheetRowsByIndexes_(sheet, [2, 3, 4]); // ทุกแถวข้อมูล
+        } catch (eDelete) {
+          threwMessage = String(eDelete && eDelete.message ? eDelete.message : eDelete);
+        }
+
+        assertPreReleaseSmoke_(
+          !threwMessage,
+          'ลบทุกแถวข้อมูลบนชีตที่ตรึงหัวตารางไม่ผ่าน — archive ภาคเรียนจะพังในเคสที่ ' +
+          'ข้อมูลทั้งชีตเป็นของภาคเรียนเดียว · ข้อความจาก Sheets: ' + threwMessage
+        );
+        assertPreReleaseSmoke_(deleted === 3, 'ควรลบ 3 แถว แต่ได้ ' + deleted);
+        assertPreReleaseSmoke_(
+          sheet.getLastRow() <= 1,
+          'ลบแล้วแต่ยังเหลือข้อมูลอยู่ getLastRow=' + sheet.getLastRow()
+        );
+        return { deleted: deleted, last_row_after: sheet.getLastRow() };
+      } finally {
+        var temp = ss.getSheetByName(P0_DIAG_TEMP_SHEET_);
+        if (temp) ss.deleteSheet(temp);
+      }
+    }));
+
     // 2.5 กันสูตร: พิสูจน์บนชีตจริงว่า sanitizeSheetText_ ทำให้ค่ากลับมาครบ ไม่เป็น #ERROR!
     checks.push(runPreReleaseSmokeCheck_('sheet_text:formula_injection', function() {
       var ss = getSpreadsheet_();

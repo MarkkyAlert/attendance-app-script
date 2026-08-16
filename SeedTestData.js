@@ -777,7 +777,13 @@ function clearTestData() {
       var sheet = getSheet_(name);
       var lastRow = sheet.getLastRow();
       if (lastRow > 1) {
-        sheet.deleteRows(2, lastRow - 1);
+        // Sheets ปฏิเสธการลบแถวที่ไม่ถูกตรึงจนไม่เหลือสักแถว ("Sorry, it is not
+        // possible to delete all non-frozen rows.") และทุกชีตในระบบนี้ตรึงหัวตาราง
+        // ไว้แถวเดียว การสั่ง deleteRows(2, lastRow-1) จึงพังเสมอเมื่อล้างทั้งชีต
+        // จึงเหลือแถวสุดท้ายไว้ 1 แถวแล้วล้างเนื้อหาแทน — พอไม่มีเนื้อหา
+        // getLastRow() จะคืน 1 ระบบจึงมองว่าชีตว่างเหมือนเดิม
+        if (lastRow > 2) sheet.deleteRows(2, lastRow - 2);
+        sheet.getRange(2, 1, 1, sheet.getMaxColumns()).clearContent();
         total += lastRow - 1;
         Logger.log('[clear] ลบ ' + name + ' ' + (lastRow - 1) + ' แถว');
       }
