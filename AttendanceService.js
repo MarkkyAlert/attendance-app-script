@@ -1017,10 +1017,11 @@ function appendAttendanceRecordsByDateFromSheet_(records, sheet, date) {
   date = String(date || '').slice(0, 10);
   if (!date) return;
 
-  // ★★ ห้ามใช้ createTextFinder กับคอลัมน์วันที่ของชีต archive
-  // ชีตหลักเก็บวันที่เป็น "ข้อความ" (2026-05-18) แต่ชีต archive เก็บเป็น Date object
-  // เพราะตอน archive อ่านด้วย getValues() แล้วเขียนกลับด้วย setValues() — Sheets
-  // แปลงเป็นวันที่จริงและแสดงผลเป็น 18/5/2026
+  // ★★ ห้ามใช้ createTextFinder กับคอลัมน์วันที่
+  // วัดแล้ว (calendar:date_lookup_vs_scan) ทุกชีตเก็บวันที่เป็น Date object เหมือนกันหมด
+  // ตัวที่ตัดสินว่า TextFinder เจอหรือไม่ คือ number format ของเซลล์ ซึ่งมองไม่เห็นจากโค้ด
+  // ชีตหลักได้ format yyyy-mm-dd ตามสตริงที่โค้ดพิมพ์ลงไป จึงแสดง 2026-05-18 แล้วเจอ
+  // ชีต archive รับ Date object มาจาก getValues() จึงได้ format เริ่มต้น แสดง 18/5/2026
   // TextFinder จับจาก "ข้อความที่แสดง" จึงหาไม่เจอสักแถวในชีต archive แบบเงียบๆ
   // (getAllAttendanceRecords_ ไม่เจอปัญหานี้เพราะอ่าน getValues() แล้วผ่าน formatDate_)
   // → อ่านคอลัมน์วันที่มาเทียบเอง ใช้ได้ทั้งกรณีข้อความและ Date object
