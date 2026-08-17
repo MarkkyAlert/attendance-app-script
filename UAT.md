@@ -167,10 +167,22 @@ session ครูอายุ 2 ชม. แต่ที่เก็บฝั่�
 | มีกล่องเตือน *"เซสชันหมดอายุแล้ว..."* | โค้ดฝั่ง client จับได้ตอนอ่าน session กลับ |
 | มีกล่องเตือน *"เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่"* | server เป็นคนปฏิเสธ (`AUTH_EXPIRED`) = เส้นทางเก่า |
 
-→ **สร้างเคสตรงๆ ด้วย Console แทนการรอ** (ต้องเปิด DevTools บนแท็บนั้น)
+→ **สร้างเคสตรงๆ ด้วย Console แทนการรอ** · ทำได้จริงแล้ว 17 ส.ค. 2569 แต่มี 3 ด่าน
+
+1. **ต้องล็อกอินอยู่ก่อน** ไม่งั้นไม่มีคีย์ให้แก้
+2. **สลับ frame ใน Console จาก `top` เป็น `userCodeAppPanel`** — แอปอยู่ใน iframe
+   **คนละ origin** กับหน้าที่ห่ออยู่ และ `sessionStorage` แยกตาม origin
+   ไม่สลับจะได้ `Uncaught SyntaxError: "undefined" is not valid JSON`
+   เช็คว่าสลับถูกด้วย `Object.keys(sessionStorage)` → ต้องเห็น `att_teacher_auth`
+3. **อย่าใช้ `location.reload()`** ใน frame นั้น มันรีโหลดแค่ iframe ซึ่งเปิดเดี่ยวๆ ไม่ได้
+   → **จอขาว** ให้รีโหลดหน้านอกแทน (Cmd+R) ค่าที่ปลอมไว้ยังอยู่เพราะ `sessionStorage`
+   อยู่ตามอายุแท็บ ไม่ได้หายตอนรีโหลด
+
 ```
-var k='att_teacher_auth',a=JSON.parse(sessionStorage.getItem(k));a.expires_at=Date.now()-600000;sessionStorage.setItem(k,JSON.stringify(a));location.reload()
+a=JSON.parse(sessionStorage.att_teacher_auth);a.expires_at=1;sessionStorage.att_teacher_auth=JSON.stringify(a)
 ```
+**ห้ามใส่ `0`** — โค้ดตี `0` ว่า "ไม่มีฟิลด์นี้" แล้วถือว่ายังไม่หมดอายุ (ตั้งใจให้เป็นแบบนั้น
+กันครูถูกเตะออกตอนอัปเดตโค้ด) · Chrome อาจขอให้พิมพ์ `allow pasting` ก่อน paste
 
 ### 4. วิธีจับเวลา — ต้องวัดแบบเดียวกันทุกหน้า
 
