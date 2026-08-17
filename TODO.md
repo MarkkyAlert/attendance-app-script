@@ -385,6 +385,20 @@
       ทำคีย์ผ่าน `buildDerivedCacheKey_` และ `invalidateAttendanceCaches_` เรียก
       `bumpDerivedDataCacheVersion_` ซึ่งล้าง **ทุก** derived cache พร้อมกัน
 
+      **★★ อ่านโค้ดต่อแล้วเจอต้นเหตุของอีก 845 ms — เล็กกว่าที่คิดมาก และไม่แตะ `row_index` เลย**
+      `getSchoolCalendarEntriesForRange_` [CalendarService.js:232] cache ด้วยคีย์
+      **`['school_calendar_entries', from, to]` = ผูกกับช่วงวันที่แบบเป๊ะ**
+      แต่ `primeAttendanceDailyCalendarEntries_` เรียกด้วยช่วง **`date-35` ถึง `date`**
+      → **เปลี่ยนวันที่ = คีย์ใหม่ = cache miss ทุกครั้ง** ครูกด ◀ ▶ ไล่วันจึงพลาด cache 100%
+      **และตัว builder อ่านทั้งชีตอยู่แล้ว** (บรรทัด 239 `getRange(2, 1, lastRow-1, ...)`
+      ไม่ได้อ่านแค่ช่วง) แล้วค่อยกรองด้วย JS ทีหลัง
+      → **cache ผูกช่วงจึงไม่ได้ประหยัดการอ่านเลย แค่ทำให้ cache ใช้ไม่ได้**
+
+      **ทางแก้**: cache รายการทั้งชีตครั้งเดียวด้วยคีย์ที่ไม่ผูกช่วง แล้วกรองในหน่วยความจำ
+      **ไม่เปลี่ยนพฤติกรรม** เพราะการกรองเดิมก็ทำใน JS อยู่แล้ว
+      **ได้ประโยชน์ 8 จุดที่เรียกฟังก์ชันนี้** ไม่ใช่แค่หน้าเช็คชื่อ —
+      `CalendarService` 3 จุด · `AttendanceService:1544` · `ReportService:633` · `SeedTestData` 3 จุด
+
       **สิ่งที่ต้องตรวจตอนลงมือจริง** (ต่างกันจริงแต่ไม่น่าเป็นปัญหา)
       - `readAllAttendanceRecords_` **ไม่ใส่ `student_key`** ส่วนเส้นทางรายวันใส่
         → ตรวจว่า `doesAttendanceRecordMatchStudent_` และ `getCachedAttendanceDailySnapshot_`

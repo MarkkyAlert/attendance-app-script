@@ -92,18 +92,35 @@ function deleteAttendanceDuplicateRows_(sheet, rowIndexes) {
   ensureStudentIdentityMigration_();
   stepTimings.preflight_migration_ms = new Date().getTime() - stepStartedAt;
 
+  // ★ แยกย่อย preflight เพราะวัดแล้วพบว่ากินเวลา ~845 ms ตอน cache เย็น
+  // ซึ่งมากกว่าการสร้างรายงานรายวันทั้งภาคเรียน (~1,250 ms) อย่างไม่สมเหตุผล
+  // แต่ยังไม่รู้ว่าไปอยู่ที่ขั้นไหน · คง `preflight_validate_ms` เป็นผลรวมไว้
+  // เพื่อให้เทียบกับ `_timing_log` ที่เก็บไว้ก่อนหน้าได้
+  var preflightStartedAt = new Date().getTime();
+
   stepStartedAt = new Date().getTime();
   date = normalizeAttendanceDate_(date, false);
   if (!date) throw new Error('วันที่ไม่ถูกต้อง');
   sourceInfo = sourceInfo || getCurrentAttendanceSourceInfo_();
+  stepTimings.pf_source_ms = new Date().getTime() - stepStartedAt;
+
+  stepStartedAt = new Date().getTime();
   var settings = options.settings || getCachedSettings_();
   var threshold = normalizeAbsenceAlertDays_(options.alert_threshold !== undefined ? options.alert_threshold : settings.absence_alert_days);
+  stepTimings.pf_settings_ms = new Date().getTime() - stepStartedAt;
+
+  stepStartedAt = new Date().getTime();
   primeAttendanceDailyCalendarEntries_(date, threshold);
+  stepTimings.pf_calendar_prime_ms = new Date().getTime() - stepStartedAt;
+
+  stepStartedAt = new Date().getTime();
   ensureAttendanceActionDate_(date, 'วันที่เช็คชื่อ', {
     active_semester: activeSemester,
     source_info: sourceInfo
   });
-  stepTimings.preflight_validate_ms = new Date().getTime() - stepStartedAt;
+  stepTimings.pf_guard_ms = new Date().getTime() - stepStartedAt;
+
+  stepTimings.preflight_validate_ms = new Date().getTime() - preflightStartedAt;
   stepTimings.preflight_ms = stepTimings.preflight_migration_ms + stepTimings.preflight_validate_ms;
 
   stepStartedAt = new Date().getTime();
