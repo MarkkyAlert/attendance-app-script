@@ -230,8 +230,25 @@ function archiveSemesterAttendance(identifier, auth) {
       var movedRecords = appendArchiveAttendanceRowsIfMissing_(archiveSheet, attendanceRows.rows);
       var movedDayStatuses = appendArchiveDayRowsIfMissing_(archiveDaySheet, dayRows.rows);
 
-      deleteSheetRowsByIndexes_(attendanceSheet, attendanceRows.row_indexes);
-      deleteSheetRowsByIndexes_(dayStatusSheet, dayRows.row_indexes);
+      // ★ เคยคิดจะ "ย้อนแถวที่ copy ไปแล้วออก" เมื่อลบล้มเหลว — **อย่าทำ**
+      // ถ้าการลบล้มกลางคัน แถวในชีตหลักอาจถูกลบไปแล้วบางส่วน การย้อนชีต archive
+      // จะทำให้แถวเหล่านั้น**หายไปทั้งคู่** ชีต archive คือตาข่ายรองของข้อมูลที่ลบไปแล้ว
+      // สิ่งที่ถูกต้องคือเก็บ archive ไว้ แล้วบอกครูให้ชัดว่ากดซ้ำได้อย่างปลอดภัย
+      // (`appendArchive...IfMissing_` ข้ามแถวที่มี id อยู่แล้ว จึงกดซ้ำได้ไม่เกิดของซ้ำ
+      //  และ `isSemesterAttendanceFullyArchived_` ทำให้ปุ่มยังอยู่เพราะชีตหลักยังไม่หมด)
+      try {
+        deleteSheetRowsByIndexes_(attendanceSheet, attendanceRows.row_indexes);
+        deleteSheetRowsByIndexes_(dayStatusSheet, dayRows.row_indexes);
+      } catch (deleteError) {
+        invalidateSemesterCaches_();
+        return {
+          success: false,
+          message: 'คัดลอกข้อมูลไปที่เก็บถาวรครบแล้ว (' + movedRecords + ' รายการ) ' +
+            'แต่ลบออกจากชีตหลักไม่สำเร็จ ข้อมูลยังอยู่ครบไม่ได้หายไปไหน ' +
+            'กดปุ่มเก็บข้อมูลเช็คชื่อซ้ำได้เลย ระบบจะทำต่อจากจุดที่ค้างไว้ · ' +
+            'รายละเอียด: ' + String(deleteError && deleteError.message ? deleteError.message : deleteError)
+        };
+      }
       invalidateSemesterCaches_();
 
       return {
@@ -249,11 +266,62 @@ function archiveSemesterAttendance(identifier, auth) {
 }
 
 function getSemesterRows_() {
+  // อ่านคอลัมน์วันที่ของชีตหลักครั้งเดียวแล้วใช้ซ้ำทุกภาคเรียน
+  // ถ้าปล่อยให้แต่ละภาคเรียนอ่านเอง หน้าตั้งค่าจะอ่านชีตซ้ำ 2 รอบต่อภาคเรียน
+  var mainDates = readMainAttendanceDateIndex_();
   return getSemesterRowsBase_().map(function(semester) {
     var enriched = Object.assign({}, semester);
-    enriched.is_archived = isSemesterAttendanceArchived_(semester);
+    enriched.is_archived = isSemesterAttendanceFullyArchived_(semester, mainDates);
     return enriched;
   });
+}
+
+/**
+ * ★★ "เก็บถาวรครบแล้ว" ไม่เท่ากับ "ชีต archive ไม่ว่าง"
+ *
+ * `isSemesterAttendanceArchived_` ตอบคำถามว่า "ต้องอ่านชีต archive ด้วยไหม" ซึ่งถูกแล้ว
+ * สำหรับ routing แต่หน้าจอเอาไปใช้ตอบอีกคำถามหนึ่งคือ "เก็บถาวรเสร็จหรือยัง"
+ * ผลคือถ้าชีต archive มีแถวค้างอยู่แม้แถวเดียว (เช่น archive ล้มกลางคัน หรือมีข้อมูลใหม่
+ * เข้ามาในภาคเรียนเดิมหลัง archive) ระบบจะติดป้าย "เก็บข้อมูลแล้ว" และ**ซ่อนปุ่มเก็บข้อมูล**
+ * ทั้งที่ชีตหลักยังมีข้อมูลอยู่ ครูจึงกดเก็บถาวรซ้ำไม่ได้เลยผ่านหน้าจอ และหน้าจอไม่บอกว่าทำไม
+ *
+ * ตัวนี้ตอบคำถามของหน้าจอโดยเฉพาะ: archive มีของ **และ** ชีตหลักไม่เหลือของภาคเรียนนี้แล้ว
+ */
+function isSemesterAttendanceFullyArchived_(semester, mainDates) {
+  if (!semester || !semester.start_date || !semester.end_date) return false;
+  if (!isSemesterAttendanceArchived_(semester)) return false;
+  mainDates = mainDates || readMainAttendanceDateIndex_();
+  if (hasDateWithinRange_(mainDates.attendance, semester.start_date, semester.end_date)) return false;
+  return !hasDateWithinRange_(mainDates.day_status, semester.start_date, semester.end_date);
+}
+
+function readMainAttendanceDateIndex_() {
+  return {
+    attendance: readSheetDateColumn_(getSheetByNameOrNull_(SHEET.ATTENDANCE), COL.ATTENDANCE.DATE),
+    day_status: readSheetDateColumn_(getSheetByNameOrNull_(SHEET.ATTENDANCE_DAYS), COL.ATT_DAYS.DATE)
+  };
+}
+
+/**
+ * ★ ต้องผ่าน formatDate_ เสมอ เพราะเซลล์วันที่เป็นได้ทั้งข้อความและ Date object
+ * (ดู ARCHITECTURE.md ข้อ 9 — ชีต archive เก็บเป็น Date object)
+ */
+function readSheetDateColumn_(sheet, column) {
+  if (!sheet) return [];
+  var lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return [];
+  return sheet.getRange(2, column, lastRow - 1, 1).getValues().map(function(row) {
+    return formatDate_(row[0]);
+  }).filter(function(date) {
+    return !!date;
+  });
+}
+
+function hasDateWithinRange_(dates, from, to) {
+  for (var i = 0; i < (dates || []).length; i++) {
+    if (dates[i] >= from && dates[i] <= to) return true;
+  }
+  return false;
 }
 
 function getSemesterSheetForRead_() {

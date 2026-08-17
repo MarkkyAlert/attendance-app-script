@@ -682,6 +682,11 @@ function getOrCreateAttendanceArchiveDaySheet_(semester) {
   return ensureAttendanceArchiveDaySheetSchema_(sheet);
 }
 
+/**
+ * ★ ตอบคำถามเดียวคือ "ต้องอ่านชีต archive ด้วยไหม" — ใช้กับ routing และ guard ตอนลบภาคเรียน
+ * **ห้ามเอาไปตอบว่า "เก็บถาวรเสร็จหรือยัง"** สำหรับหน้าจอ ให้ใช้
+ * `isSemesterAttendanceFullyArchived_` [SemesterService.js] ซึ่งเช็คด้วยว่าชีตหลักหมดแล้วจริง
+ */
 function isSemesterAttendanceArchived_(semester) {
   if (!semester || !(parseInt(semester.id, 10) || 0)) return false;
   var archiveSheet = getSheetByNameOrNull_(getAttendanceArchiveSheetName_(semester));
