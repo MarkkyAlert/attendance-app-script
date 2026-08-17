@@ -371,8 +371,22 @@
       ตัว `attendance_date_buckets` อุ่นอยู่แล้วจาก check ก่อนหน้า จึงไม่ใช่เลข cold แท้
       แต่ข้อสรุปไม่เปลี่ยน เพราะฝั่งรายวัน**เย็นจริง** และถังที่มันเอาไปใช้ได้ก็สร้างเสร็จอยู่แล้ว
 
-      **ทางแก้ที่ตรงจุด**: ให้ `getCachedRawAttendanceRecordsByDate_` เสิร์ฟจาก
-      `getCachedAttendanceDateBuckets_` เมื่อถังถูกสร้างแล้ว แทนการสแกนชีตใหม่
+      **★★ แก้แล้วทั้ง 2 ต้นเหตุ ยังไม่ได้ทดสอบ** — เหตุผลและราคาที่ยอมจ่ายอยู่ที่ `DECISIONS.md` ข้อ 32
+      1. **ปฏิทิน** แยก `getAllSchoolCalendarEntries_` (คีย์ไม่ผูกช่วง) แล้วกรองในหน่วยความจำ
+      2. **เรคอร์ดรายวัน** ให้ `getCachedRawAttendanceRecordsByDate_` เสิร์ฟจากถัง
+
+      **วัดยืนยันแล้วก่อนแก้** (`perf:attendance_vs_report` รอบที่ 2 · cache เย็น)
+      `pf_calendar_prime_ms` **808** จาก `preflight_validate_ms` **1,087** = **74%**
+      ส่วน `pf_source_ms` กับ `pf_guard_ms` เป็น **0** ทั้งคู่ → วินิจฉัยถูก
+      `raw_records_ms` **3,738** · `students_ms` 665 · `records_day_status_ms` 367 ·
+      `alerts_ms` 338 · `pf_settings_ms` 279 · **`rows_ms` 1**
+      ⚠️ **ตัวเลขรอบนี้สูงกว่ารอบแรกทั้งกระดาน** (รวม 6,570 vs 4,734 ms · `duration_ms`
+      34,533 vs 27,689) = Apps Script แกว่งเอง **ให้ดูสัดส่วน ไม่ใช่ตัวเลขดิบ**
+
+      **สิ่งที่แก้ไม่ได้ครอบ ~1.6 วินาที** — `students_ms` 665 · `records_day_status_ms` 367 ·
+      `alerts_ms` 338 · `pf_settings_ms` 279 ทั้งหมดเป็นการอ่านชีตคนละใบ ยังไม่ได้สืบ
+
+      ~~ทางแก้ที่ตรงจุด: ให้ `getCachedRawAttendanceRecordsByDate_` เสิร์ฟจากถัง~~
 
       **★ แก้ข้อความที่ผมเขียนไว้เองรอบก่อน — "ตัวขวาง" ที่บันทึกไว้ไม่มีจริง**
       รอบก่อนเขียนว่าเรคอร์ดในถัง **ไม่มี `sheet_name` / `row_index`**
@@ -399,11 +413,24 @@
       **ได้ประโยชน์ 8 จุดที่เรียกฟังก์ชันนี้** ไม่ใช่แค่หน้าเช็คชื่อ —
       `CalendarService` 3 จุด · `AttendanceService:1544` · `ReportService:633` · `SeedTestData` 3 จุด
 
-      **สิ่งที่ต้องตรวจตอนลงมือจริง** (ต่างกันจริงแต่ไม่น่าเป็นปัญหา)
-      - `readAllAttendanceRecords_` **ไม่ใส่ `student_key`** ส่วนเส้นทางรายวันใส่
-        → ตรวจว่า `doesAttendanceRecordMatchStudent_` และ `getCachedAttendanceDailySnapshot_`
-        ไม่ได้พึ่งฟิลด์นี้จริง (อ่านแล้วดูเหมือนมี fallback ครบ แต่ต้องยืนยัน)
-      - `student_number` ใช้ `parseInt` เปล่าๆ ไม่มี `|| 0` → ได้ `NaN` แทน `0` ถ้าเซลล์ว่าง
+      **ตรวจครบก่อนเปลี่ยนแล้ว ไม่ได้เดา**
+      - **ไม่มีใครพึ่ง `student_key` จริง** — `getRecordStudentKey_` [StudentService.js:1035]
+        ปั้นคีย์จาก `student_id` / `student_number` ซึ่งถังมีครบ ส่วน 2 จุดที่อ่าน
+        `record.student_key` ใช้เป็น fallback ในนิพจน์ที่ปั้นคีย์เดียวกันได้เองอยู่แล้ว
+      - `student_number` เป็น `NaN` ได้ (ไม่มี `|| 0`) แต่ปลายทางทุกตัวห่อ
+        `parseInt(...) || 0` หรือเทียบ `> 0` → ผลลัพธ์เท่าเดิม
+      - **ลำดับแถวตรงกัน** ทั้งสองทางใช้ `getAttendanceReadSheets_` (archive ก่อน ชีตหลักทีหลัง)
+        และไล่แถวจากน้อยไปมาก → กติกา "แถวหลังชนะ" ไม่เปลี่ยน
+      - `invalidateSchoolCalendarCaches_` เรียก `bumpDerivedDataCacheVersion_`
+        จึงล้างคีย์ใหม่ `school_calendar_entries_all` ด้วย **แก้ปฏิทินแล้วเห็นผลทันทีเหมือนเดิม**
+
+      **ทดสอบยังไง**
+      - `clasp push` → `runP0Diagnostics` → เทียบ `attendance_pass1_steps`
+        ต้องเห็น `pf_calendar_prime_ms` และ `raw_records_ms` **ลดลงชัดเจน** ส่วน
+        `attendance:daily_reads_archive` ต้องยังเขียว = **ถังกับการอ่านตรงให้ผลตรงกัน**
+      - บนของจริง: เปิดหน้าเช็คชื่อ **แล้วกด ◀ ไล่ 3-4 วัน** วันที่ 2 เป็นต้นไปควรเร็วขึ้นชัด
+      - **แก้ปฏิทิน 1 รายการ แล้วดูว่าตัวเลขวันเรียนเปลี่ยนทันที** (ยืนยันว่า cache ใหม่ถูกล้าง)
+      - หน้ารายงาน / ปพ.6 ตัวเลขต้องเท่าเดิมทุกตัว (`2077,114,119,23,19,,2352,94.8`)
       ✅ **ตรวจแล้วว่า `row_index` ที่มาจาก cache ไม่ใช่บั๊ก** — `getOrBuildCachedJson_`
       ทำคีย์ผ่าน `buildDerivedCacheKey_` และ `markStatus` เรียก `invalidateAttendanceCaches_(date)`
       หลังเขียนทุกครั้ง จึงไม่มีทางได้ `row_index` ค้างจากก่อนการลบแถว

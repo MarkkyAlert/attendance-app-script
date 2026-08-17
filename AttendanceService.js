@@ -1018,6 +1018,13 @@ function getRecordsByDate_(date) {
  * ★ ทุกแถวติด sheet_name ไว้ เพราะ row_index ของสองชีตชนกันได้
  * ผู้ที่เอา row_index ไปเขียนต้องกรองด้วย isMainAttendanceRecord_ ก่อนเสมอ
  */
+/**
+ * ★ ตัวนี้**ไม่ได้ถูกเรียกจากเส้นทาง production แล้ว** ตั้งแต่ให้เส้นทางรายวัน
+ * เสิร์ฟจาก `getCachedAttendanceDateBuckets_` แทน (ดู `getCachedRawAttendanceRecordsByDate_`)
+ * เหลือไว้เป็น**ตัวอ้างอิงที่อ่านชีตตรงๆ** ให้ `attendance:daily_reads_archive`
+ * [Diagnostics.js] เทียบกับเส้นทางถัง = กลายเป็นการตรวจว่าสองวิธีให้ผลตรงกัน
+ * ซึ่งมีค่ามากกว่าเดิม **ห้ามลบทิ้งเพราะคิดว่าไม่มีใครใช้**
+ */
 function readAttendanceRecordsByDate_(date, sourceInfo) {
   sourceInfo = sourceInfo || getCurrentAttendanceSourceInfo_();
   var records = [];
@@ -1107,7 +1114,23 @@ function getCachedRawAttendanceRecordsByDate_(date, sourceInfo) {
   sourceInfo = sourceInfo || getCurrentAttendanceSourceInfo_();
   if (!date || !isDateWithinAttendanceSource_(date, sourceInfo)) return [];
   return getOrBuildCachedJson_('attendance_raw_date_records', [String(sourceInfo.key || 'live'), date], 180, function() {
-    return readAttendanceRecordsByDate_(date, sourceInfo);
+    // ★★ เสิร์ฟจากถังที่แยกตามวันที่ไว้แล้ว แทนการสแกนคอลัมน์วันที่ทั้งชีต "ต่อหนึ่งวัน"
+    // วัดได้ว่าการสแกนกินเวลา 2,200-3,700 ms ต่อวันที่ยังไม่มีใน cache
+    // เพราะต้นทุนโตตามขนาดชีต archive (2,586 แถว) ไม่ใช่ตามข้อมูลของวันนั้น
+    // ขณะที่ถังอ่านทั้งชีตครั้งเดียวแล้วใช้ได้ทุกวันพร้อมกัน
+    //
+    // ★ เทียบเท่าของเดิมทุกด้าน ตรวจแล้ว:
+    // - ลำดับแถวตรงกัน ทั้งสองทางใช้ `getAttendanceReadSheets_` (archive ก่อน ชีตหลักทีหลัง)
+    //   และไล่แถวจากน้อยไปมาก → กติกา "แถวหลังชนะ" ของ `getUniqueLatestRecords_` ไม่เปลี่ยน
+    // - `sheet_name` / `row_index` มีครบใน `readAllAttendanceRecords_` [ReportService.js]
+    //   เส้นทางเขียนที่กรองด้วย `filterMainAttendanceRecords_` จึงใช้ได้เหมือนเดิม
+    // - ถังไม่มี `student_key` แต่ไม่มีใครพึ่งมันจริง — `getRecordStudentKey_` [StudentService.js]
+    //   ปั้นคีย์จาก `student_id` / `student_number` ซึ่งถังมีครบ
+    // - `row_index` จาก cache ไม่ค้าง เพราะ `invalidateAttendanceCaches_` เรียก
+    //   `bumpDerivedDataCacheVersion_` ซึ่งล้าง derived cache ทุกตัวพร้อมกัน
+    var buckets = getCachedAttendanceDateBuckets_(sourceInfo) || {};
+    var dayRecords = buckets[date];
+    return Array.isArray(dayRecords) ? dayRecords : [];
   });
 }
 

@@ -226,10 +226,23 @@ function getSchoolCalendarSheetForRead_() {
   return getSheetByNameOrNull_(SCHOOL_CALENDAR_SHEET);
 }
 
-function getSchoolCalendarEntriesForRange_(range) {
-  var from = range && range.from ? String(range.from) : '';
-  var to = range && range.to ? String(range.to) : '';
-  return getOrBuildCachedJson_('school_calendar_entries', [from, to], 300, function() {
+/**
+ * ★★ อ่านปฏิทินทั้งชีตครั้งเดียว cache ด้วยคีย์ที่**ไม่ผูกช่วงวันที่**
+ *
+ * ของเดิม `getSchoolCalendarEntriesForRange_` cache ด้วยคีย์ `[from, to]`
+ * แต่ `primeAttendanceDailyCalendarEntries_` [AttendanceService.js] เรียกด้วยช่วง
+ * `date-35` ถึง `date` → **เปลี่ยนวันที่ = คีย์ใหม่ = cache miss ทุกครั้ง**
+ * ครูกดปุ่มไล่วันจึงพลาด cache 100% วัดได้ **808 ms ต่อการเปิดวันหนึ่ง**
+ * (`pf_calendar_prime_ms` ใน `perf:attendance_vs_report` 17 ส.ค. 2569)
+ *
+ * และ builder **อ่านทั้งชีตอยู่แล้ว** ไม่ได้อ่านแค่ช่วง แล้วค่อยกรองด้วย JS ทีหลัง
+ * → cache ที่ผูกช่วงจึงไม่ได้ประหยัดการอ่านเลย **แค่ทำให้ cache ใช้ไม่ได้**
+ *
+ * ★ dedupe ก่อนกรอง กับ กรองก่อน dedupe ให้ผลเท่ากัน เพราะแถวที่วันที่เดียวกัน
+ * อยู่ในช่วงหรือนอกช่วงพร้อมกันเสมอ · `row_index` ยังนับจากทั้งชีตเหมือนเดิม
+ */
+function getAllSchoolCalendarEntries_() {
+  return getOrBuildCachedJson_('school_calendar_entries_all', [], 300, function() {
     var sheet = getSchoolCalendarSheetForRead_();
     if (!sheet) return [];
     if (sheet.getLastColumn() < SCHOOL_CALENDAR_COL.LABEL) return [];
@@ -241,8 +254,6 @@ function getSchoolCalendarEntriesForRange_(range) {
     data.forEach(function(row, index) {
       var entry = buildSchoolCalendarEntry_(row, index + 2);
       if (!entry.date) return;
-      if (from && entry.date < from) return;
-      if (to && entry.date > to) return;
       var existing = dedupedByDate[entry.date];
       if (!existing || shouldReplaceSchoolCalendarEntry_(existing, entry)) {
         dedupedByDate[entry.date] = entry;
@@ -251,12 +262,22 @@ function getSchoolCalendarEntriesForRange_(range) {
 
     return Object.keys(dedupedByDate).map(function(date) {
       return dedupedByDate[date];
-    }).filter(function(entry) {
-      if (!entry.date) return false;
-      return true;
     }).sort(function(a, b) {
       return a.date.localeCompare(b.date);
     });
+  });
+}
+
+function getSchoolCalendarEntriesForRange_(range) {
+  var from = range && range.from ? String(range.from) : '';
+  var to = range && range.to ? String(range.to) : '';
+  var entries = getAllSchoolCalendarEntries_();
+  if (!from && !to) return entries;
+  return entries.filter(function(entry) {
+    if (!entry || !entry.date) return false;
+    if (from && entry.date < from) return false;
+    if (to && entry.date > to) return false;
+    return true;
   });
 }
 
