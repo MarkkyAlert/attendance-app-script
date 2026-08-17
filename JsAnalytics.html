@@ -451,6 +451,7 @@
       if (improved.length === 0) {
         html += '<p class="analytics-empty-note">' + (comparableCount === 0 ? 'ยังไม่มีข้อมูลพอเทียบกับเดือนก่อน' : 'ยังไม่พบคนที่ดีขึ้นชัดเจน') + '</p>';
       } else {
+        html += renderTruncationNote_(improved.length, totalCountOf_(d, 'improved_total', improved));
         html += '<div class="rpt-compact-list">';
         improved.forEach(function (s) {
           html += '<div class="rpt-compact-item">';
@@ -473,6 +474,7 @@
           html += '<p class="analytics-empty-note">' + renderAnalyticsIcon('success') + '<span>ไม่มีใครแย่ลง</span></p>';
         }
       } else {
+        html += renderTruncationNote_(declined.length, totalCountOf_(d, 'declined_total', declined));
         html += '<div class="rpt-compact-list">';
         declined.forEach(function (s) {
           html += '<div class="rpt-compact-item">';
