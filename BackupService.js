@@ -84,7 +84,7 @@ function previewRestoreBackup(dataUrl, filename, auth) {
     try {
       snapshot = extractBackupSnapshotFromDataUrl_(dataUrl);
     } catch (e) {
-      return { success: false, message: e.message };
+      return buildFailurePayload_(e);
     }
 
     var snapshotFile = DriveApp.createFile(

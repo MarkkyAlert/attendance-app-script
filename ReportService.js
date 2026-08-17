@@ -378,7 +378,7 @@ function downloadCSV(reportType, params, auth) {
     try {
       exportData = exportCSVData_(reportType, params);
     } catch (e) {
-      return { success: false, message: e.message };
+      return buildFailurePayload_(e);
     }
 
     var file = DriveApp.createFile(
@@ -432,7 +432,7 @@ function exportCSVData_(reportType, params) {
 
 function buildSummaryCsvExport_(range) {
   if (isEffectiveRangeEmpty_(range)) {
-    throw new Error('ช่วงวันที่ที่เลือกอยู่นอกภาคเรียนที่ใช้งานอยู่');
+    throw new Error('OUT_OF_SEMESTER|ช่วงวันที่ที่เลือกอยู่นอกภาคเรียนที่ใช้งานอยู่');
   }
 
   var data = getCachedSummaryTableDataForRange_(range, false);
@@ -478,7 +478,7 @@ function buildSummaryCsvExport_(range) {
 
 function buildDailyGridCsvExport_(range) {
   if (isEffectiveRangeEmpty_(range)) {
-    throw new Error('ช่วงวันที่ที่เลือกอยู่นอกภาคเรียนที่ใช้งานอยู่');
+    throw new Error('OUT_OF_SEMESTER|ช่วงวันที่ที่เลือกอยู่นอกภาคเรียนที่ใช้งานอยู่');
   }
 
   var data = getCachedDailyGridDataForRange_(range);

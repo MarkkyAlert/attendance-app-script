@@ -195,7 +195,7 @@ function buildParentViewDataByStudentIdentity_(studentId, studentNumber, month) 
     range = getEffectiveMonthRange_(month);
     month = getEffectiveRangeMonth_(range, month);
   } catch (e) {
-    return { success: false, message: e.message || 'เดือนไม่ถูกต้อง' };
+    return buildFailurePayload_(e, 'เดือนไม่ถูกต้อง');
   }
   var semRange = range.active_semester || null;
 

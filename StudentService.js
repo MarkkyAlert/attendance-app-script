@@ -481,7 +481,7 @@ function createStudent(payload, auth) {
         default_to_semester_start: true
       });
     } catch (e) {
-      return { success: false, message: e.message };
+      return buildFailurePayload_(e);
     }
 
     if (!studentNumber || studentNumber <= 0) {
@@ -589,7 +589,7 @@ function updateStudent(payload, auth) {
         updates.push({ col: COL.STUDENTS.ENROLLED_FROM, value: nextEnrolledFrom });
       }
     } catch (e) {
-      return { success: false, message: e.message };
+      return buildFailurePayload_(e);
     }
 
     var inactiveAt = normalizeStudentSheetDateValue_(currentStudent.inactive_at);
@@ -758,7 +758,7 @@ function saveSettings(payload, auth) {
         validatedClassName = normalizeLimitedText_(payload.class_name, 60, 'ระดับชั้นเรียน');
       }
     } catch (e) {
-      return { success: false, message: e.message };
+      return buildFailurePayload_(e);
     }
     if (payload.absence_alert_days !== undefined) {
       var days = parseInt(payload.absence_alert_days, 10);
@@ -820,7 +820,7 @@ function saveTeacherSecuritySettings(payload, auth) {
         setTeacherAccessKey_(newTeacherKey);
         shouldLogout = true;
       } catch (e) {
-        return { success: false, message: e.message };
+        return buildFailurePayload_(e);
       }
     } else if (!isTeacherAccessKeyConfigured_()) {
       return { success: false, message: 'ต้องตั้งรหัสครูใหม่ก่อนใช้งานจริง' };

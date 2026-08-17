@@ -17,7 +17,7 @@ function sendParentEmails(date, auth) {
     try {
       ensureAttendanceActionDate_(date, 'วันที่เช็คชื่อ');
     } catch (e) {
-      return { success: false, message: e.message };
+      return buildFailurePayload_(e);
     }
     if (!isDayConfirmed_(date)) {
       return { success: false, message: 'กรุณายืนยันวันนี้ก่อนส่งอีเมลให้ผู้ปกครอง' };
@@ -163,7 +163,7 @@ function previewParentEmails(date, auth) {
     try {
       ensureAttendanceActionDate_(date, 'วันที่เช็คชื่อ');
     } catch (e) {
-      return { success: false, message: e.message };
+      return buildFailurePayload_(e);
     }
     if (!isDayConfirmed_(date)) {
       return { success: false, message: 'กรุณายืนยันวันนี้ก่อนดูตัวอย่างการส่งอีเมล' };

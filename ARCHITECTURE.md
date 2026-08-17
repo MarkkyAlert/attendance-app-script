@@ -184,19 +184,35 @@ protocol `CODE|ข้อความ` มีอยู่แต่**เดิม�
 | `getTeacherFacingErrorCopy_` | `code` ก่อน แล้วค่อยตกไปที่ข้อความ (ดูข้อจำกัดล่าง) |
 | `PrintReport.html` | `PRINT_ERROR_KIND_BY_CODE_` แปลง code → ชนิด แล้วส่งชนิดเข้า `showError(err, kind)` |
 | `ParentView.html` | `describeParentAuthError_` อ่าน code ก่อน คืน `kind` + `title` + `should_clear_auth` |
+| payload ที่ตอบ `success: false` | `buildFailurePayload_` [Utils.js] ใส่ `code` แยกฟิลด์มาให้ |
 
-**ที่ยังต้องพึ่งข้อความไทย 3 ก้อน เพราะฝั่ง server ยังไม่มี code ให้**
+### code ทั้งหมดที่ฝั่ง server ส่งได้
 
-- `'วันหยุดในปฏิทินวันเรียน'` ← `ensureAttendanceActionDate_` [AttendanceService.js:840]
-- `'นอกภาคเรียน'` ← [AttendanceService.js:833] · [SemesterService.js:588] · [ReportService.js:435,481]
-  **มี `code === 'OUT_OF_SEMESTER'` เขียนรออยู่แล้วใน client แต่ไม่มีใครส่ง code นี้มาเลย**
-- `'ไม่พบ Sheet'` ← `getSheet_` [SheetDB.js] แปลงเป็นข้อความว่าติดตั้งไม่สมบูรณ์
+| code | โยนที่ | หน้าจอทำอะไร |
+|---|---|---|
+| `AUTH_REQUIRED` / `AUTH_EXPIRED` / `CSRF_INVALID` | `requireTeacherSession_` | เด้งไปหน้าเข้าสู่ระบบ / รีโหลด |
+| `PRINT_AUTH_REQUIRED` / `PRINT_AUTH_EXPIRED` | `requirePrintSession_` | `PrintReport.html` เลือกชุดข้อความ |
+| `PARENT_AUTH_REQUIRED` / `PARENT_AUTH_EXPIRED` | `requireParentSession_` | `ParentView.html` เลือกชุดข้อความ + ล้าง session |
+| `DATE_IS_HOLIDAY` | `ensureAttendanceActionDate_` [AttendanceService.js:840] | หน้าเช็คชื่อเข้าสถานะ "วันหยุด" |
+| `OUT_OF_SEMESTER` | [AttendanceService.js:833] · [SemesterService.js:588] · [ReportService.js:435,481] | ข้อความ "วันที่เลือกอยู่นอกภาคเรียน" |
+| `SHEET_MISSING` | `getSheet_` [SheetDB.js] | แปลงเป็น "ระบบยังตั้งค่าไม่สมบูรณ์" |
 
-**★ ลำดับของการแก้สำคัญกว่าตัวการแก้** — ต้องให้ทุกจุดที่**แสดงผล**ถอด `CODE|` ออกให้ได้ก่อน
-แล้วจึงเติม code ที่ฝั่ง server ถ้าทำสลับกัน ผู้ใช้จะเห็นโค้ดดิบบนจอ
-(เกิดขึ้นจริงมาแล้ว: `ParentView` ไม่ได้ใช้ `serverCall` แต่ยิง `google.script.run` ตรงๆ
+**★ error ข้ามพรมแดนมา 2 เส้นทาง ไม่ใช่เส้นทางเดียว — ต้องดูให้ครบทั้งคู่**
+
+1. **เส้นทาง throw** → `parseServerError_` [JavaScript.html] แยก `code` กับข้อความ
+   `serverCall` ส่ง**ข้อความที่ถอด code แล้ว**ให้ `onFailure` และติด `err.__code` ไปด้วย
+   (ผู้รับจึงแยกประเภทได้ ทั้งที่ข้อความถูกแปลงเป็นภาษาคนไปแล้ว — `loadAttendance` ใช้ทางนี้)
+2. **เส้นทาง payload** → server จับ error เองแล้วส่ง `{ success: false, message, code }` กลับ
+   ต้องสร้างด้วย **`buildFailurePayload_` [Utils.js] ห้ามเขียน `message: e.message` ตรงๆ**
+   เพราะ client เอา `data.message` ไป toast โดยไม่ผ่าน `parseServerError_`
+   → **`CODE|` จะหลุดขึ้นจอ** · มี 27 จุดที่ต้องใช้ตัวนี้
+
+`splitErrorCode_` [Utils.js] ยอมรับเป็น code เฉพาะ `^[A-Z][A-Z0-9_]*$` ไม่ใช่เจอ `|` แล้วตัดทันที
+กันข้อความปกติที่มี `|` อยู่ตามธรรมชาติถูกตัดหัวหาย
+
+**เกิดขึ้นจริงมาแล้ว**: `ParentView` ไม่ได้ใช้ `serverCall` แต่ยิง `google.script.run` ตรงๆ
 `err.message` จึงเป็นค่าดิบ และหน้านั้นเอาไปแสดงทั้งก้อน **ผู้ปกครองที่ลิงก์หมดอายุเห็น
-`PARENT_AUTH_EXPIRED|ลิงก์สำหรับเปิดข้อมูลหมดอายุ...` บนจอ**)
+`PARENT_AUTH_EXPIRED|ลิงก์สำหรับเปิดข้อมูลหมดอายุ...` บนจอ**
 
 ### `teacher_session_generation` — kill switch
 

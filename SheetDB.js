@@ -84,7 +84,7 @@ function getSheet_(name) {
   var ss = getSpreadsheet_();
   var sheet = ss.getSheetByName(name);
   if (!sheet) {
-    throw new Error('ไม่พบ Sheet: ' + name + ' — กรุณารัน setupSystem() ก่อน');
+    throw new Error('SHEET_MISSING|ไม่พบ Sheet: ' + name + ' — กรุณารัน setupSystem() ก่อน');
   }
   return sheet;
 }

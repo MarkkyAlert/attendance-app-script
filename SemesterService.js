@@ -46,7 +46,7 @@ function createSemester(payload, auth) {
     try {
       name = normalizeLimitedText_(payload.name, 40, 'ชื่อภาคเรียน');
     } catch (e) {
-      return { success: false, message: e.message };
+      return buildFailurePayload_(e);
     }
     var startDate = payload.start_date ? normalizeDateStringStrict_(payload.start_date, 'วันเริ่มต้น') : '';
     var endDate = payload.end_date ? normalizeDateStringStrict_(payload.end_date, 'วันสิ้นสุด') : '';
@@ -125,7 +125,7 @@ function editSemester(payload, auth) {
     try {
       name = normalizeLimitedText_(payload.name, 40, 'ชื่อภาคเรียน');
     } catch (e) {
-      return { success: false, message: e.message };
+      return buildFailurePayload_(e);
     }
     var startDate = payload.start_date ? normalizeDateStringStrict_(payload.start_date, 'วันเริ่มต้น') : '';
     var endDate = payload.end_date ? normalizeDateStringStrict_(payload.end_date, 'วันสิ้นสุด') : '';
@@ -585,7 +585,7 @@ function ensureDateInActiveSemester_(date, label) {
     throw new Error('กรุณาสร้างและเปิดใช้งานภาคเรียนก่อนใช้งาน');
   }
   if (normalizedDate < semester.from || normalizedDate > semester.to) {
-    throw new Error((label || 'วันที่') + ' อยู่นอกภาคเรียนที่เปิดใช้งานอยู่ (' + semester.start_date + ' - ' + semester.end_date + ')');
+    throw new Error('OUT_OF_SEMESTER|' + (label || 'วันที่') + ' อยู่นอกภาคเรียนที่เปิดใช้งานอยู่ (' + semester.start_date + ' - ' + semester.end_date + ')');
   }
   return semester;
 }
@@ -692,7 +692,7 @@ function findSemesterByIdentifier_(identifier) {
   try {
     name = normalizeLimitedText_(rawIdentifier, 40, 'ชื่อภาคเรียน');
   } catch (e) {
-    return { success: false, message: e.message };
+    return buildFailurePayload_(e);
   }
   if (!name) return { success: false, message: 'กรุณาเลือกภาคเรียน' };
 

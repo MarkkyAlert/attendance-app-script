@@ -77,7 +77,7 @@ function previewImportCSV(csvContent, effectiveFrom, options, auth) {
         default_to_semester_start: true
       });
     } catch (e) {
-      return { success: false, message: e.message };
+      return buildFailurePayload_(e);
     }
     if (Utilities.newBlob(csvContent).getBytes().length > IMPORT_LIMITS.MAX_BYTES) {
       return { success: false, message: 'ไฟล์ CSV มีขนาดใหญ่เกิน 1 MB' };
@@ -124,7 +124,7 @@ function previewImportCSV(csvContent, effectiveFrom, options, auth) {
         fullName = normalizeLimitedText_(row[1], 120, 'ชื่อ-สกุล');
         nickname = normalizeLimitedText_(row[2], 60, 'ชื่อเล่น');
       } catch (e) {
-        errors.push({ line: lineNum, message: e.message, data: row });
+        errors.push({ line: lineNum, message: splitErrorCode_(e).message, data: row });
         return;
       }
 

@@ -1006,10 +1006,7 @@
         };
       }
 
-      // ⚠️ ผูกกับข้อความจาก ensureAttendanceActionDate_ [AttendanceService.js:840] ตรงๆ
-      // ยังไม่มี code ให้เทียบ ถ้าฝั่ง server ใส่ CODE| ให้ ให้เปลี่ยนมาเทียบ code แล้วลบบรรทัดนี้
-      // (เดิมค้น 'วันที่เลือกถูกตั้งเป็นวันหยุด' ด้วย ซึ่งไม่มีใครโยน — เป็นข้อความที่บล็อกนี้สร้างเอง)
-      if (normalized.indexOf('วันหยุดในปฏิทินวันเรียน') >= 0) {
+      if (code === 'DATE_IS_HOLIDAY') {
         return {
           title: 'วันนี้เป็นวันหยุด จึงเช็กชื่อไม่ได้',
           description: 'วันที่เลือกถูกตั้งเป็นวันหยุดหรือวันงดเรียนไว้ในปฏิทินของห้องนี้',
@@ -1017,7 +1014,7 @@
         };
       }
 
-      if (normalized.indexOf('นอกภาคเรียน') >= 0 || code === 'OUT_OF_SEMESTER') {
+      if (code === 'OUT_OF_SEMESTER') {
         return {
           title: 'วันที่เลือกอยู่นอกภาคเรียน',
           description: 'ระบบจะแสดงข้อมูลได้เฉพาะวันที่อยู่ในภาคเรียนปัจจุบันเท่านั้น',
@@ -1415,7 +1412,7 @@
             }
 
             var message = String(parsedError.message || rawMsg || '').trim();
-            if (message.indexOf('ไม่พบ Sheet') >= 0) {
+            if (parsedError.code === 'SHEET_MISSING') {
               message = 'ระบบยังตั้งค่าไม่สมบูรณ์ กรุณาตรวจสอบการเชื่อมต่อข้อมูลครั้งแรก';
             } else if (message.indexOf('permission') >= 0 || message.indexOf('Permission') >= 0) {
               message = 'ไม่สามารถเข้าถึงข้อมูลได้ กรุณาลองใหม่ หรือติดต่อผู้ดูแลระบบ';
@@ -2184,19 +2181,16 @@
         state.currentDate = data.date;
         renderAttendancePage();
         setLoading(false);
-      }, function (message) {
+      }, function (message, err) {
         state.currentDate = date || state.currentDate;
-        // serverCall ส่ง parsedError.message มาให้แล้ว (ไม่มี CODE| ติดมา) ตรงนี้จึงเป็น no-op ตอนนี้
-        // ★ ใส่ไว้เพื่อให้ทนทาน ถ้าฝั่ง server ใส่ CODE| ให้ข้อความนี้ในอนาคต
-        // จุดนี้จะไม่พังและไม่เอาโค้ดดิบไปแสดงใน blocked_message
-        var parsed = parseServerError_(message);
-        var holidayText = String(parsed.message || message || '');
-        if (holidayText.indexOf('วันหยุดในปฏิทินวันเรียน') >= 0) {
+        // ★ แยกประเภทด้วย code ที่ serverCall ติดมาให้ ไม่ใช่ค้นคำไทยในข้อความ
+        // `message` ที่ได้มาถูกถอด CODE| ออกแล้ว จึงเอาไปแสดงได้ตรงๆ
+        if (err && err.__code === 'DATE_IS_HOLIDAY') {
           state.attendance = {
             date: state.currentDate,
             date_th: state.currentDate,
             is_holiday_blocked: true,
-            blocked_message: holidayText
+            blocked_message: String(message || '')
           };
           renderAttendancePage();
         }
@@ -4868,9 +4862,11 @@
           window.location.reload();
           return;
         }
-        err = { message: parsedError.message || rawMsg };
+        // ★ พา code ไปกับ err ด้วย เพราะ onFailure ได้รับข้อความที่แปลงเป็นภาษาคนแล้ว
+        // ผู้รับจึงแยกประเภทเองไม่ได้ถ้าไม่มี code (ดู loadAttendance)
+        err = { message: parsedError.message || rawMsg, __code: parsedError.code || '' };
         var msg = String(err && err.message ? err.message : err || '');
-        if (msg.indexOf('ไม่พบ Sheet') >= 0) {
+        if (parsedError.code === 'SHEET_MISSING') {
           msg = 'ระบบยังตั้งค่าไม่สมบูรณ์ กรุณาตรวจสอบการเชื่อมต่อข้อมูลครั้งแรก';
         } else if (msg.indexOf('permission') >= 0 || msg.indexOf('Permission') >= 0) {
           msg = 'ไม่สามารถเข้าถึงข้อมูลได้ กรุณาลองใหม่ หรือติดต่อผู้ดูแลระบบ';
@@ -4924,7 +4920,7 @@
           return;
         }
         var msg = String(parsedError.message || rawMsg || '').trim();
-        if (msg.indexOf('ไม่พบ Sheet') >= 0) {
+        if (parsedError.code === 'SHEET_MISSING') {
           msg = 'ระบบยังตั้งค่าไม่สมบูรณ์ กรุณาตรวจสอบการเชื่อมต่อข้อมูลครั้งแรก';
         } else if (msg.indexOf('permission') >= 0 || msg.indexOf('Permission') >= 0) {
           msg = 'ไม่สามารถเข้าถึงข้อมูลได้ กรุณาลองใหม่ หรือติดต่อผู้ดูแลระบบ';

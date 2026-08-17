@@ -753,3 +753,38 @@ function onOpen() {
     .addToUi();
 }
 
+/**
+ * ★ แยก CODE| ออกจากข้อความ error ก่อนส่งกลับไปให้หน้าจอ
+ *
+ * ทำไมต้องมี: ฝั่ง server หลายจุดจับ error แล้วก๊อป `e.message` ใส่ payload ตรงๆ
+ * ถ้าข้อความนั้นมี `CODE|` นำหน้า **ผู้ใช้จะเห็นโค้ดดิบบนจอ** เพราะฝั่ง client
+ * เอา `data.message` ไป toast ตรงๆ ไม่ได้ผ่าน `parseServerError_` (ตัวนั้นใช้กับ error
+ * ที่ throw ออกไปเท่านั้น) — เกิดขึ้นจริงมาแล้วในหน้าผู้ปกครอง ดู `DECISIONS.md` ข้อ 29
+ *
+ * คืน `code` มาด้วย เพื่อให้หน้าจอแยกประเภทได้โดยไม่ต้องค้นคำไทยในข้อความ
+ * ★ เงื่อนไขว่าเป็น code คือ A-Z ตัวใหญ่ ตัวเลข และ _ เท่านั้น เพื่อไม่ให้ข้อความ
+ *   ที่มี `|` อยู่ตามธรรมชาติถูกตัดหัวทิ้งโดยไม่ได้ตั้งใจ
+ */
+function splitErrorCode_(e) {
+  var text = String(e && e.message ? e.message : (e || ''));
+  text = text.replace(/^(Exception|Error):\s*/i, '');
+  var pipeIndex = text.indexOf('|');
+  if (pipeIndex > 0) {
+    var candidate = text.substring(0, pipeIndex);
+    if (/^[A-Z][A-Z0-9_]*$/.test(candidate)) {
+      return { code: candidate, message: text.substring(pipeIndex + 1) };
+    }
+  }
+  return { code: '', message: text };
+}
+
+/**
+ * payload มาตรฐานของความล้มเหลว — ใช้แทน `{ success: false, message: e.message }`
+ * ทุกจุด เพื่อไม่ให้ `CODE|` หลุดขึ้นจอ และให้หน้าจอมี `code` ให้เทียบ
+ */
+function buildFailurePayload_(e, fallbackMessage) {
+  var parts = splitErrorCode_(e);
+  var payload = { success: false, message: parts.message || String(fallbackMessage || '') };
+  if (parts.code) payload.code = parts.code;
+  return payload;
+}

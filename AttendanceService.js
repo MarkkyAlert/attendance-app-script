@@ -242,14 +242,14 @@ function recordAttendance(payload, auth) {
     try {
       ensureAttendanceActionDate_(date, 'วันที่เช็คชื่อ');
     } catch (e) {
-      return { success: false, message: e.message };
+      return buildFailurePayload_(e);
     }
     var statusCode = String(payload.status_code || '').trim();
     var note = '';
     try {
       note = normalizeLimitedText_(payload.note, 300, 'หมายเหตุ');
     } catch (e) {
-      return { success: false, message: e.message };
+      return buildFailurePayload_(e);
     }
     var student = getStudentForAttendanceDate_(date, requestedStudentId, studentNumber);
     var studentId = parseInt(student && student.id, 10) || 0;
@@ -322,7 +322,7 @@ function undoAttendance(payload, auth) {
     try {
       ensureAttendanceActionDate_(date, 'วันที่เช็คชื่อ');
     } catch (e) {
-      return { success: false, message: e.message };
+      return buildFailurePayload_(e);
     }
     var student = getStudentForAttendanceDate_(date, requestedStudentId, studentNumber);
     var studentId = parseInt(student && student.id, 10) || 0;
@@ -363,7 +363,7 @@ function bulkMarkPresent(date, auth) {
     try {
       ensureAttendanceActionDate_(date, 'วันที่เช็คชื่อ');
     } catch (e) {
-      return { success: false, message: e.message };
+      return buildFailurePayload_(e);
     }
     return withAttendanceMutationLock_(function() {
       if (isDayConfirmed_(date)) return { success: false, message: 'วันนี้ถูกยืนยันแล้ว' };
@@ -417,7 +417,7 @@ function undoBulkPresent(date, batchId, auth) {
     try {
       ensureAttendanceActionDate_(date, 'วันที่เช็คชื่อ');
     } catch (e) {
-      return { success: false, message: e.message };
+      return buildFailurePayload_(e);
     }
 
     return withAttendanceMutationLock_(function() {
@@ -456,7 +456,7 @@ function confirmDay(date, auth) {
     try {
       ensureAttendanceActionDate_(date, 'วันที่เช็คชื่อ');
     } catch (e) {
-      return { success: false, message: e.message };
+      return buildFailurePayload_(e);
     }
     return withAttendanceMutationLock_(function() {
       if (isDayConfirmed_(date)) return { success: false, message: 'วันนี้ถูกยืนยันแล้ว' };
@@ -497,7 +497,7 @@ function unconfirmDay(date, auth) {
     try {
       ensureAttendanceActionDate_(date, 'วันที่เช็คชื่อ');
     } catch (e) {
-      return { success: false, message: e.message };
+      return buildFailurePayload_(e);
     }
     return withAttendanceMutationLock_(function() {
       var dayStatus = getDayStatus_(date);
@@ -546,7 +546,7 @@ function repairParentEmailNotifications(date, mode, auth) {
         allow_holiday: true
       });
     } catch (e) {
-      return { success: false, message: e.message };
+      return buildFailurePayload_(e);
     }
 
     var dayStatus = getDayStatus_(date);
@@ -830,14 +830,14 @@ function ensureAttendanceActionDate_(date, label, options) {
     if (!semesterStart || !semesterEnd) {
       ensureDateInActiveSemester_(date, label || 'วันที่');
     } else if (date < semesterStart || date > semesterEnd) {
-      throw new Error((label || 'วันที่') + ' อยู่นอกภาคเรียนที่เปิดใช้งานอยู่ (' + semesterStart + ' - ' + semesterEnd + ')');
+      throw new Error('OUT_OF_SEMESTER|' + (label || 'วันที่') + ' อยู่นอกภาคเรียนที่เปิดใช้งานอยู่ (' + semesterStart + ' - ' + semesterEnd + ')');
     }
   } else {
     ensureDateInActiveSemester_(date, label || 'วันที่');
   }
   var calendarEntry = getSchoolCalendarEntryByDate_(date);
   if (!allowHoliday && calendarEntry && calendarEntry.type === 'holiday') {
-    throw new Error((label || 'วันที่') + ' ตรงกับวันหยุดในปฏิทินวันเรียน');
+    throw new Error('DATE_IS_HOLIDAY|' + (label || 'วันที่') + ' ตรงกับวันหยุดในปฏิทินวันเรียน');
   }
   return date;
 }

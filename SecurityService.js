@@ -360,7 +360,7 @@ function getTeacherLoginOptions() {
     return {
       key_login_enabled: true,
       teacher_key_configured: false,
-      message: e.message
+      message: splitErrorCode_(e).message
     };
   }
 
@@ -391,7 +391,7 @@ function runInitialSetup(payload, deviceId) {
       'มีการเริ่มตั้งค่าระบบถี่เกินไป กรุณารอสักครู่'
     );
   } catch (e) {
-    return { success: false, message: e.message };
+    return buildFailurePayload_(e);
   }
 
   var teacherName = '';
@@ -411,7 +411,7 @@ function runInitialSetup(payload, deviceId) {
     semesterEnd = normalizeDateStringStrict_(payload.semester_end_date, 'วันสิ้นสุดภาคเรียน');
     teacherKey = validateTeacherAccessKey_(payload.teacher_access_key);
   } catch (e2) {
-    return { success: false, message: e2.message };
+    return buildFailurePayload_(e2);
   }
 
   if (!teacherName || !schoolName || !className || !semesterName) {
@@ -1125,7 +1125,7 @@ function bootstrapTeacherSession(teacherKey, deviceId) {
       'ลองเข้าสู่ระบบบ่อยเกินไป กรุณารอสักครู่'
     );
   } catch (e) {
-    return { success: false, message: e.message };
+    return buildFailurePayload_(e);
   }
 
   if (!verifyTeacherAccessKey_(teacherKey)) {
@@ -1207,7 +1207,7 @@ function createPrintSession(context, auth) {
         printContext.absent_threshold = normalizeAttentionThresholdDays_(getSettings_().attention_threshold_days);
       }
     } catch (e) {
-      return { success: false, message: e.message };
+      return buildFailurePayload_(e);
     }
     var token = generateSecureToken_(32);
     try {
