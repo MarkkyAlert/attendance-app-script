@@ -2602,7 +2602,7 @@
       html += '</div>';
 
       if (students.length > 0) {
-        html += '<div class="students-toolbar">';
+        html += '<div class="students-toolbar" id="students-filter-toolbar">';
         html += '<div class="students-toolbar-row">';
         html += '<div class="students-search">';
         html += '<span class="students-search-prefix">ค้นหา</span>';
@@ -2660,7 +2660,7 @@
         // ให้กดแล้วกรองไปที่ชิป "ยังไม่ระบุกลุ่ม" เลย
         html += renderStudentsMetric('group', ungrouped, 'ยังไม่ระบุกลุ่ม', ungrouped > 0 ? 'amber' : 'green',
           ungrouped > 0 ? 'กดเพื่อดูรายชื่อ แล้วจัดกลุ่มให้ครบ' : 'ทุกคนอยู่ในกลุ่มแล้ว',
-          ungrouped > 0 ? 'App.studentFilterGroup(' + inlineJsArg(NO_GROUP_FILTER_) + ')' : '');
+          ungrouped > 0 ? 'App.showUngroupedStudents()' : '');
         html += '</section>';
       }
       html += '</div>';
@@ -5428,6 +5428,17 @@
       studentFilterGroup: function (group) {
         state.studentsFilterGroup = group;
         renderStudentsPage();
+      },
+      // ★ การ์ดสรุปอยู่ **ท้ายหน้า** ส่วนรายการอยู่เหนือมัน
+      // ถ้าตั้งตัวกรองแล้วไม่เลื่อนให้ ครูจะกดแล้วไม่เห็นอะไรเปลี่ยนเลย
+      // (ชิปกลุ่มไม่ต้องเลื่อน เพราะอยู่ติดกับรายการอยู่แล้ว จึงแยกเป็นอีกฟังก์ชัน)
+      showUngroupedStudents: function () {
+        state.studentsFilterGroup = NO_GROUP_FILTER_;
+        renderStudentsPage();
+        setTimeout(function () {
+          var target = document.getElementById('students-filter-toolbar');
+          if (target && target.scrollIntoView) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 0);
       },
       toggleStudentFlagged: function (checked) {
         state.studentsFilterFlagged = checked;
