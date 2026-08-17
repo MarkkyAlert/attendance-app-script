@@ -638,8 +638,35 @@
       กรณีมี code เช่น `SHEET_MISSING` หลุดเข้า `getParentViewDataBySession`
       ต้องทำให้ชีตหายก่อนจึงจะเกิด **ไม่คุ้มเสี่ยงกับข้อมูลจริง**
       ความเสี่ยงต่ำเพราะใช้ `splitErrorCode_` ตัวเดียวกับที่ยืนยันแล้วในเส้นทาง throw
-- [ ] **error handling ของ RPC ถูกก๊อปหลายชุด** — `serverCall` · `serverCallQuiet` · `fetchPageInitialData_` ·
-      `handlePrintFailure` (ตัวหลังรู้จัก `PRINT_AUTH_*` ที่ตัวอื่นไม่รู้จัก) เพิ่ม error code ใหม่ต้องแก้ทุกที่
+- [x] ~~**error handling ของ RPC ถูกก๊อปหลายชุด**~~ **ยุบแล้ว ยังไม่ได้ทดสอบ**
+      3 ตัวใน `JavaScript.html` ก๊อปตรรกะเดียวกันไว้คนละชุด **ท่อนแปลงข้อความ 4 สาขา
+      (`SHEET_MISSING` / permission / Timeout / quota) เหมือนกันเป๊ะทั้ง 3 ที่**
+      → เพิ่ม error แบบใหม่ต้องแก้ 3 ที่ **ลืมที่ใดที่หนึ่ง = ข้อความดิบหลุดไปหาครูเฉพาะบางเส้นทาง**
+      ซึ่งหาสาเหตุยากเพราะอีกสองเส้นทางยังถูกอยู่
+
+      **แยกเป็นตัวช่วยร่วม 4 ตัว** — `isTeacherSessionExpiredCode_` ·
+      `handleTeacherSessionExpired_` (ล้าง session + พากลับหน้าเข้าสู่ระบบ) ·
+      `humanizeServerError_` (ท่อนแปลงข้อความทั้งก้อน) · `invokeFailureHandler_`
+      **หางที่ต่างกันจริงยังอยู่ที่เดิมของแต่ละตัว** — `serverCall` toast ·
+      `serverCallQuiet` เงียบ · `fetchPageInitialData_` reject promise พร้อมธง `__handled`
+      | ฟังก์ชัน | เดิม | ใหม่ |
+      |---|---|---|
+      | `serverCall` | 56 บรรทัด | **37** |
+      | `serverCallQuiet` | 49 | **29** |
+      | `fetchPageInitialData_` | 52 | **37** |
+
+      **ของแถม: `parseServerError_` ไม่ได้ตรวจรูป code** เจอ `|` แล้วตัดหัวทันที
+      ต่างจาก `splitErrorCode_` [Utils.js] ฝั่ง server ที่ตรวจ `^[A-Z][A-Z0-9_]*$`
+      → ข้อความที่มี `|` ตามธรรมชาติจะถูกตัดหัวหาย **ใส่เกณฑ์เดียวกันแล้ว**
+
+      **`handlePrintFailure` ไม่ยุบเข้ามา — เป็นการตัดสินใจ ไม่ใช่ตกหล่น**
+      อยู่ใน `PrintReport.html` ซึ่ง `DECISIONS.md` ระบุว่า 3 หน้าไม่แชร์โค้ดกันโดยเจตนา
+      ยุบเข้ามาต้องเจาะกำแพงนั้น แลกกับการลดโค้ดซ้ำไม่กี่บรรทัด **ไม่คุ้ม** (เหตุผลเต็มที่ข้อ 30)
+      และตรวจแล้วว่า**ไม่มีช่องข้อความดิบหลุด** เพราะ `showError` ไม่เอา message ไปแสดงเลย
+
+      **ทดสอบยังไง** (แตะทุกเส้นทางที่ยุบ) — บันทึกล้มเหลว → toast ไทยล้วน ·
+      เปิดหน้าที่โหลด initial data ไม่สำเร็จ → การ์ด error ไม่ใช่จอเปล่า ·
+      เปิดหน้าเช็คชื่อวันหยุด → ยังขึ้น "วันนี้เป็นวันหยุด จึงเช็กชื่อไม่ได้" (ใช้ `err.__code`)
 - [ ] **metadata ปลอมใน registry** — `CLIENT_MODULE_REGISTRY[].page` **ไม่มีโค้ดตัวไหนอ่านเลย**
       ตรวจแล้วฟิลด์เดียวที่ถูกอ่านคือ `.global` (3 จุด) ตัวที่ตัดสินว่าหน้าไหนใช้โมดูลไหน
       คือ `PAGE_MODULE_MAP` · หลักฐานว่าเป็น metadata ตายแล้ว: `profile` กับ `photoGrid`

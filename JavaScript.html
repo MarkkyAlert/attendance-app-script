@@ -1397,14 +1397,8 @@
           .withFailureHandler(function (err) {
             var rawMsg = String(err && err.message ? err.message : err || '');
             var parsedError = parseServerError_(rawMsg);
-            if (parsedError.code === 'AUTH_REQUIRED' || parsedError.code === 'AUTH_EXPIRED') {
-              clearTeacherAuth_();
-              state.currentUser = null;
-              hideAllPagePanels();
-              resetPageLoadingState();
-              loadTeacherLoginOptions_(function () {
-                renderTeacherLoginState(parsedError.message || 'กรุณาเข้าสู่ระบบก่อนใช้งาน');
-              });
+            if (isTeacherSessionExpiredCode_(parsedError.code)) {
+              handleTeacherSessionExpired_(parsedError);
               var authErr = new Error(parsedError.message || rawMsg || 'กรุณาเข้าสู่ระบบใหม่');
               authErr.__handled = true;
               reject(authErr);
@@ -1419,16 +1413,7 @@
               return;
             }
 
-            var message = String(parsedError.message || rawMsg || '').trim();
-            if (parsedError.code === 'SHEET_MISSING') {
-              message = 'ระบบยังตั้งค่าไม่สมบูรณ์ กรุณาตรวจสอบการเชื่อมต่อข้อมูลครั้งแรก';
-            } else if (message.indexOf('permission') >= 0 || message.indexOf('Permission') >= 0) {
-              message = 'ไม่สามารถเข้าถึงข้อมูลได้ กรุณาลองใหม่ หรือติดต่อผู้ดูแลระบบ';
-            } else if (message.indexOf('Timeout') >= 0 || message.indexOf('timeout') >= 0) {
-              message = 'โหลดนานเกินไป กรุณาลองใหม่อีกครั้ง';
-            } else if (message.indexOf('quota') >= 0 || message.indexOf('Quota') >= 0) {
-              message = 'ใช้งานเกินโควต้า กรุณารอสักครู่แล้วลองใหม่';
-            }
+            var message = humanizeServerError_(parsedError, rawMsg);
 
             // ★ พา code ไปกับ error ด้วย เพราะ message ถูกถอด CODE| และแปลงเป็น
             // ภาษาคนไปแล้ว ผู้รับปลายทางจึงแยกประเภทเองไม่ได้ถ้าไม่มี code
@@ -4835,12 +4820,69 @@
       text = text.replace(/^Server error:\s*/i, '');
       var pipeIndex = text.indexOf('|');
       if (pipeIndex > 0) {
-        return {
-          code: text.substring(0, pipeIndex),
-          message: text.substring(pipeIndex + 1)
-        };
+        var candidate = text.substring(0, pipeIndex);
+        // ★ ต้องตรวจรูปว่าเป็น code จริง ไม่ใช่เจอ `|` แล้วตัดหัวทันที
+        // ข้อความปกติที่มี `|` อยู่ตามธรรมชาติจะถูกตัดหัวหายโดยไม่ได้ตั้งใจ
+        // เกณฑ์เดียวกับ `splitErrorCode_` [Utils.js] ฝั่ง server
+        if (/^[A-Z][A-Z0-9_]*$/.test(candidate)) {
+          return { code: candidate, message: text.substring(pipeIndex + 1) };
+        }
       }
       return { code: '', message: text };
+    }
+
+    // ─── ตัวช่วยร่วมของ 3 ทางเรียก server ───────────────────────────
+    // ★ `serverCall` / `serverCallQuiet` / `fetchPageInitialData_` เคยก๊อปตรรกะ 3 ก้อนนี้
+    // ไว้คนละชุด เพิ่ม error แบบใหม่ต้องแก้ 3 ที่ **ลืมที่ใดที่หนึ่ง = ข้อความดิบหลุดไปหาครู
+    // เฉพาะบางเส้นทาง** ซึ่งหาสาเหตุยากเพราะอีกสองเส้นทางยังถูกอยู่
+    // ส่วนหางที่ต่างกันจริง (toast / reject promise / เงียบ) ยังอยู่ที่เดิมของแต่ละตัว
+
+    function isTeacherSessionExpiredCode_(code) {
+      return code === 'AUTH_REQUIRED' || code === 'AUTH_EXPIRED';
+    }
+
+    /** ล้าง session ฝั่ง client แล้วพากลับไปหน้าเข้าสู่ระบบ */
+    function handleTeacherSessionExpired_(parsedError) {
+      clearTeacherAuth_();
+      state.currentUser = null;
+      hideAllPagePanels();
+      resetPageLoadingState();
+      loadTeacherLoginOptions_(function () {
+        renderTeacherLoginState((parsedError && parsedError.message) || 'กรุณาเข้าสู่ระบบก่อนใช้งาน');
+      });
+    }
+
+    /**
+     * แปลง error ของ server ให้เป็นข้อความที่ครูอ่านรู้เรื่อง
+     * ★ 3 เงื่อนไขล่างยังค้นคำอังกฤษ **และถูกต้องแล้ว** เพราะเป็นข้อความของ
+     * Apps Script / Google เอง ไม่ใช่ของเรา จึงไม่มี `CODE|` ให้เทียบ
+     * อย่า "แก้" ให้ไปเทียบ code เหมือนข้ออื่น — ดู `DECISIONS.md` ข้อ 29
+     */
+    function humanizeServerError_(parsedError, rawMsg) {
+      var message = String((parsedError && parsedError.message) || rawMsg || '').trim();
+      if (parsedError && parsedError.code === 'SHEET_MISSING') {
+        return 'ระบบยังตั้งค่าไม่สมบูรณ์ กรุณาตรวจสอบการเชื่อมต่อข้อมูลครั้งแรก';
+      }
+      if (message.indexOf('permission') >= 0 || message.indexOf('Permission') >= 0) {
+        return 'ไม่สามารถเข้าถึงข้อมูลได้ กรุณาลองใหม่ หรือติดต่อผู้ดูแลระบบ';
+      }
+      if (message.indexOf('Timeout') >= 0 || message.indexOf('timeout') >= 0) {
+        return 'โหลดนานเกินไป กรุณาลองใหม่อีกครั้ง';
+      }
+      if (message.indexOf('quota') >= 0 || message.indexOf('Quota') >= 0) {
+        return 'ใช้งานเกินโควต้า กรุณารอสักครู่แล้วลองใหม่';
+      }
+      return message;
+    }
+
+    /** เรียก onFailure โดยไม่ให้ error ใน callback ของผู้เรียกลามออกมา */
+    function invokeFailureHandler_(onFailure, message, errorForHandler) {
+      if (typeof onFailure !== 'function') return;
+      try {
+        onFailure(message, errorForHandler);
+      } catch (callbackErr) {
+        console.error('Failure handler error:', callbackErr);
+      }
     }
 
     function serverCall(fnName, args, callback, onFailure) {
@@ -4857,17 +4899,9 @@
       }).withFailureHandler(function (err) {
         var rawMsg = String(err && err.message ? err.message : err || '');
         var parsedError = parseServerError_(rawMsg);
-        if (parsedError.code === 'AUTH_REQUIRED' || parsedError.code === 'AUTH_EXPIRED') {
-          clearTeacherAuth_();
-          state.currentUser = null;
-          hideAllPagePanels();
-          resetPageLoadingState();
-          loadTeacherLoginOptions_(function () {
-            renderTeacherLoginState(parsedError.message || 'กรุณาเข้าสู่ระบบก่อนใช้งาน');
-          });
-          if (typeof onFailure === 'function') {
-            try { onFailure(parsedError.message || rawMsg, err); } catch (callbackErr) { console.error('Failure handler error:', callbackErr); }
-          }
+        if (isTeacherSessionExpiredCode_(parsedError.code)) {
+          handleTeacherSessionExpired_(parsedError);
+          invokeFailureHandler_(onFailure, parsedError.message || rawMsg, err);
           return;
         }
         if (parsedError.code === 'CSRF_INVALID') {
@@ -4875,27 +4909,16 @@
           window.location.reload();
           return;
         }
+        var msg = humanizeServerError_(parsedError, rawMsg);
         // ★ พา code ไปกับ err ด้วย เพราะ onFailure ได้รับข้อความที่แปลงเป็นภาษาคนแล้ว
         // ผู้รับจึงแยกประเภทเองไม่ได้ถ้าไม่มี code (ดู loadAttendance)
-        err = { message: parsedError.message || rawMsg, __code: parsedError.code || '' };
-        var msg = String(err && err.message ? err.message : err || '');
-        if (parsedError.code === 'SHEET_MISSING') {
-          msg = 'ระบบยังตั้งค่าไม่สมบูรณ์ กรุณาตรวจสอบการเชื่อมต่อข้อมูลครั้งแรก';
-        } else if (msg.indexOf('permission') >= 0 || msg.indexOf('Permission') >= 0) {
-          msg = 'ไม่สามารถเข้าถึงข้อมูลได้ กรุณาลองใหม่ หรือติดต่อผู้ดูแลระบบ';
-        } else if (msg.indexOf('Timeout') >= 0 || msg.indexOf('timeout') >= 0) {
-          msg = 'โหลดนานเกินไป กรุณาลองใหม่อีกครั้ง';
-        } else if (msg.indexOf('quota') >= 0 || msg.indexOf('Quota') >= 0) {
-          msg = 'ใช้งานเกินโควต้า กรุณารอสักครู่แล้วลองใหม่';
-        }
+        err = { message: msg, __code: parsedError.code || '' };
 
         toast(msg, 'error');
         setLoading(false);
         var loadingEl = document.getElementById('page-loading');
         if (loadingEl) loadingEl.style.display = 'none';
-        if (typeof onFailure === 'function') {
-          try { onFailure(msg, err); } catch (callbackErr) { console.error('Failure handler error:', callbackErr); }
-        }
+        invokeFailureHandler_(onFailure, msg, err);
       });
       runner[fnName].apply(runner, callArgs);
     }
@@ -4908,44 +4931,24 @@
       var runner = google.script.run.withSuccessHandler(function (result) {
         try { callback(result); } catch (e) {
           console.error('Render error:', e);
-          if (typeof onFailure === 'function') {
-            try { onFailure(e && e.message ? e.message : 'เกิดข้อผิดพลาดในการแสดงผล', e); } catch (callbackErr) { console.error('Failure handler error:', callbackErr); }
-          }
+          invokeFailureHandler_(onFailure, e && e.message ? e.message : 'เกิดข้อผิดพลาดในการแสดงผล', e);
         }
       }).withFailureHandler(function (err) {
         var rawMsg = String(err && err.message ? err.message : err || '');
         var parsedError = parseServerError_(rawMsg);
-        if (parsedError.code === 'AUTH_REQUIRED' || parsedError.code === 'AUTH_EXPIRED') {
-          clearTeacherAuth_();
-          state.currentUser = null;
-          hideAllPagePanels();
-          resetPageLoadingState();
-          loadTeacherLoginOptions_(function () {
-            renderTeacherLoginState(parsedError.message || 'กรุณาเข้าสู่ระบบก่อนใช้งาน');
-          });
-          if (typeof onFailure === 'function') {
-            try { onFailure(parsedError.message || rawMsg, err); } catch (callbackErr) { console.error('Failure handler error:', callbackErr); }
-          }
+        if (isTeacherSessionExpiredCode_(parsedError.code)) {
+          handleTeacherSessionExpired_(parsedError);
+          invokeFailureHandler_(onFailure, parsedError.message || rawMsg, err);
           return;
         }
+        // ★ ต่างจาก serverCall ตรงนี้โดยเจตนา: ตัวเงียบไม่ toast ก่อนรีโหลด
         if (parsedError.code === 'CSRF_INVALID') {
           window.location.reload();
           return;
         }
-        var msg = String(parsedError.message || rawMsg || '').trim();
-        if (parsedError.code === 'SHEET_MISSING') {
-          msg = 'ระบบยังตั้งค่าไม่สมบูรณ์ กรุณาตรวจสอบการเชื่อมต่อข้อมูลครั้งแรก';
-        } else if (msg.indexOf('permission') >= 0 || msg.indexOf('Permission') >= 0) {
-          msg = 'ไม่สามารถเข้าถึงข้อมูลได้ กรุณาลองใหม่ หรือติดต่อผู้ดูแลระบบ';
-        } else if (msg.indexOf('Timeout') >= 0 || msg.indexOf('timeout') >= 0) {
-          msg = 'โหลดนานเกินไป กรุณาลองใหม่อีกครั้ง';
-        } else if (msg.indexOf('quota') >= 0 || msg.indexOf('Quota') >= 0) {
-          msg = 'ใช้งานเกินโควต้า กรุณารอสักครู่แล้วลองใหม่';
-        }
-        if (typeof onFailure === 'function') {
-          // พา code ไปด้วยเหมือน serverCall เพื่อให้ผู้รับแยกประเภทได้โดยไม่ต้องค้นคำไทย
-          try { onFailure(msg, { message: msg, __code: parsedError.code || '' }); } catch (callbackErr) { console.error('Failure handler error:', callbackErr); }
-        }
+        var msg = humanizeServerError_(parsedError, rawMsg);
+        // พา code ไปด้วยเหมือน serverCall เพื่อให้ผู้รับแยกประเภทได้โดยไม่ต้องค้นคำไทย
+        invokeFailureHandler_(onFailure, msg, { message: msg, __code: parsedError.code || '' });
       });
       runner[fnName].apply(runner, callArgs);
     }
