@@ -362,9 +362,11 @@ body {
   var todayStr = y + '-' + m + '-' + d;
   var monthStart = y + '-' + m + '-01';
 
+  // ★ null/undefined เท่านั้นที่ควรกลายเป็นค่าว่าง เลข 0 ต้องได้ "0"
   function esc(s) {
+    if (s === null || s === undefined) return '';
     var node = document.createElement('div');
-    node.textContent = String(s || '');
+    node.textContent = String(s);
     return node.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 

@@ -810,7 +810,13 @@
                 return '<div class="error-page"><div class="error-icon">' + renderParentIcon('lock') + '</div><div class="error-msg">' + esc(resolvedTitle) + '</div><div class="error-sub">' + esc(resolvedSub) + '</div><div class="error-next"><div class="error-next-title">สิ่งที่ควรทำต่อ</div><div class="error-next-text">' + esc(nextStep) + '</div></div></div>';
             }
 
-            function esc(s) { var d = document.createElement('div'); d.textContent = String(s || ''); return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+            // ★ null/undefined เท่านั้นที่ควรกลายเป็นค่าว่าง เลข 0 ต้องได้ "0"
+            function esc(s) {
+                if (s === null || s === undefined) return '';
+                var d = document.createElement('div');
+                d.textContent = String(s);
+                return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+            }
         })();
     </script>
 </body>

@@ -342,8 +342,24 @@ bucket ที่เป็น **ทั้งระบบ** (ไม่มีมิ
 | `StylePin.html` | PIN overlay |
 
 **"Phase3 / Phase4" คือชื่อตาม *เฟสการพัฒนา* ไม่ใช่ตามโดเมน** — comment หัวไฟล์บอกไว้ว่าคืออะไร
-ชื่อนี้ไม่บอกอะไรกับคนที่มาทีหลัง และชื่อ `phase3`/`phase4` ต้องตรงกันใน 4 ที่:
-`CLIENT_STYLE_REGISTRY`, `PAGE_STYLE_MAP` (ทั้งคู่ใน `JavaScript.html`), `styleMap` ใน `Code.js`, และชื่อไฟล์
+ชื่อนี้ไม่บอกอะไรกับคนที่มาทีหลัง แต่ตอนนี้ชื่อไปผูกอยู่ที่เดียวคือ `include_` ใน `Index.html`
+(เดิมต้องตรงกัน 4 ที่ เพราะมีเส้นทาง lazy ซ้อนอยู่ — ตัดทิ้งแล้ว ดูหัวข้อถัดไป)
+
+### ★ CSS ส่งทางเดียวคือ inline — ไม่มีเส้นทาง lazy แล้ว
+
+ทั้ง 5 ไฟล์ถูก `include_` ใน `Index.html` ตั้งแต่ `doGet` **จบแค่นั้น**
+
+เดิมมีเส้นทางที่สองซ้อนอยู่: `ensureClientStyleLoaded` ยิง `getClientStyleContent` มาแปะเป็น
+`<style id="client-style-X">` อีกชุด · `isClientStyleLoaded_` เช็คจาก `id` ซึ่ง**ตัวจาก `include_` ไม่มี**
+จึงมองไม่เห็นของเดิมแล้วโหลดซ้ำเสมอ ผลคือ
+- เสีย round-trip ต่อการเปลี่ยนหน้าโดยไม่ได้อะไรเพิ่ม (ขนาดหน้าแรกเท่าเดิมอยู่แล้ว)
+- มี CSS สองชุดซ้อนกันใน DOM
+- **ตัวจาก cache (เก่าได้ถึง 15 นาที) ถูก `appendChild` ทีหลังจึงชนะ cascade**
+  → แก้ CSS แล้วเห็นของใหม่แวบหนึ่งก่อนโดนของเก่าทับ ซึ่ง debug ยากมาก
+
+ตัดออกในรอบที่ 4 · `getClientStyleContent` และ `extractClientStyleContent_` ถูกลบทิ้ง
+(ฟังก์ชัน public ลดไป 1 ตัว) · **ถ้าจะกลับมาทำ lazy CSS ต้องเอา `include_` ออกจาก `Index.html`
+พร้อมกัน** ไม่งั้นกลับไปมีสองทางเหมือนเดิม
 
 `StyleReport` / `StylePhase3` / `StylePhase4` **ใช้ `var(--...)` แต่ไม่นิยามเอง** → พึ่ง `Stylesheet` ที่ต้องมาก่อนเสมอ
 ส่วน `ParentView.html` / `PrintReport.html` **ไม่ใช้ CSS variable เลย** hardcode hex ตรงๆ → เปลี่ยนธีมต้องไล่แก้ 3 ที่
@@ -458,12 +474,13 @@ percent     = round(attend_days / basis_days × 1000) / 10
 ### ⚠️ จุดที่ invalidate ไม่ถึง
 
 1. **โค้ด client ถูก cache 15 นาทีโดยไม่มีทางล้าง** — `getCachedClientAssetContent_` ใน `Code.js`
-   ใช้คีย์ดิบ `client_module_asset|<ชื่อ>` / `client_style_asset|<ชื่อ>` TTL 900 วิ **ไม่มีเวอร์ชันฝัง**
+   ใช้คีย์ดิบ `client_module_asset|<ชื่อ>` TTL 900 วิ **ไม่มีเวอร์ชันฝัง**
    และ `bumpDerivedDataCacheVersion_` แตะไม่ถึงเพราะไม่ได้ผ่าน `buildDerivedCacheKey_`
 
    → **หลัง `clasp push` + deploy ตัว `JsDashboard` / `JsReports` / `JsAnalytics` / `JsImport` /
-   `JsProfile` / `JsPhotoGrid` และ CSS ที่โหลด lazy ยังเสิร์ฟของเก่าได้ถึง 15 นาที**
-   `Index.html` / `JavaScript.html` / `Stylesheet` / `StylePin` **ไม่โดน** เพราะ inline ตอน `doGet`
+   `JsProfile` / `JsPhotoGrid` ยังเสิร์ฟของเก่าได้ถึง 15 นาที**
+   `Index.html` / `JavaScript.html` และ **CSS ทั้ง 5 ไฟล์ไม่โดน** เพราะ inline ตอน `doGet` ทางเดียว
+   (คีย์ `client_style_asset|<ชื่อ>` เลิกใช้แล้วตั้งแต่รอบที่ 4)
 
    ถ้าแก้โมดูลแล้วทดสอบไม่เห็นผล ให้สงสัยข้อนี้ก่อนสงสัยว่าแก้ผิด
 

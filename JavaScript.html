@@ -57,26 +57,13 @@
       profile: { global: 'ProfilePage' },
       photoGrid: { global: 'PhotoGrid' }
     };
-    var CLIENT_STYLE_REGISTRY = {
-      report: { pages: ['dashboard', 'reports', 'analytics'] },
-      phase3: { pages: ['settings', 'import'], uses: ['profile'] },
-      phase4: { pages: ['analytics'], uses: ['photoGrid'] }
-    };
     var PAGE_MODULE_MAP = {
       dashboard: 'dashboard',
       reports: 'reports',
       analytics: 'analytics',
       import: 'import'
     };
-    var PAGE_STYLE_MAP = {
-      dashboard: ['report'],
-      reports: ['report'],
-      analytics: ['report', 'phase4'],
-      import: ['phase3'],
-      settings: ['phase3']
-    };
     var clientModulePromises = {};
-    var clientStylePromises = {};
     var teacherAuth = null;
     var teacherLoginOptions = null;
     var teacherLoginDraft = '';
@@ -1291,64 +1278,20 @@
       return ' data-readiness-page="' + escAttr(String(page || 'settings')) + '" data-readiness-target="' + escAttr(String(target || '')) + '"';
     }
 
-    function isClientStyleLoaded_(name) {
-      return !!document.getElementById('client-style-' + String(name || ''));
-    }
-
-    function injectClientStyle_(name, cssText) {
-      var styleId = 'client-style-' + String(name || '');
-      if (document.getElementById(styleId)) return;
-      var styleEl = document.createElement('style');
-      styleEl.id = styleId;
-      styleEl.type = 'text/css';
-      styleEl.textContent = String(cssText || '');
-      document.head.appendChild(styleEl);
-    }
-
+    // ★★ CSS ทั้ง 5 ชุดถูก inline ตั้งแต่ doGet แล้ว (`Index.html` เรียก `include_` ครบทุกไฟล์)
+    // เดิมยังมีเส้นทาง lazy ซ้อนอีกทางที่ยิง getClientStyleContent มาแปะซ้ำ ผลคือ
+    //   - เสีย round-trip ต่อการเปลี่ยนหน้าโดยไม่ได้อะไรเพิ่ม
+    //   - มี CSS สองชุดซ้อนกันใน DOM
+    //   - ★ ตัวจาก cache (เก่าได้ถึง 15 นาที) ถูก appendChild ทีหลังจึงชนะ cascade
+    //     ทำให้แก้ CSS แล้วเห็นของใหม่แวบหนึ่งก่อนโดนของเก่าทับ
+    // ตัดเส้นทาง lazy ทิ้งทั้งหมด เหลือ inline ทางเดียว → **แก้ CSS แล้วเห็นผลทันที ไม่ติด cache**
+    // เก็บฟังก์ชันเป็นเปลือกที่ resolve ทันทีไว้ เพราะยังมีจุดเรียกอยู่หลายที่
     function ensureClientStyleLoaded(name) {
-      name = String(name || '').trim();
-      if (!CLIENT_STYLE_REGISTRY[name]) {
-        return Promise.reject(new Error('ไม่พบชุดสไตล์ที่ต้องใช้สำหรับหน้านี้'));
-      }
-      if (isClientStyleLoaded_(name)) {
-        return Promise.resolve(name);
-      }
-      if (clientStylePromises[name]) return clientStylePromises[name];
-
-      clientStylePromises[name] = new Promise(function (resolve, reject) {
-        serverCall('getClientStyleContent', [name], function (cssText) {
-          try {
-            if (!String(cssText || '').trim()) {
-              throw new Error('ยังโหลดสไตล์ของหน้าที่ต้องใช้ไม่สำเร็จ');
-            }
-            injectClientStyle_(name, cssText);
-            if (!isClientStyleLoaded_(name)) {
-              throw new Error('สไตล์ของหน้าถูกโหลดไม่ครบ');
-            }
-            resolve(name);
-          } catch (e) {
-            clientStylePromises[name] = null;
-            reject(e);
-          }
-        }, function (message) {
-          clientStylePromises[name] = null;
-          reject(new Error(message || 'ยังโหลดสไตล์ของหน้านี้ไม่สำเร็จ'));
-        });
-      });
-
-      return clientStylePromises[name];
-    }
-
-    function ensureNamedStylesLoaded_(names) {
-      names = Array.isArray(names) ? names.filter(Boolean) : [];
-      if (!names.length) return Promise.resolve([]);
-      return Promise.all(names.map(function (name) {
-        return ensureClientStyleLoaded(name);
-      }));
+      return Promise.resolve(String(name || ''));
     }
 
     function ensurePageStylesLoaded(page) {
-      return ensureNamedStylesLoaded_(PAGE_STYLE_MAP[String(page || '')] || []);
+      return Promise.resolve([]);
     }
 
     function isClientModuleLoaded_(name) {

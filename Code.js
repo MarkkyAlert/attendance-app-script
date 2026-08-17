@@ -37,12 +37,6 @@ function extractClientModuleScript_(filename) {
   return match ? String(match[1] || '').trim() : String(content || '').trim();
 }
 
-function extractClientStyleContent_(filename) {
-  var content = include_(filename);
-  var match = String(content || '').match(/<style[^>]*>([\s\S]*?)<\/style>/i);
-  return match ? String(match[1] || '').trim() : String(content || '').trim();
-}
-
 function getCachedClientAssetContent_(cacheKey, builder) {
   cacheKey = String(cacheKey || '').trim();
   if (!cacheKey) return String(builder() || '');
@@ -79,27 +73,13 @@ function getClientModuleContent(name, auth) {
   });
 }
 
-function getClientStyleContent(name, auth) {
-  return runAsTeacher_(auth, {
-    rate_limit_key: 'get_client_style_content',
-    rate_limit_limit: 120,
-    rate_limit_window_sec: 60
-  }, function() {
-    var styleMap = {
-      report: 'StyleReport',
-      phase3: 'StylePhase3',
-      phase4: 'StylePhase4',
-      pin: 'StylePin'
-    };
-    name = String(name || '').trim();
-    if (!styleMap[name]) {
-      throw new Error('ไม่พบชุดสไตล์ที่ร้องขอ');
-    }
-    return getCachedClientAssetContent_('client_style_asset|' + styleMap[name], function() {
-      return extractClientStyleContent_(styleMap[name]);
-    });
-  });
-}
+/**
+ * ★ ถอดออกแล้ว — CSS ทุกชุดถูก inline ตั้งแต่ `doGet` ผ่าน `include_` ใน `Index.html`
+ * เดิมมีเส้นทาง lazy ซ้อนอีกทางที่ทำให้ CSS ถูกส่งซ้ำและตัวจาก cache (เก่าได้ 15 นาที)
+ * ชนะ cascade · ตัดทิ้งแล้วแก้ CSS เห็นผลทันที และลดฟังก์ชัน public ไป 1 ตัว
+ * ถ้าจะกลับมาทำ lazy CSS อีก ต้องเอา `include_` ออกจาก `Index.html` พร้อมกัน
+ * ไม่งั้นจะกลับไปมีสองทางเหมือนเดิม
+ */
 
 function getScriptUrl_() {
   return ScriptApp.getService().getUrl();

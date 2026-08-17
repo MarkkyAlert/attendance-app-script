@@ -93,16 +93,16 @@
 - ฟังก์ชันเดียวรันได้ไม่เกิน 6 นาที ระวังงานที่สแกนทั้งชีต, restore backup, และ migration
 - ทดสอบในเครื่องไม่ได้ ต้อง `clasp push` แล้วไปกด Run บน Apps Script เสมอ
 - จังหวะทำงาน: แก้ → `clasp push` → deploy → ทดสอบบนของจริง → **ค่อย commit** (commit ก่อนทดสอบไม่มีความหมาย)
-- **โค้ดและ CSS ที่โหลดแบบ lazy ถูก cache 900 วินาที และล้างไม่ได้เลย** — `getCachedClientAssetContent_` [Code.js]
-  ใช้คีย์คงที่ (`client_module_asset|X` / `client_style_asset|X`) ไม่ผ่าน `buildDerivedCacheKey_`
-  `bumpDerivedDataCacheVersion_` จึงแตะไม่ถึง **อาการบนจอต่างกัน 2 แบบ ตอน debug ต้องแยกให้ออก**
-  - `Js*` 6 ตัว — มาทาง cache ทางเดียว → **เห็นของเก่านิ่งๆ 15 นาที ไม่มีการทับ**
-  - `StyleReport` / `StylePhase3` / `StylePhase4` — `include_` สดทุก `doGet` **และ** มาทาง cache อีกทาง
-    (`injectClientStyle_` หา `id` ไม่เจอเพราะตัวจาก `include_` ไม่มี `id` ตัวจาก cache จึง `appendChild`
-    ทีหลังแล้วชนะ cascade) → **เห็นของใหม่แวบหนึ่งแล้วโดนของเก่าทับ**
-  - `Index.html` / `JavaScript.html` / `Stylesheet` / `StylePin` — inline อย่างเดียว **สดเสมอ ไม่มีปัญหา**
-  → ใช้หน้าเช็คชื่อ / นักเรียนเป็นฐานทดสอบ (ไม่ผ่าน cache นี้ทั้ง JS และ CSS) หรือรอครบ 15 นาที
+- **`Js*` 6 ตัวถูก cache 900 วินาที และล้างไม่ได้เลย** — `getCachedClientAssetContent_` [Code.js]
+  ใช้คีย์คงที่ `client_module_asset|X` ไม่ผ่าน `buildDerivedCacheKey_` `bumpDerivedDataCacheVersion_` จึงแตะไม่ถึง
+  → แก้ `JsDashboard` / `JsReports` / `JsAnalytics` / `JsImport` / `JsProfile` / `JsPhotoGrid` แล้ว
+  **เห็นของเก่านิ่งๆ ได้ถึง 15 นาที** · ใช้หน้าเช็คชื่อ/นักเรียนเป็นฐานทดสอบ หรือรอให้ครบ
   **ห้ามสรุปว่า "แก้ผิด" จนกว่าจะตัดข้อนี้ออกไปก่อน**
+- **CSS ไม่ติด cache นี้แล้ว** — ทั้ง 5 ไฟล์ inline ตั้งแต่ `doGet` ทางเดียว **แก้แล้วเห็นผลทันที**
+  (เดิม `StyleReport`/`StylePhase3`/`StylePhase4` มาทั้งทาง `include_` และทาง cache
+  ตัวจาก cache ถูก `appendChild` ทีหลังจึงชนะ cascade = เห็นของใหม่แวบหนึ่งแล้วโดนของเก่าทับ
+  ตัดเส้นทาง lazy ทิ้งแล้วในรอบที่ 4 · ถ้าจะกลับมาทำ lazy CSS อีก **ต้องเอา `include_` ออกจาก
+  `Index.html` พร้อมกัน** ไม่งั้นจะกลับไปมีสองทางเหมือนเดิม)
 - ฟังก์ชัน global ที่ไม่มี `_` ต่อท้าย = เปิดให้เรียกจากอินเทอร์เน็ตทันที (web app เป็น anonymous)
   ฟังก์ชันภายในต้องเติม `_` ต่อท้ายเสมอ
   **แต่ editor ไม่แสดงฟังก์ชันที่ลงท้าย `_` ในช่องเลือกฟังก์ชัน จึงกด Run ไม่ได้** — ห้ามแก้ด้วยการถอด `_` ออก

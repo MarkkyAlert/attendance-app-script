@@ -53,11 +53,13 @@
         '</div>';
     }
 
+    // ★ ต้องเช็ค null/undefined ไม่ใช่ `if (!str)` — ไม่งั้นเลข 0 จะกลายเป็นสตริงว่าง
+    // และต้อง escape " กับ ' ด้วย เพราะทุกที่ในโปรเจกต์ยัดค่าลง attribute ด้วย string concat
     function esc(str) {
-      if (str === null || str === undefined) return '';
-      var div = document.createElement('div');
-      div.textContent = String(str);
-      return div.innerHTML;
+    if (str === null || str === undefined) return '';
+    var div = document.createElement('div');
+    div.textContent = String(str);
+    return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 
     function getPercentValue(value) {

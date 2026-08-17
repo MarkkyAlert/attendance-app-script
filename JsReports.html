@@ -28,9 +28,13 @@
       }, REPORT_SEARCH_DEBOUNCE_MS);
     }
 
+    // ★ ต้องเช็ค null/undefined ไม่ใช่ `if (!str)` — ไม่งั้นเลข 0 จะกลายเป็นสตริงว่าง
+    // และต้อง escape " กับ ' ด้วย เพราะทุกที่ในโปรเจกต์ยัดค่าลง attribute ด้วย string concat
     function esc(str) {
-      if (str === null || str === undefined) return '';
-      var div = document.createElement('div'); div.textContent = String(str); return div.innerHTML;
+    if (str === null || str === undefined) return '';
+    var div = document.createElement('div');
+    div.textContent = String(str);
+    return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 
     function renderReportsIcon(kind) {
@@ -194,7 +198,7 @@
 
       html += renderSummaryFilters(allRows, rows);
 
-      html += '<section class="reports-section">';
+      html += '<section class="reports-section" id="reports-summary-people">';
       html += '<div class="reports-section-head">';
       html += '<div><h2 class="reports-section-title">สรุปรายคน</h2><p class="reports-section-text">ค้นหาและกรองนักเรียนที่ต้องติดตาม ก่อนเปิดดูรายละเอียดในตารางเต็ม</p></div>';
       html += '</div>';
@@ -1085,11 +1089,20 @@
         }
       }
 
+      // ★ ก่อนถึงรายชื่อรายคนมีการ์ดเชิงบรรยายคั่นอยู่ 6 บล็อก (บนมือถือคือเลื่อน 40+ ครั้ง)
+      // ใส่ทางลัดไว้ในบล็อกแรกสุด ครูที่รู้อยู่แล้วว่าจะดูอะไรจะได้ไม่ต้องเลื่อนผ่านทั้งหมด
+      var jumpHtml = mode === 'summary'
+        ? '<div class="reports-spotlight-actions">' +
+            '<button class="btn btn-ghost btn-sm" type="button" onclick="ReportsPage.jumpToStudentList()">ข้ามไปรายชื่อรายคน</button>' +
+          '</div>'
+        : '';
+
       return '<section class="reports-spotlight reports-spotlight-' + esc(mode) + '">' +
         '<div class="reports-spotlight-kicker">สิ่งที่ควรดูเป็นอันดับแรก</div>' +
         '<div class="reports-spotlight-title">' + title + '</div>' +
         '<div class="reports-spotlight-text">' + text + '</div>' +
         '<div class="reports-spotlight-meta">' + meta + '</div>' +
+        jumpHtml +
         '</section>';
     }
 
@@ -1345,6 +1358,13 @@
       init();
       S.reportQuickFilter = filter || 'all';
       render(S);
+    }
+
+    function jumpToStudentList() {
+      var target = document.getElementById('reports-summary-people');
+      if (!target) target = document.getElementById('reports-summary-search');
+      if (!target) return;
+      if (target.scrollIntoView) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
     function openSummaryFilter(filter) {
@@ -1724,6 +1744,7 @@
       setSearch: setSearch,
       setQuickFilter: setQuickFilter,
       openSummaryFilter: openSummaryFilter,
+      jumpToStudentList: jumpToStudentList,
       clearFilters: clearFilters,
       setDailySearch: setDailySearch,
       copySummarySnippet: copySummarySnippet

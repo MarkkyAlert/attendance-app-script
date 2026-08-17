@@ -2527,6 +2527,13 @@ thead .rpt-sticky-col, thead .rpt-sticky-col2 {
   color: var(--stone-500);
 }
 
+.reports-spotlight-actions {
+  margin-top: .9rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+}
+
 .reports-search-box {
   position: relative;
   flex: 1 1 260px;
@@ -2828,6 +2835,11 @@ thead .rpt-sticky-col, thead .rpt-sticky-col2 {
   .reports-search-box {
     min-width: 0;
     width: 100%;
+    /* ★ ต้องล้าง flex ด้วย ไม่ใช่แค่ width
+       ตัวตั้งต้นคือ flex: 1 1 260px ซึ่งใน flex แนวตั้ง (toolbar เปลี่ยนเป็น column ที่ 900px)
+       เลข 260px กลายเป็น flex-basis ของ "ความสูง" กล่องจึงสูง 260px ทั้งที่ช่องค้นหาสูงแค่ ~3rem
+       ไอคอนแว่นขยายถูกวางแบบ absolute top:50% จึงไปลอยกลางที่ว่างนั้น */
+    flex: 0 0 auto;
   }
 
   .reports-kv-grid,
