@@ -145,6 +145,49 @@ function runP0Diagnostics_() {
       return result;
     }));
 
+    // 1ข. ชนิดของค่าในคอลัมน์วันที่ + จุดเดียวที่ยังใช้ createTextFinder กับวันที่
+    // ★ อ่านอย่างเดียว ไม่แก้ชีต · มีไว้เพราะไฟล์สำรองเขียนวันที่กลับเป็น "ข้อความ" เสมอ
+    //   ถ้ากู้คืนลงสำเนาใหม่แล้ว Sheets แปลงข้อความเป็น Date ให้เอง
+    //   `readSchoolCalendarEntryByDate_` จะหาไม่เจอแบบเงียบๆ ทั้งที่ปฏิทินมีวันนั้นอยู่
+    checks.push(runPreReleaseSmokeCheck_('calendar:date_lookup_vs_scan', function() {
+      var result = { date_cell_types: describeDateCellTypes_() };
+
+      var sheet = getSchoolCalendarSheetForRead_();
+      assertPreReleaseSmoke_(!!sheet, 'ไม่พบชีต ' + SCHOOL_CALENDAR_SHEET);
+      var lastRow = sheet.getLastRow();
+      assertPreReleaseSmoke_(lastRow > 1, 'ชีตปฏิทินวันเรียนยังว่าง ไม่มีวันที่ให้ทดสอบ');
+
+      // สแกนทั้งคอลัมน์ด้วย formatDate_ ซึ่งรับทั้ง Date และข้อความ = ความจริงที่ใช้เทียบ
+      var values = sheet.getRange(2, SCHOOL_CALENDAR_COL.DATE, lastRow - 1, 1).getValues();
+      var scanned = {};
+      var scannedCount = 0;
+      for (var i = 0; i < values.length; i++) {
+        var date = formatDate_(values[i][0]);
+        if (!date || scanned[date]) continue;
+        scanned[date] = true;
+        scannedCount++;
+      }
+      result.dates_via_scan = scannedCount;
+
+      var probeDate = '';
+      Object.keys(scanned).sort().forEach(function(date) {
+        if (!probeDate) probeDate = date;
+      });
+      result.probe_date = probeDate || '(ไม่พบวันที่ที่อ่านได้เลย)';
+      assertPreReleaseSmoke_(!!probeDate, 'สแกนคอลัมน์วันที่แล้วไม่ได้วันที่ที่ใช้ได้เลย');
+
+      var entry = readSchoolCalendarEntryByDate_(probeDate);
+      result.lookup_found = !!entry;
+      result.lookup_type = entry ? String(entry.type || '') : '';
+      assertPreReleaseSmoke_(
+        !!entry,
+        'readSchoolCalendarEntryByDate_ หา ' + probeDate + ' ไม่เจอ ทั้งที่สแกนตรงๆ เจอ ' +
+        scannedCount + ' วัน — createTextFinder [CalendarService.js] เทียบกับ "ข้อความที่แสดง" ' +
+        'ถ้าเซลล์เป็น Date object จะหาไม่เจอแบบเงียบๆ'
+      );
+      return result;
+    }));
+
     // 2. หัวใจของงานชุดนี้: ลบแถวไม่ติดกัน บนชีตทดสอบที่แยกออกมาต่างหาก
     checks.push(runPreReleaseSmokeCheck_('delete_rows:non_contiguous', function() {
       var ss = getSpreadsheet_();
@@ -477,4 +520,46 @@ function summarizeP0Csv_(exportData, options) {
     result.last_line = lines[lines.length - 1];
   }
   return result;
+}
+
+
+/**
+ * รายงานชนิดของค่าในคอลัมน์วันที่ของทุกชีตที่มีวันที่ (อ่านอย่างเดียว)
+ * ★ ชีตหลักเก็บเป็นข้อความ ชีต archive เก็บเป็น Date object — ต่างกันจริง ทดสอบแล้ว
+ *   ตัวเลือกอ่านที่ปลอดภัยคือ formatDate_ ซึ่งรับทั้งสองแบบ ไม่ใช่ createTextFinder
+ */
+function describeDateCellTypes_() {
+  var targets = [
+    { sheet: SHEET.ATTENDANCE, column: COL.ATTENDANCE.DATE },
+    { sheet: SHEET.ATTENDANCE_DAYS, column: 1 },
+    { sheet: SCHOOL_CALENDAR_SHEET, column: SCHOOL_CALENDAR_COL.DATE },
+    { sheet: SEMESTER_SHEET, column: SEMESTER_COL.START }
+  ];
+
+  var ss = getSpreadsheet_();
+  ss.getSheets().forEach(function(sheet) {
+    var name = String(sheet.getName() || '');
+    if (name.indexOf(ATTENDANCE_ARCHIVE_SHEET_PREFIX) === 0) {
+      targets.push({ sheet: name, column: COL.ATTENDANCE.DATE });
+    } else if (name.indexOf(ATTENDANCE_DAY_ARCHIVE_SHEET_PREFIX) === 0) {
+      targets.push({ sheet: name, column: 1 });
+    }
+  });
+
+  return targets.map(function(target) {
+    var out = { sheet: target.sheet, rows: 0, type: '(ไม่มีชีต)', raw: '', via_format_date: '' };
+    var sheet = getSheetByNameOrNull_(target.sheet);
+    if (!sheet) return out;
+    var lastRow = sheet.getLastRow();
+    out.rows = Math.max(0, lastRow - 1);
+    if (lastRow <= 1) {
+      out.type = '(ไม่มีข้อมูล)';
+      return out;
+    }
+    var value = sheet.getRange(2, target.column).getValue();
+    out.type = Object.prototype.toString.call(value) === '[object Date]' ? 'Date' : (typeof value);
+    out.raw = String(value);
+    out.via_format_date = formatDate_(value);
+    return out;
+  });
 }
