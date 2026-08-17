@@ -991,10 +991,18 @@
       ) + '</div>';
     }
 
-    function getTeacherFacingErrorCopy_(message, context) {
+    /**
+     * ★ รับ `explicitCode` เพราะผู้เรียกบางรายได้ข้อความที่**ถอด `CODE|` ออกไปแล้ว**
+     * (`serverCall` ส่ง `parsedError.message` ให้ `onFailure` · `att.blocked_message`
+     * ก็เป็นข้อความที่ถอดแล้ว) ถ้าไม่ส่ง code เข้ามา ตัวนี้จะแยกประเภทไม่ออก
+     * แล้วตกไปใช้ข้อความกลางๆ ซึ่ง**แย่กว่าของเดิมที่ค้นคำไทย**
+     * เจอจากการทดสอบจริง: วันหยุดขึ้นหัวข้อ "เปิดหน้าเช็กชื่อไม่สำเร็จ"
+     * แทนที่จะเป็น "วันนี้เป็นวันหยุด จึงเช็กชื่อไม่ได้"
+     */
+    function getTeacherFacingErrorCopy_(message, context, explicitCode) {
       var raw = String(message || '').trim();
       var parsed = parseServerError_(raw);
-      var code = String(parsed.code || '');
+      var code = String(explicitCode || parsed.code || '');
       var normalized = String(parsed.message || raw || '').trim();
       var fallbackAction = 'ลองโหลดหน้าใหม่อีกครั้ง หากยังไม่ได้ให้กลับไปเริ่มจากหน้าก่อนหน้า';
 
@@ -1422,7 +1430,11 @@
               message = 'ใช้งานเกินโควต้า กรุณารอสักครู่แล้วลองใหม่';
             }
 
-            reject(new Error(message || 'โหลดข้อมูลไม่สำเร็จ'));
+            // ★ พา code ไปกับ error ด้วย เพราะ message ถูกถอด CODE| และแปลงเป็น
+            // ภาษาคนไปแล้ว ผู้รับปลายทางจึงแยกประเภทเองไม่ได้ถ้าไม่มี code
+            var initialDataError = new Error(message || 'โหลดข้อมูลไม่สำเร็จ');
+            initialDataError.__code = parsedError.code || '';
+            reject(initialDataError);
           });
 
         runner.getInitialData(page, params || {}, getTeacherAuth() || {});
@@ -1644,7 +1656,7 @@
           return;
         }
 
-        renderPagePanelError(page, getTeacherFacingErrorCopy_(err && err.message, page === 'settings' ? 'settings' : ''), {
+        renderPagePanelError(page, getTeacherFacingErrorCopy_(err && err.message, page === 'settings' ? 'settings' : '', err && err.__code), {
           kicker: page === 'settings' ? 'ตั้งค่าห้องเรียน' : 'กำลังโหลดข้อมูล'
         });
       });
@@ -1766,7 +1778,8 @@
       }
 
       if (att.is_holiday_blocked) {
-        var holidayCopy = getTeacherFacingErrorCopy_(att.blocked_message || '', 'attendance-load');
+        // อยู่ในสาขา is_holiday_blocked แล้ว จึงรู้ code แน่นอน ส่งเข้าไปตรงๆ
+        var holidayCopy = getTeacherFacingErrorCopy_(att.blocked_message || '', 'attendance-load', 'DATE_IS_HOLIDAY');
         document.getElementById('page-attendance').innerHTML = buildPageStateHtml(
           renderUiIcon('calendar'),
           holidayCopy.title,
@@ -4930,7 +4943,8 @@
           msg = 'ใช้งานเกินโควต้า กรุณารอสักครู่แล้วลองใหม่';
         }
         if (typeof onFailure === 'function') {
-          try { onFailure(msg, { message: msg }); } catch (callbackErr) { console.error('Failure handler error:', callbackErr); }
+          // พา code ไปด้วยเหมือน serverCall เพื่อให้ผู้รับแยกประเภทได้โดยไม่ต้องค้นคำไทย
+          try { onFailure(msg, { message: msg, __code: parsedError.code || '' }); } catch (callbackErr) { console.error('Failure handler error:', callbackErr); }
         }
       });
       runner[fnName].apply(runner, callArgs);
