@@ -1007,19 +1007,23 @@ function appendAttendanceRecordsByDateFromSheet_(records, sheet, date) {
   if (!sheet) return;
   var lastRow = sheet.getLastRow();
   if (lastRow <= 1) return;
+  date = String(date || '').slice(0, 10);
+  if (!date) return;
 
-  var matchedRanges = sheet.getRange(2, COL.ATTENDANCE.DATE, lastRow - 1, 1)
-    .createTextFinder(String(date || ''))
-    .matchEntireCell(true)
-    .findAll();
-  if (!matchedRanges.length) return;
-
+  // ★★ ห้ามใช้ createTextFinder กับคอลัมน์วันที่ของชีต archive
+  // ชีตหลักเก็บวันที่เป็น "ข้อความ" (2026-05-18) แต่ชีต archive เก็บเป็น Date object
+  // เพราะตอน archive อ่านด้วย getValues() แล้วเขียนกลับด้วย setValues() — Sheets
+  // แปลงเป็นวันที่จริงและแสดงผลเป็น 18/5/2026
+  // TextFinder จับจาก "ข้อความที่แสดง" จึงหาไม่เจอสักแถวในชีต archive แบบเงียบๆ
+  // (getAllAttendanceRecords_ ไม่เจอปัญหานี้เพราะอ่าน getValues() แล้วผ่าน formatDate_)
+  // → อ่านคอลัมน์วันที่มาเทียบเอง ใช้ได้ทั้งกรณีข้อความและ Date object
   var sheetName = sheet.getName();
-  var rowIndexes = matchedRanges.map(function(range) {
-    return range.getRow();
-  }).sort(function(a, b) {
-    return a - b;
-  });
+  var dateValues = sheet.getRange(2, COL.ATTENDANCE.DATE, lastRow - 1, 1).getValues();
+  var rowIndexes = [];
+  for (var scan = 0; scan < dateValues.length; scan++) {
+    if (formatDate_(dateValues[scan][0]) === date) rowIndexes.push(scan + 2);
+  }
+  if (!rowIndexes.length) return;
 
   function appendRowBlock_(fromRow, toRow) {
     var values = sheet.getRange(fromRow, 1, toRow - fromRow + 1, COL.ATTENDANCE.STUDENT_ID).getValues();

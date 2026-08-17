@@ -517,6 +517,29 @@ copy ไปชีตซ่อน `_att_archive_<id>` / `_att_day_archive_<id>` *
 
 `deleteSemester` **ปฏิเสธถ้ายังมีข้อมูล** (นับ archive ด้วย) → ลบภาคเรียนที่มีข้อมูลไม่ได้เลย
 
+### ★★ ชีต archive เก็บวันที่เป็น Date object ไม่ใช่ข้อความ — `createTextFinder` จึงหาไม่เจอ
+
+ชีตหลัก `เช็คชื่อ` เก็บวันที่เป็น**ข้อความ** `2026-05-18` เพราะโค้ดเขียนด้วยสตริงตรงๆ
+แต่ตอน archive โค้ดอ่านด้วย `getValues()` แล้วเขียนกลับด้วย `setValues()` —
+**Sheets แปลงเป็นวันที่จริง** และแสดงผลเป็น `18/5/2026`
+
+ผลคือ **ชีตสองใบมีชนิดข้อมูลในคอลัมน์เดียวกันไม่เหมือนกัน** และ
+
+- `createTextFinder('2026-05-18').matchEntireCell(true)` จับจาก**ข้อความที่แสดง**
+  → ในชีต archive **หาไม่เจอสักแถว และไม่ throw** คืน 0 แถวเงียบๆ
+- `getValues()` + `formatDate_()` → ถูกต้องทั้งสองชีต เพราะ `formatDate_` รับได้ทั้ง Date และสตริง
+
+**เจอจริง** 17 ส.ค. 2569: หน้าเช็คชื่อเปิดวันเก่าของภาคเรียนที่ archive แล้ว ขึ้นหัวข้อ
+"ยืนยันแล้ว" (สถานะวันอ่านผ่าน `getValues()`) แต่ทุกคนเป็น "ยังไม่เช็ค" (เรคอร์ดอ่านผ่าน TextFinder)
+ตรวจด้วย `runP0Diagnostics` ได้ `readAttendanceRecordsByDate_` คืน **0** แถว
+ขณะที่ `getCachedAttendanceDateBuckets_` เห็น **39** แถวในวันเดียวกัน
+
+**กฎ**: อ่านคอลัมน์วันที่จากชีตไหนก็ตามที่อาจเป็นชีต archive **ห้ามใช้ `createTextFinder`**
+ให้ `getValues()` แล้วเทียบผ่าน `formatDate_` เสมอ
+⚠️ `readSchoolCalendarEntryByDate_` [CalendarService.js] ยังใช้ `createTextFinder` อยู่ —
+ปฏิทินไม่ถูก archive จึงยังไม่เคยพัง แต่เป็นบั๊กชนิดเดียวกันที่รออยู่
+(มีตาข่ายรองอยู่บ้าง เพราะเทียบ `entry.date !== date` ซ้ำอีกชั้น จึงผิดได้เฉพาะแบบ "หาไม่เจอ")
+
 ### ตัดชีตประวัติแก้ไข
 
 `CHANGE_LOG_MAX_ROWS = 5000` + `CHANGE_LOG_TRIM_SLACK_ROWS = 500` — **hysteresis**:
