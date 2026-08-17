@@ -373,14 +373,23 @@
 
       **ทางแก้ที่ตรงจุด**: ให้ `getCachedRawAttendanceRecordsByDate_` เสิร์ฟจาก
       `getCachedAttendanceDateBuckets_` เมื่อถังถูกสร้างแล้ว แทนการสแกนชีตใหม่
-      ⚠️ **ติดของจริง 1 ข้อ** — เรคอร์ดในถังมาจาก `getAllAttendanceRecords_` ซึ่ง
-      **ไม่มี `sheet_name` / `row_index`** สองฟิลด์นี้มีเฉพาะใน `readAttendanceRecordsByDate_`
-      และเส้นทาง**เขียน**ต้องใช้ (`markStatus` [AttendanceService.js:271] กรองด้วย
-      `filterMainAttendanceRecords_` แล้วเอา `row_index` ไปเขียนทับ)
-      → เลือกได้ 2 ทาง (ก) เติม `sheet_name`/`row_index` ให้เรคอร์ดในถัง
-      (ข) แยกสองเส้นทาง — ถังสำหรับอ่านเพื่อแสดง สแกนสดสำหรับเส้นทางเขียน
-      **ต้องตกลงก่อนลงมือ** เพราะแตะ `getUniqueLatestRecords_` / `row_index` ซึ่ง `CLAUDE.md`
-      ระบุเป็นจุดห้ามแตะโดยไม่ถาม
+
+      **★ แก้ข้อความที่ผมเขียนไว้เองรอบก่อน — "ตัวขวาง" ที่บันทึกไว้ไม่มีจริง**
+      รอบก่อนเขียนว่าเรคอร์ดในถัง **ไม่มี `sheet_name` / `row_index`**
+      **ไม่จริง** — `readAllAttendanceRecords_` [ReportService.js:556-561] ใส่ทั้งสองฟิลด์
+      พร้อม comment กำกับไว้แล้วว่าทำไม (ผม grep แค่ `AttendanceService.js`
+      ไม่ได้ดู `ReportService.js` จึงสรุปผิด)
+      ตรวจเพิ่มแล้วด้วยว่า **ลำดับการอ่านตรงกัน** — ทั้งสองเส้นทางใช้
+      `getAttendanceReadSheets_` (archive ก่อน ชีตหลักทีหลัง) กติกาแถวหลังชนะจึงไม่เปลี่ยน
+      และ `row_index` จาก cache ปลอดภัยเท่ากับของเดิม เพราะ `getOrBuildLargeCachedJson_`
+      ทำคีย์ผ่าน `buildDerivedCacheKey_` และ `invalidateAttendanceCaches_` เรียก
+      `bumpDerivedDataCacheVersion_` ซึ่งล้าง **ทุก** derived cache พร้อมกัน
+
+      **สิ่งที่ต้องตรวจตอนลงมือจริง** (ต่างกันจริงแต่ไม่น่าเป็นปัญหา)
+      - `readAllAttendanceRecords_` **ไม่ใส่ `student_key`** ส่วนเส้นทางรายวันใส่
+        → ตรวจว่า `doesAttendanceRecordMatchStudent_` และ `getCachedAttendanceDailySnapshot_`
+        ไม่ได้พึ่งฟิลด์นี้จริง (อ่านแล้วดูเหมือนมี fallback ครบ แต่ต้องยืนยัน)
+      - `student_number` ใช้ `parseInt` เปล่าๆ ไม่มี `|| 0` → ได้ `NaN` แทน `0` ถ้าเซลล์ว่าง
       ✅ **ตรวจแล้วว่า `row_index` ที่มาจาก cache ไม่ใช่บั๊ก** — `getOrBuildCachedJson_`
       ทำคีย์ผ่าน `buildDerivedCacheKey_` และ `markStatus` เรียก `invalidateAttendanceCaches_(date)`
       หลังเขียนทุกครั้ง จึงไม่มีทางได้ `row_index` ค้างจากก่อนการลบแถว
