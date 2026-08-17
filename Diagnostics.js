@@ -188,6 +188,53 @@ function runP0Diagnostics_() {
       return result;
     }));
 
+    // 1ค. ตอบข้อค้างใน TODO: ทำไมเช็คชื่อ "วันเดียว" ช้ากว่ารายงานรายวัน "3 เดือน"
+    // ★ อ่านอย่างเดียว · โค้ดมี instrument รายขั้นตอนอยู่แล้ว แค่ไม่มีใครเอามาดู
+    //   วัดในการรันเดียวกันจึงเทียบกันได้จริง ต่างจากการจับเวลาบนเบราว์เซอร์
+    //   ซึ่งรวม round-trip กับการวาดหน้าจอเข้าไปด้วย
+    checks.push(runPreReleaseSmokeCheck_('perf:attendance_vs_report', function() {
+      var semester = getActiveSemesterRow_();
+      assertPreReleaseSmoke_(!!semester, 'ยังไม่มีภาคเรียนที่ใช้งานอยู่');
+      var sourceInfo = getAttendanceSourceInfoForSemester_(semester);
+
+      // วันที่มีข้อมูลเช็คชื่อ = อยู่ในภาคเรียนและเป็นวันเรียนแน่นอน จึงไม่ทำให้ guard โยน error
+      var probeDate = '';
+      var buckets = getCachedAttendanceDateBuckets_(sourceInfo) || {};
+      Object.keys(buckets).sort().forEach(function(date) {
+        if (!probeDate && buckets[date] && buckets[date].length) probeDate = date;
+      });
+      assertPreReleaseSmoke_(!!probeDate, 'ไม่พบวันที่มีข้อมูลเช็คชื่อให้วัด');
+
+      var result = { probe_date: probeDate, semester: String(semester.name || '') };
+
+      // รันสองครั้ง ครั้งแรกอาจ cache ยังไม่อุ่น ครั้งที่สองอุ่นแน่
+      for (var pass = 1; pass <= 2; pass++) {
+        var startedAt = new Date().getTime();
+        var payload = buildAttendanceDailyPayload_(probeDate, {
+          source_info: sourceInfo,
+          active_semester: semester,
+          capture_timing_detail: true
+        });
+        result['attendance_pass' + pass + '_ms'] = new Date().getTime() - startedAt;
+        result['attendance_pass' + pass + '_steps'] = String(payload && payload.__timing_detail || '(ไม่มี)');
+        result['attendance_pass' + pass + '_students'] = payload && payload.students ? payload.students.length : 0;
+      }
+
+      // เทียบกับรายงานรายวันทั้งภาคเรียน สร้างสดไม่ผ่าน cache เพื่อไม่ให้ได้เวลาปลอม
+      var range = clampRangeToActiveSemester_(normalizeDateRange_(semester.start_date, semester.end_date));
+      if (isEffectiveRangeEmpty_(range)) {
+        result.report_note = 'ช่วงภาคเรียนว่าง ข้ามการเทียบ';
+      } else {
+        var reportStartedAt = new Date().getTime();
+        var grid = buildDailyGridData_(range);
+        result.report_uncached_ms = new Date().getTime() - reportStartedAt;
+        result.report_range = String(range.from || '') + ' - ' + String(range.to || '');
+        result.report_days = grid && grid.dates ? grid.dates.length : 0;
+        result.report_students = grid && grid.students ? grid.students.length : 0;
+      }
+      return result;
+    }));
+
     // 2. หัวใจของงานชุดนี้: ลบแถวไม่ติดกัน บนชีตทดสอบที่แยกออกมาต่างหาก
     checks.push(runPreReleaseSmokeCheck_('delete_rows:non_contiguous', function() {
       var ss = getSpreadsheet_();

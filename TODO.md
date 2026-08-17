@@ -267,7 +267,14 @@
 
 ### 🟡 ขัดใจ
 
-- [ ] **`readSchoolCalendarEntryByDate_` ใช้ `createTextFinder` กับคอลัมน์วันที่** [CalendarService.js:303]
+- [ ] **`readSchoolCalendarEntryByDate_` ใช้ `createTextFinder` กับคอลัมน์วันที่** [CalendarService.js:296]
+      ★ **มี check ให้พิสูจน์แล้ว** `calendar:date_lookup_vs_scan` ใน `Diagnostics.js`
+      สแกนคอลัมน์วันที่ด้วย `formatDate_` (รับทั้ง Date และข้อความ) แล้วเอาวันที่เจอไปถาม
+      ฟังก์ชันนี้ ถ้าหาไม่เจอคือพังอยู่แล้ว · พร้อมรายงานชนิดของค่าในคอลัมน์วันที่ทุกชีต
+      **เพิ่มความเร่งด่วน**: ไฟล์สำรองเขียนวันที่กลับเป็นข้อความเสมอ (`exportSheetSnapshotFromSheet_`
+      แปลงทุกเซลล์ผ่าน `formatDate_`) กู้คืนทับที่เดิมไม่มีปัญหาเพราะ `clearContents` เก็บ
+      number format ไว้ แต่**กู้คืนลงสำเนาใหม่** ซึ่งเป็นสถานการณ์จริงของการส่งโค้ดใหม่
+      `restoreBackupSheet_` จะ `insertSheet` ใหม่หมด → Sheets อาจแปลงข้อความเป็น Date เอง
       เป็นบั๊กชนิดเดียวกับที่เพิ่งแก้ใน `AttendanceService` — ถ้าเซลล์วันที่เป็น Date object
       TextFinder จะหาไม่เจอเงียบๆ · ปฏิทินไม่ถูก archive จึงยังไม่เคยพัง
       แต่เกิดได้ถ้าครูแก้ชีตด้วยมือหรือกู้คืนจากไฟล์สำรอง
@@ -334,6 +341,13 @@
 
 - [ ] **ตรวจว่าความช้าเป็นของ Apps Script เองหรือมีอะไรทำให้ช้าเกินจำเป็น** — รายงานรายวัน 3 เดือน
       ทำได้ใน 5 วินาที แต่การเช็คชื่อวันเดียวใช้ 8–14 วินาที ซึ่งดูไม่สมเหตุผลเมื่อเทียบกัน
+      ★ **โค้ดมี instrument รายขั้นตอนอยู่แล้ว ไม่ต้องเดา** — `buildAttendanceDailyPayload_`
+      จับเวลาแยก `preflight_migration_ms` / `preflight_validate_ms` / `students_ms` /
+      `records_snapshot_ms` / `records_day_status_ms` / `rows_ms` / `alerts_ms`
+      แล้วส่งออกทาง `__timing_detail` ลง `_timing_log` **แต่ไม่มีใครเคยเอามาดู**
+      → เพิ่ม check `perf:attendance_vs_report` ใน `Diagnostics.js` ที่วัดทั้งสองเส้นทาง
+      **ในการรันเดียวกัน** จึงเทียบกันได้จริง ต่างจากการจับเวลาบนเบราว์เซอร์ซึ่งรวม
+      round-trip กับการวาดหน้าจอเข้าไปด้วย · รอผลจากการกด Run
 
 ### 💡 ~~สิ่งที่ครูอยากรู้แต่ระบบไม่บอก~~ — ตรวจแล้วมีอยู่แล้วทั้ง 2 ข้อ ผมเขียนผิดเอง
 
@@ -445,9 +459,12 @@
       ระบบมี protocol `CODE|message` (`parseServerError_`) อยู่แล้ว แต่จุดพวกนี้ไม่ได้ใช้
 - [ ] **error handling ของ RPC ถูกก๊อปหลายชุด** — `serverCall` · `serverCallQuiet` · `fetchPageInitialData_` ·
       `handlePrintFailure` (ตัวหลังรู้จัก `PRINT_AUTH_*` ที่ตัวอื่นไม่รู้จัก) เพิ่ม error code ใหม่ต้องแก้ทุกที่
-- [ ] **metadata ปลอมใน registry** — `CLIENT_MODULE_REGISTRY[].page` และ `CLIENT_STYLE_REGISTRY[].pages/.uses`
-      **ไม่มีโค้ดตัวไหนอ่านเลย** ตัวที่มีผลจริงคือ `PAGE_MODULE_MAP` / `PAGE_STYLE_MAP` และ `.global`
-      เป็นเอกสารที่ปลอมตัวเป็นโค้ด แก้แล้วไม่มีผล ควรลบหรือทำให้มีผลจริง
+- [ ] **metadata ปลอมใน registry** — `CLIENT_MODULE_REGISTRY[].page` **ไม่มีโค้ดตัวไหนอ่านเลย**
+      ตรวจแล้วฟิลด์เดียวที่ถูกอ่านคือ `.global` (3 จุด) ตัวที่ตัดสินว่าหน้าไหนใช้โมดูลไหน
+      คือ `PAGE_MODULE_MAP` · หลักฐานว่าเป็น metadata ตายแล้ว: `profile` กับ `photoGrid`
+      **ไม่มี `page` เลย** แต่ทำงานได้ปกติ → ควรลบ `page` ออกทั้ง 4 ตัว
+      (เดิมข้อนี้พูดถึง `CLIENT_STYLE_REGISTRY[].pages/.uses` กับ `PAGE_STYLE_MAP` ด้วย
+      **ทั้งสามหายไปแล้วตอนตัดเส้นทาง lazy CSS ในรอบ 4** จึงเหลือแค่ `.page`)
 - [ ] **Chart.js โหลดจาก CDN ภายนอก** (`JsDashboard.html`) — external dependency ตัวเดียวของโปรเจกต์
       ถ้าเครือข่ายโรงเรียนบล็อก กราฟหายทั้งหมด (มี fallback อยู่)
 - [ ] **`SCRIPT_URL` เป็น global จาก `Index.html`** ที่ `JsReports.html` ใช้ตรงๆ ไม่ผ่าน `AppShared`
