@@ -2,7 +2,39 @@
  * Teacher-only advanced analytics.
  */
 
-var RISK_WEIGHTS = { absent: 4, late: 2, leave: 1, recent_absent: 3 };
+// ★ ไม่มี leave แล้ว — "ลา" คือการขาดที่ผู้ปกครองแจ้งและครูอนุมัติแล้ว ไม่ใช่ความเสี่ยง
+// และ basis_days ก็หัก ลา ออกจากตัวหารอยู่แล้ว การนับซ้ำเป็นความเสี่ยงจึงขัดกันเอง
+var RISK_WEIGHTS = { absent: 4, late: 2, recent_absent: 3 };
+
+// เพดานรายการที่ส่งให้หน้าจอ — ต้องส่ง *_total คู่กันเสมอ ไม่งั้นหน้าจอจะเอา
+// ความยาวรายการที่ถูกตัดแล้วไปแสดงเป็น "จำนวนคน" ซึ่งไม่ใช่ข้อเท็จจริง
+var RISK_LIST_LIMIT = 15;
+var TREND_LIST_LIMIT = 5;
+var PATTERN_LIST_LIMIT = 10;
+
+/**
+ * แปลงคะแนนดิบเป็น % แบบ "เทียบกับเพดานของตัวเอง" ไม่ใช่เทียบกับคนแย่ที่สุดในห้อง
+ * 100% = ขาดทุกวันเรียนที่มีข้อมูล
+ * ★ ของเดิมหารด้วย maxRawScore ของห้อง ทำให้อันดับ 1 ได้ 100% และป้าย "เสี่ยงสูง" เสมอ
+ *   ต่อให้ทั้งห้องขาดกันคนละวันเดียว และเทียบข้ามเดือนไม่ได้เลย
+ */
+function calculateRiskPercent_(rawScore, schoolDays) {
+  var days = parseInt(schoolDays, 10) || 0;
+  if (days <= 0) return 0;
+  var ceiling = days * RISK_WEIGHTS.absent;
+  if (ceiling <= 0) return 0;
+  return Math.min(100, Math.round((rawScore / ceiling) * 1000) / 10);
+}
+
+/**
+ * เกณฑ์ระดับผูกกับเส้น 80% ของ ปพ.6 ที่ทั้งระบบใช้อยู่แล้ว
+ * ขาดเกิน 20% ของวันเรียน = มาเรียนต่ำกว่า 80% → คะแนนเสี่ยง 20% พอดี
+ */
+function resolveRiskLevel_(scorePct) {
+  if (scorePct >= 20) return { level: 'สูง', color: 'red' };
+  if (scorePct >= 10) return { level: 'ปานกลาง', color: 'amber' };
+  return { level: 'ต่ำ', color: 'green' };
+}
 var THAI_WEEKDAYS = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
 
 function buildAnalyticsTimingMeta_(fnName, month) {
@@ -60,9 +92,10 @@ function getRiskScores(month, auth) {
         var students = getOfficialStudentsForRange_(range, monthRecords);
         var monthBuckets = buildStudentRecordBuckets_(monthRecords);
         var recentBuckets = buildStudentRecordBuckets_(recentContext.filtered_records);
+        var attentionThreshold = normalizeAttentionThresholdDays_(getCachedSettings_().attention_threshold_days);
+        var measurementDays = monthContext.measurement_day_dates_count || 0;
 
         var items = [];
-        var maxRawScore = 0;
 
         students.forEach(function(student) {
           var stats = buildStudentAttendanceStatsForContext_(student, monthBuckets, monthContext);
@@ -77,11 +110,12 @@ function getRiskScores(month, auth) {
           var weightedRecentAbsent = recentAbsent * (RISK_WEIGHTS.absent + RISK_WEIGHTS.recent_absent);
           var rawScore = (nonRecentAbsent * RISK_WEIGHTS.absent) +
             weightedRecentAbsent +
-            (counts.late * RISK_WEIGHTS.late) +
-            (leaveCount * RISK_WEIGHTS.leave);
+            (counts.late * RISK_WEIGHTS.late);
 
-          if (rawScore <= 0) return;
-          maxRawScore = Math.max(maxRawScore, rawScore);
+          // ★ เกณฑ์เข้ารายการใช้ค่าเดียวกับที่ครูตั้งไว้บนหน้าตั้งค่า (ขาด+สาย ถึงจำนวนนี้)
+          // ของเดิมคือ rawScore > 0 = มีอะไรที่ไม่ใช่ "มา" แม้ครั้งเดียวก็ติดรายชื่อ
+          // ทำให้เด็กที่มาเรียน 100% แต่สาย 1 ครั้ง ถูกนับเป็น "นักเรียนเสี่ยง"
+          if ((counts.absent + counts.late) < attentionThreshold) return;
 
           items.push({
             student_number: student.student_number,
@@ -109,12 +143,19 @@ function getRiskScores(month, auth) {
           from_th: thaiDate(range.from, 'short', false),
           to_th: thaiDate(range.to, 'short', false),
           weights: RISK_WEIGHTS,
-          items: items.slice(0, 15).map(function(item, index) {
-            var scorePct = maxRawScore > 0 ? Math.round((item.score_raw / maxRawScore) * 1000) / 10 : 0;
+          // ★ total_count = จำนวนคนที่เข้าเกณฑ์จริง · items = รายการที่ตัดแล้วสำหรับแสดงผล
+          // หน้าจอต้องใช้ total_count เป็น "จำนวนคน" ห้ามใช้ items.length
+          total_count: items.length,
+          list_limit: RISK_LIST_LIMIT,
+          attention_threshold: attentionThreshold,
+          measurement_days: measurementDays,
+          items: items.slice(0, RISK_LIST_LIMIT).map(function(item, index) {
+            var scorePct = calculateRiskPercent_(item.score_raw, item.total_days);
+            var level = resolveRiskLevel_(scorePct);
             item.rank = index + 1;
             item.score_percent = scorePct;
-            item.risk_level = scorePct >= 70 ? 'สูง' : (scorePct >= 40 ? 'ปานกลาง' : 'ต่ำ');
-            item.risk_color = scorePct >= 70 ? 'red' : (scorePct >= 40 ? 'amber' : 'green');
+            item.risk_level = level.level;
+            item.risk_color = level.color;
             return item;
           }),
           active_semester: (function() {
@@ -168,6 +209,8 @@ function getTrendComparison(month, auth) {
         var students = getOfficialStudentsForRange_(comparisonRange, curRecords.concat(prevRecords));
         var curBuckets = buildStudentRecordBuckets_(curRecords);
         var prevBuckets = buildStudentRecordBuckets_(prevRecords);
+        var curMeasurementDays = curContext.measurement_day_dates_count || 0;
+        var prevMeasurementDays = prevContext.measurement_day_dates_count || 0;
 
         var items = students.map(function(student) {
           var curStats = buildStudentAttendanceStatsForContext_(student, curBuckets, curContext);
@@ -203,8 +246,16 @@ function getTrendComparison(month, auth) {
           month_th: thaiMonthLabel(effectiveMonth),
           prev_month: prevMonth,
           prev_month_th: thaiMonthLabel(prevMonth),
-          improved: items.slice().filter(function(item) { return item.direction === 'improved'; }).sort(function(a, b) { return b.pct_delta - a.pct_delta; }).slice(0, 5),
-          declined: items.slice().filter(function(item) { return item.direction === 'declined'; }).sort(function(a, b) { return a.pct_delta - b.pct_delta; }).slice(0, 5),
+          // ★ ต้องส่ง *_total คู่กับรายการที่ตัดแล้วเสมอ ดูเหตุผลที่ RISK_LIST_LIMIT
+          improved_total: items.filter(function(item) { return item.direction === 'improved'; }).length,
+          declined_total: items.filter(function(item) { return item.direction === 'declined'; }).length,
+          list_limit: TREND_LIST_LIMIT,
+          // ★ เดือนที่ยังไม่จบมีวันเรียนน้อยกว่าเดือนที่จบแล้วเสมอ ถ้าไม่บอกจำนวนวัน
+          // ครูจะอ่าน "แย่ลง 20%" ของเด็กที่ขาด 1 วันจาก 5 วัน ว่าเป็นเรื่องใหญ่
+          cur_measurement_days: curMeasurementDays,
+          prev_measurement_days: prevMeasurementDays,
+          improved: items.slice().filter(function(item) { return item.direction === 'improved'; }).sort(function(a, b) { return b.pct_delta - a.pct_delta; }).slice(0, TREND_LIST_LIMIT),
+          declined: items.slice().filter(function(item) { return item.direction === 'declined'; }).sort(function(a, b) { return a.pct_delta - b.pct_delta; }).slice(0, TREND_LIST_LIMIT),
           all: items
         };
       });
@@ -314,8 +365,12 @@ function getAbsencePatterns(month, auth) {
         return {
           month: effectiveMonth,
           month_th: thaiMonthLabel(effectiveMonth),
-          mon_fri_pattern: monFriStudents.slice(0, 10),
-          consecutive_streaks: streaks.slice(0, 10),
+          // ★ ต้องส่ง *_total คู่กับรายการที่ตัดแล้วเสมอ ดูเหตุผลที่ RISK_LIST_LIMIT
+          mon_fri_pattern_total: monFriStudents.length,
+          consecutive_streaks_total: streaks.length,
+          list_limit: PATTERN_LIST_LIMIT,
+          mon_fri_pattern: monFriStudents.slice(0, PATTERN_LIST_LIMIT),
+          consecutive_streaks: streaks.slice(0, PATTERN_LIST_LIMIT),
           weekday_absence_rates: [1, 2, 3, 4, 5].map(function(day) {
             var entry = dayAbsence[day];
             return {

@@ -176,6 +176,20 @@
       return hasTrendMeasurementData(trend) || hasWeekdayMeasurementData(patterns) || hasGenderMeasurementData(gender);
     }
 
+    // ★★ ฝั่ง server ตัดรายการก่อนส่ง (RISK_LIST_LIMIT / TREND_LIST_LIMIT / PATTERN_LIST_LIMIT)
+    // "จำนวนคน" ต้องอ่านจากฟิลด์ *_total เท่านั้น ห้ามใช้ list.length เพราะจะได้เพดานไม่ใช่ข้อเท็จจริง
+    function totalCountOf_(payload, totalKey, list) {
+      var raw = payload ? payload[totalKey] : null;
+      if (raw === 0 || (raw && isFinite(Number(raw)))) return Number(raw);
+      return safeArray(list).length;
+    }
+
+    // "แสดง 15 จาก 21 คน" — ขึ้นเฉพาะตอนที่ถูกตัดจริง
+    function renderTruncationNote_(shown, total) {
+      if (!(total > shown)) return '';
+      return '<p class="analytics-section-text">แสดง ' + shown + ' จาก ' + total + ' คน · เรียงจากที่ควรดูก่อน</p>';
+    }
+
     function getAnalyticsSalesContext_() {
       var risk = normalizePayload(analyticsData.risk);
       var trend = normalizePayload(analyticsData.trend);
@@ -194,7 +208,7 @@
         if (!peakDay || Number(item.rate || 0) > Number(peakDay.rate || 0)) peakDay = item;
       });
       riskItems.forEach(function (item) {
-        if ((item.risk_color || '') === 'red' || Number(item.score_percent || 0) >= 70) highRiskCount += 1;
+        if ((item.risk_color || '') === 'red') highRiskCount += 1;
       });
 
       return {
@@ -206,6 +220,13 @@
         rangeFromTh: risk.from_th || trend.from_th || patterns.from_th || gender.from_th || '',
         rangeToTh: risk.to_th || trend.to_th || patterns.to_th || gender.to_th || '',
         riskItems: riskItems,
+        riskTotal: totalCountOf_(risk, 'total_count', riskItems),
+        monFriTotal: totalCountOf_(patterns, 'mon_fri_pattern_total', monFri),
+        streaksTotal: totalCountOf_(patterns, 'consecutive_streaks_total', streaks),
+        improvedTotal: totalCountOf_(trend, 'improved_total', improved),
+        declinedTotal: totalCountOf_(trend, 'declined_total', declined),
+        measurementDays: Number(risk.measurement_days || trend.cur_measurement_days || 0),
+        prevMeasurementDays: Number(trend.prev_measurement_days || 0),
         improved: improved,
         declined: declined,
         weekdayRates: weekdayRates,
@@ -266,8 +287,12 @@
       var improved = safeArray(trend.improved);
       var declined = safeArray(trend.declined);
       var weekdayRates = getWeekdayRatesData(patterns);
+      var riskTotal = totalCountOf_(risk, 'total_count', items);
+      var improvedTotal = totalCountOf_(trend, 'improved_total', improved);
+      var declinedTotal = totalCountOf_(trend, 'declined_total', declined);
+      var measurementDays = Number(risk.measurement_days || trend.cur_measurement_days || 0);
       var highRisk = items.filter(function (item) {
-        return (item.risk_color || '') === 'red' || Number(item.score_percent || 0) >= 70;
+        return (item.risk_color || '') === 'red';
       }).length;
       var peakDay = null;
       weekdayRates.forEach(function (item) {
@@ -278,24 +303,26 @@
       return [
         {
           icon: 'target',
-          value: String(items.length),
+          value: String(riskTotal),
           label: 'นักเรียนเสี่ยง',
-          tone: items.length > 0 ? 'red' : 'stone',
-          meta: highRisk > 0 ? 'เสี่ยงสูง ' + highRisk + ' คน' : 'ยังไม่พบเคสเสี่ยงสูง'
+          tone: riskTotal > 0 ? 'red' : 'stone',
+          meta: measurementDays > 0
+            ? ((highRisk > 0 ? 'เสี่ยงสูง ' + highRisk + ' คน · ' : '') + 'จากวันเรียนที่มีข้อมูล ' + measurementDays + ' วัน')
+            : 'ยังไม่มีวันเรียนที่มีข้อมูล'
         },
         {
           icon: 'trend-up',
-          value: String(improved.length),
+          value: String(improvedTotal),
           label: 'ดีขึ้นจากเดือนก่อน',
-          tone: improved.length > 0 ? 'green' : 'stone',
-          meta: improved.length > 0 ? 'มีสัญญาณบวกที่ควรต่อยอด' : 'ยังไม่มีข้อมูลเปรียบเทียบ'
+          tone: improvedTotal > 0 ? 'green' : 'stone',
+          meta: improvedTotal > 0 ? 'มีสัญญาณบวกที่ควรต่อยอด' : 'ยังไม่มีข้อมูลเปรียบเทียบ'
         },
         {
           icon: 'trend-down',
-          value: String(declined.length),
+          value: String(declinedTotal),
           label: 'ต้องเฝ้าระวังเพิ่ม',
-          tone: declined.length > 0 ? 'amber' : 'stone',
-          meta: declined.length > 0 ? 'มีนักเรียนที่แนวโน้มแย่ลง' : 'ยังไม่พบแนวโน้มแย่ลง'
+          tone: declinedTotal > 0 ? 'amber' : 'stone',
+          meta: declinedTotal > 0 ? 'มีนักเรียนที่แนวโน้มแย่ลง' : 'ยังไม่พบแนวโน้มแย่ลง'
         },
         {
           icon: 'calendar',
@@ -333,12 +360,22 @@
       }
       var d = normalizePayload(analyticsData.risk);
       var items = safeArray(d.items);
-      var weights = d.weights || { absent: 4, late: 2, leave: 1, recent_absent: 3 };
+      var weights = d.weights || { absent: 4, late: 2, recent_absent: 3 };
+      var riskTotal = totalCountOf_(d, 'total_count', items);
+      var threshold = Number(d.attention_threshold || 0);
+      var measurementDays = Number(d.measurement_days || 0);
       var html = '';
+
+      var criteriaText = 'คัดจากนักเรียนที่ขาดรวมกับสาย';
+      criteriaText += threshold > 0 ? ' ตั้งแต่ ' + threshold + ' ครั้งขึ้นไปในเดือนนี้' : ' ในเดือนนี้';
+      criteriaText += ' (เกณฑ์เดียวกับที่ตั้งไว้ในหน้าตั้งค่า) · ลาที่แจ้งแล้วไม่นับเป็นความเสี่ยง';
+      if (measurementDays > 0) criteriaText += ' · อ้างอิงวันเรียนที่มีข้อมูล ' + measurementDays + ' วัน';
 
       html += '<section id="analytics-risk-section" class="analytics-section">';
       html += '<div class="analytics-section-head">';
-      html += '<div><h2 class="analytics-section-title">ดัชนีความเสี่ยง</h2><p class="analytics-section-text">คัดนักเรียนที่ต้องติดตามใกล้ชิดจากการขาด สาย ลา และการขาดล่าสุด</p></div>';
+      html += '<div><h2 class="analytics-section-title">ดัชนีความเสี่ยง</h2><p class="analytics-section-text">' + esc(criteriaText) + '</p>';
+      html += renderTruncationNote_(items.length, riskTotal);
+      html += '</div>';
       html += '</div>';
       html += '<div class="card analytics-surface">';
 
@@ -349,7 +386,9 @@
       }
 
       html += '<p class="analytics-formula">';
-      html += 'สูตร: ขาดทั่วไป×' + weights.absent + ' + สาย×' + weights.late + ' + ลา×' + weights.leave + ' + ขาดล่าสุดให้น้ำหนักเพิ่มอีก ×' + weights.recent_absent;
+      html += 'สูตร: ขาดทั่วไป×' + weights.absent + ' + สาย×' + weights.late + ' + ขาดล่าสุดให้น้ำหนักเพิ่มอีก ×' + weights.recent_absent;
+      html += ' · คะแนน 100% = ขาดทุกวันเรียน ไม่ได้เทียบกับคนแย่ที่สุดในห้อง';
+      html += ' · ตั้งแต่ 20% ขึ้นไปถือว่าสูง เพราะเท่ากับมาเรียนต่ำกว่า 80% ซึ่งเป็นเกณฑ์เดียวกับ ปพ.6';
       html += '</p>';
 
       html += '<div class="analytics-desktop-only"><div class="rpt-table-wrap"><table class="rpt-table">';
@@ -395,12 +434,20 @@
 
       var html = '<section id="analytics-trend-section" class="analytics-section">';
       html += '<div class="analytics-section-head">';
-      html += '<div><h2 class="analytics-section-title">เทียบกับเดือนก่อน</h2><p class="analytics-section-text">ดูว่าใครกำลังดีขึ้นและใครเริ่มต้องเฝ้าระวังเมื่อเทียบกับ ' + esc(d.prev_month_th || 'เดือนก่อนหน้า') + '</p></div>';
+      var curDays = Number(d.cur_measurement_days || 0);
+      var prevDays = Number(d.prev_measurement_days || 0);
+      var trendText = 'ดูว่าใครกำลังดีขึ้นและใครเริ่มต้องเฝ้าระวังเมื่อเทียบกับ ' + (d.prev_month_th || 'เดือนก่อนหน้า');
+      if (curDays > 0 && prevDays > 0) {
+        // ★ เดือนที่ยังไม่จบมีวันเรียนน้อยกว่ามาก ตัวเลข % ที่เปลี่ยนจึงแกว่งแรงกว่าความจริง
+        trendText += ' · เดือนนี้มีข้อมูล ' + curDays + ' วันเรียน เทียบกับ ' + prevDays + ' วันของเดือนก่อน';
+        if (curDays * 2 <= prevDays) trendText += ' — เดือนนี้ยังไม่จบ ตัวเลขจึงแกว่งง่ายกว่าปกติ';
+      }
+      html += '<div><h2 class="analytics-section-title">เทียบกับเดือนก่อน</h2><p class="analytics-section-text">' + esc(trendText) + '</p></div>';
       html += '</div>';
       html += '<div class="analytics-split-grid">';
 
       html += '<div class="card analytics-surface analytics-insight-card analytics-insight-good">';
-      html += '<div class="analytics-list-head"><h3 class="analytics-list-title">' + renderAnalyticsIcon('trend-up') + '<span>ดีขึ้น</span></h3><span class="risk-badge risk-badge-green">' + improved.length + ' คน</span></div>';
+      html += '<div class="analytics-list-head"><h3 class="analytics-list-title">' + renderAnalyticsIcon('trend-up') + '<span>ดีขึ้น</span></h3><span class="risk-badge risk-badge-green">' + totalCountOf_(d, 'improved_total', improved) + ' คน</span></div>';
       if (improved.length === 0) {
         html += '<p class="analytics-empty-note">' + (comparableCount === 0 ? 'ยังไม่มีข้อมูลพอเทียบกับเดือนก่อน' : 'ยังไม่พบคนที่ดีขึ้นชัดเจน') + '</p>';
       } else {
@@ -418,7 +465,7 @@
       html += '</div>';
 
       html += '<div class="card analytics-surface analytics-insight-card analytics-insight-alert">';
-      html += '<div class="analytics-list-head"><h3 class="analytics-list-title">' + renderAnalyticsIcon('trend-down') + '<span>แย่ลง</span></h3><span class="risk-badge risk-badge-red">' + declined.length + ' คน</span></div>';
+      html += '<div class="analytics-list-head"><h3 class="analytics-list-title">' + renderAnalyticsIcon('trend-down') + '<span>แย่ลง</span></h3><span class="risk-badge risk-badge-red">' + totalCountOf_(d, 'declined_total', declined) + ' คน</span></div>';
       if (declined.length === 0) {
         if (comparableCount === 0) {
           html += '<p class="analytics-empty-note">ยังไม่มีข้อมูลพอเทียบกับเดือนก่อน</p>';
@@ -480,7 +527,7 @@
 
       if (monFri.length > 0) {
         html += '<div class="card analytics-surface analytics-insight-card">';
-        html += '<div class="analytics-list-head"><h3 class="analytics-list-title">' + renderAnalyticsIcon('search') + '<span>รูปแบบขาดวันจันทร์/ศุกร์</span></h3><span class="risk-badge risk-badge-amber">' + monFri.length + ' คน</span></div>';
+        html += '<div class="analytics-list-head"><h3 class="analytics-list-title">' + renderAnalyticsIcon('search') + '<span>รูปแบบขาดวันจันทร์/ศุกร์</span></h3><span class="risk-badge risk-badge-amber">' + totalCountOf_(d, 'mon_fri_pattern_total', monFri) + ' คน</span></div>';
         html += '<p class="analytics-empty-note">นักเรียนที่ขาดวัน จ./ศ. มากกว่าวันอื่น</p>';
         html += '<div class="analytics-desktop-only"><div class="rpt-table-wrap"><table class="rpt-table">';
         html += '<thead><tr><th>ชื่อ</th><th>ขาดจ.</th><th>ขาดศ.</th><th>ขาดอื่น</th><th>%จ.ศ.</th></tr></thead><tbody>';
@@ -499,7 +546,7 @@
 
       if (streaks.length > 0) {
         html += '<div class="card analytics-surface analytics-insight-card analytics-insight-alert">';
-        html += '<div class="analytics-list-head"><h3 class="analytics-list-title">' + renderAnalyticsIcon('chain') + '<span>ขาดติดต่อกันยาวที่สุด</span></h3><span class="risk-badge risk-badge-red">' + streaks.length + ' คน</span></div>';
+        html += '<div class="analytics-list-head"><h3 class="analytics-list-title">' + renderAnalyticsIcon('chain') + '<span>ขาดติดต่อกันยาวที่สุด</span></h3><span class="risk-badge risk-badge-red">' + totalCountOf_(d, 'consecutive_streaks_total', streaks) + ' คน</span></div>';
         html += '<div class="rpt-compact-list">';
         streaks.forEach(function (s) {
           html += '<div class="rpt-compact-item">';
@@ -575,17 +622,17 @@
       var targetLabel = 'ดูภาพใหญ่ของเดือนนี้';
       var html = '';
 
-      if (sales.riskItems.length > 0) {
+      if (sales.riskTotal > 0) {
         title = 'เดือนนี้มีรายชื่อที่ควรตามก่อนเป็นอันดับแรก';
         tone = 'red';
         targetId = 'analytics-risk-section';
         targetLabel = 'เปิดดัชนีความเสี่ยง';
-      } else if (sales.declined.length > 0) {
+      } else if (sales.declinedTotal > 0) {
         title = 'มีนักเรียนที่แนวโน้มเริ่มแผ่วลง';
         tone = 'amber';
         targetId = 'analytics-trend-section';
         targetLabel = 'ดูเทียบกับเดือนก่อน';
-      } else if (sales.improved.length > 0) {
+      } else if (sales.improvedTotal > 0) {
         title = 'เดือนนี้เริ่มเห็นสัญญาณบวกชัดขึ้น';
         tone = 'green';
         targetId = 'analytics-trend-section';
@@ -606,9 +653,9 @@
       html += '<div class="analytics-spotlight-text">' + esc(text) + '</div>';
       html += '<div class="analytics-spotlight-meta">' + meta + '</div>';
       html += '<div class="analytics-spotlight-tags">';
-      html += renderAnalyticsSpotlightTag_('เสี่ยง ' + String(sales.riskItems.length) + ' คน');
-      html += renderAnalyticsSpotlightTag_('แย่ลง ' + String(sales.declined.length) + ' คน');
-      html += renderAnalyticsSpotlightTag_('ดีขึ้น ' + String(sales.improved.length) + ' คน');
+      html += renderAnalyticsSpotlightTag_('เสี่ยง ' + String(sales.riskTotal) + ' คน');
+      html += renderAnalyticsSpotlightTag_('แย่ลง ' + String(sales.declinedTotal) + ' คน');
+      html += renderAnalyticsSpotlightTag_('ดีขึ้น ' + String(sales.improvedTotal) + ' คน');
       if (sales.peakDay) html += renderAnalyticsSpotlightTag_('วันขาดสูงสุด ' + String(sales.peakDay.day || '-') + ' ' + formatPercentLabel(sales.peakDay.rate || 0));
       html += '</div>';
       html += '</div>';
@@ -627,12 +674,12 @@
     function buildAnalyticsSummarySnippet_(sales) {
       var parts = [];
       var monthLabel = sales && sales.monthLabel ? sales.monthLabel : (analyticsMonth || '-');
-      parts.push('เดือน ' + monthLabel + ' มีนักเรียนเสี่ยง ' + String(sales.riskItems.length) + ' คน');
-      if (sales.declined.length > 0) parts.push('แนวโน้มแย่ลง ' + String(sales.declined.length) + ' คน');
-      else if (sales.improved.length > 0) parts.push('แนวโน้มดีขึ้น ' + String(sales.improved.length) + ' คน');
+      parts.push('เดือน ' + monthLabel + ' มีนักเรียนเสี่ยง ' + String(sales.riskTotal) + ' คน');
+      if (sales.declinedTotal > 0) parts.push('แนวโน้มแย่ลง ' + String(sales.declinedTotal) + ' คน');
+      else if (sales.improvedTotal > 0) parts.push('แนวโน้มดีขึ้น ' + String(sales.improvedTotal) + ' คน');
       if (sales.peakDay) parts.push('วันขาดสูงสุดคือ ' + String(sales.peakDay.day || '-') + ' ที่ ' + formatPercentLabel(sales.peakDay.rate || 0));
-      if (sales.monFri.length > 0) parts.push('พบรูปแบบขาดวันจันทร์/ศุกร์ ' + String(sales.monFri.length) + ' คน');
-      else if (sales.streaks.length > 0) parts.push('มีการขาดติดต่อกัน ' + String(sales.streaks.length) + ' คน');
+      if (sales.monFriTotal > 0) parts.push('พบรูปแบบขาดวันจันทร์/ศุกร์ ' + String(sales.monFriTotal) + ' คน');
+      else if (sales.streaksTotal > 0) parts.push('มีการขาดติดต่อกัน ' + String(sales.streaksTotal) + ' คน');
       return parts.join(' · ');
     }
 
@@ -658,34 +705,34 @@
 
       return [
         {
-          tone: sales.riskItems.length > 0 ? 'red' : 'green',
+          tone: sales.riskTotal > 0 ? 'red' : 'green',
           targetId: 'analytics-risk-section',
-          buttonLabel: sales.riskItems.length > 0 ? 'เปิดดัชนีความเสี่ยง' : 'ดูภาพรวมความเสี่ยง',
-          title: sales.riskItems.length > 0 ? 'เริ่มคุยจากกลุ่มเสี่ยงก่อน' : 'เดือนนี้ยังไม่มีกลุ่มเสี่ยงเด่น',
-          text: sales.riskItems.length > 0
-            ? 'มีนักเรียนเสี่ยง ' + String(sales.riskItems.length) + ' คน' + (sales.highRiskCount > 0 ? ' และเสี่ยงสูง ' + String(sales.highRiskCount) + ' คน' : '') + (riskLead ? ' โดย ' + riskLead.full_name + ' อยู่ในกลุ่มที่ควรดูต่อทันที' : '')
+          buttonLabel: sales.riskTotal > 0 ? 'เปิดดัชนีความเสี่ยง' : 'ดูภาพรวมความเสี่ยง',
+          title: sales.riskTotal > 0 ? 'เริ่มคุยจากกลุ่มเสี่ยงก่อน' : 'เดือนนี้ยังไม่มีกลุ่มเสี่ยงเด่น',
+          text: sales.riskTotal > 0
+            ? 'มีนักเรียนเสี่ยง ' + String(sales.riskTotal) + ' คน' + (sales.highRiskCount > 0 ? ' และเสี่ยงสูง ' + String(sales.highRiskCount) + ' คน' : '') + (riskLead ? ' โดย ' + riskLead.full_name + ' อยู่ในกลุ่มที่ควรดูต่อทันที' : '')
             : 'ยังไม่พบรายชื่อที่คะแนนเสี่ยงเด่นมากเป็นพิเศษ แต่ยังสามารถเปิดดูเพื่อยืนยันได้'
         },
         {
-          tone: sales.declined.length > 0 ? 'amber' : 'green',
+          tone: sales.declinedTotal > 0 ? 'amber' : 'green',
           targetId: 'analytics-trend-section',
-          buttonLabel: sales.declined.length > 0 ? 'ดูเทียบกับเดือนก่อน' : 'ดูรายชื่อที่ดีขึ้น',
-          title: sales.declined.length > 0 ? 'รีบเช็กคนที่แนวโน้มแผ่วลง' : 'ใช้คนที่ดีขึ้นเป็นแรงบวกต่อได้',
-          text: sales.declined.length > 0
-            ? 'พบ ' + String(sales.declined.length) + ' คนที่แนวโน้มแย่ลงเมื่อเทียบกับเดือนก่อน' + (declinedLead ? ' และ ' + declinedLead.full_name + ' เป็นหนึ่งในรายชื่อที่ควรรีบคุยก่อน' : '')
-            : (sales.improved.length > 0
-              ? 'มี ' + String(sales.improved.length) + ' คนที่แนวโน้มดีขึ้น' + (improvedLead ? ' เช่น ' + improvedLead.full_name + ' เหมาะกับการชมเชยหรือใช้เป็นตัวอย่างในห้อง' : '')
+          buttonLabel: sales.declinedTotal > 0 ? 'ดูเทียบกับเดือนก่อน' : 'ดูรายชื่อที่ดีขึ้น',
+          title: sales.declinedTotal > 0 ? 'รีบเช็กคนที่แนวโน้มแผ่วลง' : 'ใช้คนที่ดีขึ้นเป็นแรงบวกต่อได้',
+          text: sales.declinedTotal > 0
+            ? 'พบ ' + String(sales.declinedTotal) + ' คนที่แนวโน้มแย่ลงเมื่อเทียบกับเดือนก่อน' + (declinedLead ? ' และ ' + declinedLead.full_name + ' เป็นหนึ่งในรายชื่อที่ควรรีบคุยก่อน' : '')
+            : (sales.improvedTotal > 0
+              ? 'มี ' + String(sales.improvedTotal) + ' คนที่แนวโน้มดีขึ้น' + (improvedLead ? ' เช่น ' + improvedLead.full_name + ' เหมาะกับการชมเชยหรือใช้เป็นตัวอย่างในห้อง' : '')
               : 'ยังไม่พบความต่างเด่นชัดจากเดือนก่อน ลองเปิดดูรายละเอียดเพื่อเช็กอีกครั้ง')
         },
         {
-          tone: (sales.monFri.length > 0 || sales.streaks.length > 0 || sales.peakDay) ? 'blue' : 'stone',
+          tone: (sales.monFriTotal > 0 || sales.streaksTotal > 0 || sales.peakDay) ? 'blue' : 'stone',
           targetId: 'analytics-patterns-section',
           buttonLabel: 'ดูรูปแบบการขาด',
-          title: (sales.monFri.length > 0 || sales.streaks.length > 0) ? 'จับ pattern ก่อนปัญหาจะลุกลาม' : 'ใช้ pattern รายวันช่วยวางแผนติดตาม',
-          text: sales.monFri.length > 0
-            ? 'พบ ' + String(sales.monFri.length) + ' คนที่ขาดวันจันทร์/ศุกร์เด่นกว่าวันอื่น' + (patternLead ? ' โดย ' + patternLead.full_name + ' เป็นหนึ่งในเคสที่ควรดูต่อ' : '')
-            : (sales.streaks.length > 0
-              ? 'พบ ' + String(sales.streaks.length) + ' คนที่มีการขาดติดต่อกัน ซึ่งควรรีบเช็กสาเหตุ'
+          title: (sales.monFriTotal > 0 || sales.streaksTotal > 0) ? 'จับ pattern ก่อนปัญหาจะลุกลาม' : 'ใช้ pattern รายวันช่วยวางแผนติดตาม',
+          text: sales.monFriTotal > 0
+            ? 'พบ ' + String(sales.monFriTotal) + ' คนที่ขาดวันจันทร์/ศุกร์เด่นกว่าวันอื่น' + (patternLead ? ' โดย ' + patternLead.full_name + ' เป็นหนึ่งในเคสที่ควรดูต่อ' : '')
+            : (sales.streaksTotal > 0
+              ? 'พบ ' + String(sales.streaksTotal) + ' คนที่มีการขาดติดต่อกัน ซึ่งควรรีบเช็กสาเหตุ'
               : (sales.peakDay ? 'วันขาดสูงสุดของเดือนนี้คือ ' + String(sales.peakDay.day || '-') + ' ที่ ' + formatPercentLabel(sales.peakDay.rate || 0) + ' ใช้ช่วยวางแผนการติดตามรายสัปดาห์ได้' : 'ตอนนี้ยังไม่พบรูปแบบการขาดที่เด่นมากเป็นพิเศษ'))
         }
       ];
@@ -724,17 +771,23 @@
     function buildAnalyticsShareMessage_(type, sales) {
       var monthLabel = sales && sales.monthLabel ? sales.monthLabel : (analyticsMonth || '-');
       var highlights = [];
-      if (sales.riskItems.length > 0) highlights.push('มีกลุ่มที่ควรติดตาม ' + String(sales.riskItems.length) + ' คน');
-      if (sales.declined.length > 0) highlights.push('มีแนวโน้มแย่ลง ' + String(sales.declined.length) + ' คน');
-      else if (sales.improved.length > 0) highlights.push('มีแนวโน้มดีขึ้น ' + String(sales.improved.length) + ' คน');
+      if (sales.riskTotal > 0) highlights.push('มีกลุ่มที่ควรติดตาม ' + String(sales.riskTotal) + ' คน');
+      if (sales.declinedTotal > 0) highlights.push('มีแนวโน้มแย่ลง ' + String(sales.declinedTotal) + ' คน');
+      else if (sales.improvedTotal > 0) highlights.push('มีแนวโน้มดีขึ้น ' + String(sales.improvedTotal) + ' คน');
       if (sales.peakDay) highlights.push('วันขาดสูงสุดคือ ' + String(sales.peakDay.day || '-') + ' ที่ ' + formatPercentLabel(sales.peakDay.rate || 0));
-      if (sales.monFri.length > 0) highlights.push('พบรูปแบบขาดวันจันทร์/ศุกร์ ' + String(sales.monFri.length) + ' คน');
+      if (sales.monFriTotal > 0) highlights.push('พบรูปแบบขาดวันจันทร์/ศุกร์ ' + String(sales.monFriTotal) + ' คน');
       if (!highlights.length) highlights.push('ยังไม่พบสัญญาณผิดปกติเด่น แต่ระบบยังช่วยติดตามแนวโน้มให้ต่อเนื่องได้');
 
+      // ★ ข้อความนี้ครูกดคัดลอกแล้วส่งหาผู้ปกครองทั้งห้องได้ทันที
+      // ต้องบอกฐานที่ใช้คิดเสมอ ไม่งั้น "ควรติดตาม N คน" จะถูกอ่านว่าเป็นภาพของทั้งเทอม
+      var basisText = sales.measurementDays > 0
+        ? ' (คิดจากวันเรียนที่มีข้อมูลแล้ว ' + String(sales.measurementDays) + ' วันในเดือนนี้)'
+        : '';
+
       if (type === 'parents') {
-        return 'อัปเดตภาพรวมการมาเรียนเดือน ' + monthLabel + ' ของห้องเรียน: ' + highlights.join(' · ') + ' ขอความร่วมมือผู้ปกครองช่วยติดตามเวลาเข้าเรียนและแจ้งลาล่วงหน้าเมื่อจำเป็น เพื่อช่วยกันดูแลการมาเรียนของนักเรียนให้ต่อเนื่อง ขอบคุณครับ/ค่ะ';
+        return 'อัปเดตภาพรวมการมาเรียนเดือน ' + monthLabel + ' ของห้องเรียน: ' + highlights.join(' · ') + basisText + ' ขอความร่วมมือผู้ปกครองช่วยติดตามเวลาเข้าเรียนและแจ้งลาล่วงหน้าเมื่อจำเป็น เพื่อช่วยกันดูแลการมาเรียนของนักเรียนให้ต่อเนื่อง ขอบคุณครับ/ค่ะ';
       }
-      return 'สรุปวิเคราะห์การมาเรียนเดือน ' + monthLabel + ': ' + highlights.join(' · ') + ' ขณะนี้ควรเริ่มติดตามจากดัชนีความเสี่ยงและรายชื่อที่แนวโน้มแย่ลงก่อน เพื่อป้องกันปัญหาลุกลามในเดือนถัดไป';
+      return 'สรุปวิเคราะห์การมาเรียนเดือน ' + monthLabel + ': ' + highlights.join(' · ') + basisText + ' ขณะนี้ควรเริ่มติดตามจากดัชนีความเสี่ยงและรายชื่อที่แนวโน้มแย่ลงก่อน เพื่อป้องกันปัญหาลุกลามในเดือนถัดไป';
     }
 
     function buildAnalyticsPage() {
@@ -748,9 +801,10 @@
       var brand = schoolNameEl ? schoolNameEl.textContent : 'ระบบเช็คชื่อ';
       var overview = getOverviewMetrics();
       var context = [];
-      var riskItems = sales.riskItems;
-      var improved = sales.improved;
-      var declined = sales.declined;
+      // ★ ใช้ยอดจริงจาก payload ไม่ใช่ความยาวรายการที่ server ตัดมาแล้ว
+      var riskCount = sales.riskTotal;
+      var improvedCount = sales.improvedTotal;
+      var declinedCount = sales.declinedTotal;
       var hasMeasurements = hasAnalyticsMeasurementData_();
       var hasLoadFailures = hasAnalyticsLoadFailures_();
       var peakDay = sales.peakDay;
@@ -790,17 +844,17 @@
         html += '<div class="analytics-month-range">ช่วงที่ใช้จริง: ' + esc(sales.rangeFromTh) + ' – ' + esc(sales.rangeToTh) + '</div>';
       }
       html += '<div class="analytics-signal-row">';
-      html += '<span class="student-badge ' + (riskItems.length > 0 ? 'badge-red' : (hasMeasurements ? 'badge-green' : 'badge-stone')) + '">เสี่ยง ' + riskItems.length + ' คน</span>';
-      html += '<span class="student-badge ' + (improved.length > 0 ? 'badge-green' : 'badge-stone') + '">ดีขึ้น ' + improved.length + ' คน</span>';
-      html += '<span class="student-badge ' + (declined.length > 0 ? 'badge-amber' : 'badge-stone') + '">แย่ลง ' + declined.length + ' คน</span>';
+      html += '<span class="student-badge ' + (riskCount > 0 ? 'badge-red' : (hasMeasurements ? 'badge-green' : 'badge-stone')) + '">เสี่ยง ' + riskCount + ' คน</span>';
+      html += '<span class="student-badge ' + (improvedCount > 0 ? 'badge-green' : 'badge-stone') + '">ดีขึ้น ' + improvedCount + ' คน</span>';
+      html += '<span class="student-badge ' + (declinedCount > 0 ? 'badge-amber' : 'badge-stone') + '">แย่ลง ' + declinedCount + ' คน</span>';
       html += '</div>';
 
       html += '<div class="analytics-priority-card">';
       html += '<div class="analytics-priority-kicker">เริ่มดูจากจุดนี้ก่อน</div>';
-      html += '<div class="analytics-priority-title">' + (!hasMeasurements && !hasLoadFailures ? 'ยังไม่มีข้อมูลพอให้วิเคราะห์' : (riskItems.length > 0 ? 'เปิดดัชนีความเสี่ยงก่อน' : (declined.length > 0 ? 'ดูรายชื่อที่แนวโน้มแย่ลงก่อน' : 'เริ่มจากภาพรวมของเดือนนี้'))) + '</div>';
+      html += '<div class="analytics-priority-title">' + (!hasMeasurements && !hasLoadFailures ? 'ยังไม่มีข้อมูลพอให้วิเคราะห์' : (riskCount > 0 ? 'เปิดดัชนีความเสี่ยงก่อน' : (declinedCount > 0 ? 'ดูรายชื่อที่แนวโน้มแย่ลงก่อน' : 'เริ่มจากภาพรวมของเดือนนี้'))) + '</div>';
       html += '<div class="analytics-priority-text">' + (!hasMeasurements && !hasLoadFailures
         ? 'เดือนนี้ยังไม่มีข้อมูลพอสำหรับวิเคราะห์เชิงลึก ลองเริ่มจากการเช็คชื่อและยืนยันข้อมูลก่อน'
-        : (riskItems.length > 0 ? ('มีรายชื่อเสี่ยง ' + esc(String(riskItems.length)) + ' คน ที่ควรดูต่อ') : (declined.length > 0 ? ('พบแนวโน้มแย่ลง ' + esc(String(declined.length)) + ' คน เมื่อเทียบกับเดือนก่อน') : 'เริ่มจากตัวชี้วัดหลัก แล้วค่อยลงลึกเป็นรายหัวข้อ'))) + '</div>';
+        : (riskCount > 0 ? ('มีรายชื่อเสี่ยง ' + esc(String(riskCount)) + ' คน ที่ควรดูต่อ') : (declinedCount > 0 ? ('พบแนวโน้มแย่ลง ' + esc(String(declinedCount)) + ' คน เมื่อเทียบกับเดือนก่อน') : 'เริ่มจากตัวชี้วัดหลัก แล้วค่อยลงลึกเป็นรายหัวข้อ'))) + '</div>';
       html += '</div>';
       html += '</div>';
       html += '</div>';
