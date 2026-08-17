@@ -288,7 +288,9 @@ function recordAttendance(payload, auth) {
         sheet.getRange(rowIndex, COL.ATTENDANCE.UPDATED_AT).setValue(now);
         sheet.getRange(rowIndex, COL.ATTENDANCE.STUDENT_ID).setValue(studentId);
       } else {
-        sheet.appendRow([getNextIdForSheet_(sheet), studentNumber, date, statusCode, note, '', now, now, studentId]);
+        // ★ ต้อง sanitize เหมือนกิ่ง update ข้างบน — หมายเหตุที่ขึ้นต้นด้วย = + - @
+        // จะกลายเป็นสูตรในชีตแล้วไปโผล่เป็น #ERROR! บนรายงานและเอกสาร ปพ.6
+        sheet.appendRow([getNextIdForSheet_(sheet), studentNumber, date, statusCode, sanitizeSheetText_(note), '', now, now, studentId]);
       }
 
       invalidateAttendanceCaches_(date);
@@ -1305,8 +1307,9 @@ function logAsync_(studentNumber, studentId, date, oldStatus, newStatus, oldNote
       date,
       oldStatus || '',
       newStatus || '',
-      oldNote || '',
-      newNote || '',
+      // หมายเหตุเก่า/ใหม่เป็นข้อความที่ครูพิมพ์เอง ต้องกันสูตรก่อนลงชีตประวัติแก้ไข
+      sanitizeSheetText_(oldNote || ''),
+      sanitizeSheetText_(newNote || ''),
       action || '',
       nowString_(),
       studentId || ''

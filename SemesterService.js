@@ -72,7 +72,9 @@ function createSemester(payload, auth) {
       if (setActive) deactivateAllSemesters_(sheet);
 
       var semesterId = getNextSemesterId_(existing);
-      sheet.appendRow([semesterId, name, startDate, endDate, setActive]);
+      // ชื่อภาคเรียนเป็นข้อความที่ครูพิมพ์เอง · normalizeLimitedText_ กันแค่ < > `
+      // ปล่อย = + - @ ผ่านมาได้ตามที่ตั้งใจ (ดู DECISIONS.md) ตัวกันจริงคือ sanitizeSheetText_
+      sheet.appendRow([semesterId, sanitizeSheetText_(name), startDate, endDate, setActive]);
       invalidateSemesterCaches_();
 
       return {
@@ -157,7 +159,7 @@ function editSemester(payload, auth) {
       }
 
       var sheet = getOrCreateSemesterSheet_();
-      sheet.getRange(match.semester.row_index, SEMESTER_COL.NAME).setValue(name);
+      sheet.getRange(match.semester.row_index, SEMESTER_COL.NAME).setValue(sanitizeSheetText_(name));
       sheet.getRange(match.semester.row_index, SEMESTER_COL.START).setValue(startDate);
       sheet.getRange(match.semester.row_index, SEMESTER_COL.END).setValue(endDate);
       invalidateSemesterCaches_();
