@@ -171,6 +171,33 @@ if (ownerEmail && ownerEmail !== resolvedEmail) → ปฏิเสธ
 
 ฝั่ง client แยกทางด้วย prefix เหล่านี้ผ่าน `parseServerError_` — **แก้ข้อความ error ได้ แต่ห้ามแก้ code นำหน้า**
 
+### ★ กติกาการแยกประเภท error — อ่าน code หรือธง ห้ามค้นคำไทยในข้อความ
+
+protocol `CODE|ข้อความ` มีอยู่แต่**เดิมใช้ไม่ทั่ว** หลายจุดไปค้นคำไทยในข้อความแทน
+ซึ่งหมายความว่า **แก้ถ้อยคำ error ฝั่ง server แล้วตรรกะควบคุมฝั่งหน้าจอพังโดยไม่มี error ให้เห็น**
+แก้ครบแล้ว 17 ส.ค. 2569 — สภาพปัจจุบันคือ
+
+| จุด | แยกประเภทด้วย |
+|---|---|
+| `serverCall` [JavaScript.html] | `parseServerError_` แล้วส่ง **`parsedError.message`** ให้ `onFailure` (ตัด code ทิ้งแล้ว) |
+| `loadPage` → โมดูลโหลดไม่สำเร็จ | ธง **`err.__source === 'deps'`** ที่ `moduleLoadError_` ติดให้ทุกจุดที่โยน |
+| `getTeacherFacingErrorCopy_` | `code` ก่อน แล้วค่อยตกไปที่ข้อความ (ดูข้อจำกัดล่าง) |
+| `PrintReport.html` | `PRINT_ERROR_KIND_BY_CODE_` แปลง code → ชนิด แล้วส่งชนิดเข้า `showError(err, kind)` |
+| `ParentView.html` | `describeParentAuthError_` อ่าน code ก่อน คืน `kind` + `title` + `should_clear_auth` |
+
+**ที่ยังต้องพึ่งข้อความไทย 3 ก้อน เพราะฝั่ง server ยังไม่มี code ให้**
+
+- `'วันหยุดในปฏิทินวันเรียน'` ← `ensureAttendanceActionDate_` [AttendanceService.js:840]
+- `'นอกภาคเรียน'` ← [AttendanceService.js:833] · [SemesterService.js:588] · [ReportService.js:435,481]
+  **มี `code === 'OUT_OF_SEMESTER'` เขียนรออยู่แล้วใน client แต่ไม่มีใครส่ง code นี้มาเลย**
+- `'ไม่พบ Sheet'` ← `getSheet_` [SheetDB.js] แปลงเป็นข้อความว่าติดตั้งไม่สมบูรณ์
+
+**★ ลำดับของการแก้สำคัญกว่าตัวการแก้** — ต้องให้ทุกจุดที่**แสดงผล**ถอด `CODE|` ออกให้ได้ก่อน
+แล้วจึงเติม code ที่ฝั่ง server ถ้าทำสลับกัน ผู้ใช้จะเห็นโค้ดดิบบนจอ
+(เกิดขึ้นจริงมาแล้ว: `ParentView` ไม่ได้ใช้ `serverCall` แต่ยิง `google.script.run` ตรงๆ
+`err.message` จึงเป็นค่าดิบ และหน้านั้นเอาไปแสดงทั้งก้อน **ผู้ปกครองที่ลิงก์หมดอายุเห็น
+`PARENT_AUTH_EXPIRED|ลิงก์สำหรับเปิดข้อมูลหมดอายุ...` บนจอ**)
+
 ### `teacher_session_generation` — kill switch
 
 เก็บใน Script Properties ฝังลงใน session ตอนสร้าง `rotateTeacherSessionGeneration_` เพิ่มค่าเมื่อ:

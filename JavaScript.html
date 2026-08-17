@@ -1006,7 +1006,10 @@
         };
       }
 
-      if (normalized.indexOf('วันหยุดในปฏิทินวันเรียน') >= 0 || normalized.indexOf('วันที่เลือกถูกตั้งเป็นวันหยุด') >= 0) {
+      // ⚠️ ผูกกับข้อความจาก ensureAttendanceActionDate_ [AttendanceService.js:840] ตรงๆ
+      // ยังไม่มี code ให้เทียบ ถ้าฝั่ง server ใส่ CODE| ให้ ให้เปลี่ยนมาเทียบ code แล้วลบบรรทัดนี้
+      // (เดิมค้น 'วันที่เลือกถูกตั้งเป็นวันหยุด' ด้วย ซึ่งไม่มีใครโยน — เป็นข้อความที่บล็อกนี้สร้างเอง)
+      if (normalized.indexOf('วันหยุดในปฏิทินวันเรียน') >= 0) {
         return {
           title: 'วันนี้เป็นวันหยุด จึงเช็กชื่อไม่ได้',
           description: 'วันที่เลือกถูกตั้งเป็นวันหยุดหรือวันงดเรียนไว้ในปฏิทินของห้องนี้',
@@ -1310,10 +1313,21 @@
       document.body.appendChild(scriptEl);
     }
 
+    /**
+     * ★ ติดธง __source = 'deps' ที่จุดโยนทุกจุด ไม่ใช่ให้ปลายทางไปค้นคำไทยในข้อความ
+     * เดิม loadPage แยกประเภทด้วย indexOf('โมดูล') / indexOf('โค้ดของหน้า') / indexOf('สไตล์')
+     * = แก้ถ้อยคำ error แล้วหน้าจอเปลี่ยนพฤติกรรมโดยไม่มีอะไรเตือน
+     */
+    function moduleLoadError_(message) {
+      var err = new Error(String(message || 'ยังโหลดส่วนของหน้านี้ไม่สำเร็จ'));
+      err.__source = 'deps';
+      return err;
+    }
+
     function ensureClientModuleLoaded(name) {
       name = String(name || '').trim();
       if (!CLIENT_MODULE_REGISTRY[name]) {
-        return Promise.reject(new Error('ไม่พบโมดูลที่ต้องใช้สำหรับหน้านี้'));
+        return Promise.reject(moduleLoadError_('ไม่พบโมดูลที่ต้องใช้สำหรับหน้านี้'));
       }
       if (isClientModuleLoaded_(name)) {
         return Promise.resolve(window[CLIENT_MODULE_REGISTRY[name].global]);
@@ -1324,11 +1338,11 @@
         serverCall('getClientModuleContent', [name], function (scriptText) {
           try {
             if (!String(scriptText || '').trim()) {
-              throw new Error('ยังโหลดโค้ดของหน้าที่ต้องใช้ไม่สำเร็จ');
+              throw moduleLoadError_('ยังโหลดโค้ดของหน้าที่ต้องใช้ไม่สำเร็จ');
             }
             injectClientModuleScript_(name, scriptText);
             if (!isClientModuleLoaded_(name)) {
-              throw new Error('โมดูลของหน้าถูกโหลดไม่ครบ');
+              throw moduleLoadError_('โมดูลของหน้าถูกโหลดไม่ครบ');
             }
             resolve(window[CLIENT_MODULE_REGISTRY[name].global]);
           } catch (e) {
@@ -1337,7 +1351,7 @@
           }
         }, function (message) {
           clientModulePromises[name] = null;
-          reject(new Error(message || 'ยังโหลดส่วนของหน้านี้ไม่สำเร็จ'));
+          reject(moduleLoadError_(message));
         });
       });
 
@@ -1623,7 +1637,9 @@
         if (!isTeacherAuthenticated_()) return;
         if (err && err.__handled) return;
 
-        var isModuleError = !!(err && (err.__source === 'deps' || String(err.message || '').indexOf('โมดูล') >= 0 || String(err.message || '').indexOf('สไตล์') >= 0 || String(err.message || '').indexOf('โค้ดของหน้า') >= 0));
+        // ★ ธงเดียวพอ — moduleLoadError_ ติดให้ทุกจุดที่โยน และ depsPromise ติดซ้ำอีกชั้น
+        // (คำว่า 'สไตล์' ที่เคยค้นหาไม่มีใครโยนอีกแล้วตั้งแต่ตัดเส้นทาง lazy CSS ในรอบ 4)
+        var isModuleError = !!(err && err.__source === 'deps');
         if (isModuleError) {
           renderPagePanelError(page, getModuleLoadErrorCopy_(page, err), {
             kicker: 'กำลังเตรียมส่วนแสดงผล'
@@ -2170,12 +2186,17 @@
         setLoading(false);
       }, function (message) {
         state.currentDate = date || state.currentDate;
-        if (String(message || '').indexOf('วันหยุดในปฏิทินวันเรียน') >= 0) {
+        // serverCall ส่ง parsedError.message มาให้แล้ว (ไม่มี CODE| ติดมา) ตรงนี้จึงเป็น no-op ตอนนี้
+        // ★ ใส่ไว้เพื่อให้ทนทาน ถ้าฝั่ง server ใส่ CODE| ให้ข้อความนี้ในอนาคต
+        // จุดนี้จะไม่พังและไม่เอาโค้ดดิบไปแสดงใน blocked_message
+        var parsed = parseServerError_(message);
+        var holidayText = String(parsed.message || message || '');
+        if (holidayText.indexOf('วันหยุดในปฏิทินวันเรียน') >= 0) {
           state.attendance = {
             date: state.currentDate,
             date_th: state.currentDate,
             is_holiday_blocked: true,
-            blocked_message: message
+            blocked_message: holidayText
           };
           renderAttendancePage();
         }

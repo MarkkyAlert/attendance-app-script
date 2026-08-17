@@ -511,7 +511,8 @@
                 }
 
                 clearParentAuth_();
-                document.getElementById('app').innerHTML = errorPage('ลิงก์ไม่ถูกต้อง', 'กรุณาติดต่อครูประจำชั้นเพื่อขอลิงก์ใหม่');
+                document.getElementById('app').innerHTML =
+                    errorPage('ลิงก์ไม่ถูกต้อง', 'กรุณาติดต่อครูประจำชั้นเพื่อขอลิงก์ใหม่', 'invalid');
             });
 
             function loadStoredParentAuth_() {
@@ -552,23 +553,62 @@
                 var sessionToken = window.parentAuth && window.parentAuth.session_token;
                 clearParentAuth_();
                 if (!sessionToken) {
-                    document.getElementById('app').innerHTML = errorPage('ออกจากระบบแล้ว', 'ปิดหน้าต่างนี้ได้เลย หรือเปิดลิงก์ผู้ปกครองใหม่เมื่อต้องการใช้งานอีกครั้ง');
+                    document.getElementById('app').innerHTML = errorPage('ออกจากระบบแล้ว', 'ปิดหน้าต่างนี้ได้เลย หรือเปิดลิงก์ผู้ปกครองใหม่เมื่อต้องการใช้งานอีกครั้ง', 'logged_out');
                     return;
                 }
 
                 google.script.run
                     .withSuccessHandler(function () {
-                        document.getElementById('app').innerHTML = errorPage('ออกจากระบบแล้ว', 'ปิดหน้าต่างนี้ได้เลย หรือเปิดลิงก์ผู้ปกครองใหม่เมื่อต้องการใช้งานอีกครั้ง');
+                        document.getElementById('app').innerHTML = errorPage('ออกจากระบบแล้ว', 'ปิดหน้าต่างนี้ได้เลย หรือเปิดลิงก์ผู้ปกครองใหม่เมื่อต้องการใช้งานอีกครั้ง', 'logged_out');
                     })
                     .withFailureHandler(function () {
-                        document.getElementById('app').innerHTML = errorPage('ออกจากระบบแล้ว', 'ปิดหน้าต่างนี้ได้เลย หรือเปิดลิงก์ผู้ปกครองใหม่เมื่อต้องการใช้งานอีกครั้ง');
+                        document.getElementById('app').innerHTML = errorPage('ออกจากระบบแล้ว', 'ปิดหน้าต่างนี้ได้เลย หรือเปิดลิงก์ผู้ปกครองใหม่เมื่อต้องการใช้งานอีกครั้ง', 'logged_out');
                     })
                     .logoutParentSession(sessionToken);
             };
 
+            /**
+             * ★ server ส่ง error มาในรูป CODE|ข้อความ อยู่แล้ว (requireParentSession_)
+             * แต่เดิมหน้านี้ไปค้นคำไทยในข้อความแทนที่จะอ่าน code
+             * = แก้ข้อความ error ฝั่ง server แล้วตรรกะควบคุมพังโดยไม่มี error ให้เห็น
+             * และที่แย่กว่านั้นคือเอาข้อความดิบไปแสดง ผู้ปกครองจึงเห็น "PARENT_AUTH_EXPIRED|..." บนจอ
+             */
+            function parseParentServerError_(message) {
+                var text = String(message || '').trim();
+                text = text.replace(/^(Exception|Error):\s*/i, '');
+                text = text.replace(/^Server error:\s*/i, '');
+                var pipeIndex = text.indexOf('|');
+                if (pipeIndex > 0) {
+                    return { code: text.substring(0, pipeIndex), message: text.substring(pipeIndex + 1) };
+                }
+                return { code: '', message: text };
+            }
+
+            /**
+             * แปลง error เป็นสิ่งที่จะแสดง โดยดู code ก่อนเสมอ
+             * ★ ยังต้องมีตาข่ายรองที่ค้นคำไทย เพราะอีก 2 จุดที่เรียก shouldClearParentAuth_
+             * รับค่าจาก `data.message` ของ payload ที่ตอบ `{ success: false }` กลับมาเฉยๆ
+             * ซึ่ง**ไม่ได้ผ่าน throw จึงไม่มี code ติดมา** ถ้าวันหนึ่งฝั่ง server ใส่ code
+             * ให้ payload พวกนั้นด้วย ให้ลบตาข่ายรองนี้ออกได้เลย
+             */
+            function describeParentAuthError_(rawMessage) {
+                var parsed = parseParentServerError_(rawMessage);
+                var text = String(parsed.message || '');
+                var isExpired = parsed.code === 'PARENT_AUTH_EXPIRED' ||
+                    (!parsed.code && (text.indexOf('หมดอายุ') >= 0 || text.indexOf('ขอลิงก์ใหม่') >= 0));
+                var isInvalid = parsed.code === 'PARENT_AUTH_REQUIRED' ||
+                    (!parsed.code && text.indexOf('ไม่ถูกต้อง') >= 0);
+                return {
+                    code: parsed.code,
+                    message: text,
+                    should_clear_auth: isExpired || isInvalid,
+                    kind: isExpired ? 'expired' : (isInvalid ? 'invalid' : 'load_failed'),
+                    title: isExpired ? 'ลิงก์หมดอายุ' : (isInvalid ? 'ลิงก์ไม่ถูกต้อง' : 'เกิดข้อผิดพลาด')
+                };
+            }
+
             function shouldClearParentAuth_(message) {
-                message = String(message || '');
-                return message.indexOf('หมดอายุ') >= 0 || message.indexOf('ไม่ถูกต้อง') >= 0 || message.indexOf('ขอลิงก์ใหม่') >= 0;
+                return describeParentAuthError_(message).should_clear_auth;
             }
 
             function stripSensitiveQuery_(month) {
@@ -595,14 +635,18 @@
                     })
                     .withFailureHandler(function (err) {
                         clearParentAuth_();
-                        document.getElementById('app').innerHTML = errorPage('เกิดข้อผิดพลาด', err.message || 'ไม่สามารถโหลดข้อมูลได้');
+                        // ★ แสดงเฉพาะส่วนข้อความ ไม่ใช่ CODE|ข้อความ ที่ server ส่งมา
+                        var info = describeParentAuthError_(err && err.message ? err.message : err);
+                        document.getElementById('app').innerHTML =
+                            errorPage(info.title, info.message || 'ไม่สามารถโหลดข้อมูลได้', info.kind);
                     })
                     .openParentSession(token, month);
             }
 
             function loadDataBySession_(month) {
                 if (!window.parentAuth || !window.parentAuth.session_token) {
-                    document.getElementById('app').innerHTML = errorPage('ลิงก์หมดอายุ', 'กรุณาติดต่อครูประจำชั้นเพื่อขอลิงก์ใหม่');
+                    document.getElementById('app').innerHTML =
+                        errorPage('ลิงก์หมดอายุ', 'กรุณาติดต่อครูประจำชั้นเพื่อขอลิงก์ใหม่', 'expired');
                     return;
                 }
 
@@ -621,11 +665,12 @@
                         render(data);
                     })
                     .withFailureHandler(function (err) {
-                        var errMessage = String(err && err.message ? err.message : err || '');
-                        if (shouldClearParentAuth_(errMessage)) {
+                        var info = describeParentAuthError_(err && err.message ? err.message : err);
+                        if (info.should_clear_auth) {
                             clearParentAuth_();
                         }
-                        document.getElementById('app').innerHTML = errorPage('เกิดข้อผิดพลาด', err.message || 'ไม่สามารถโหลดข้อมูลได้');
+                        document.getElementById('app').innerHTML =
+                            errorPage(info.title, info.message || 'ไม่สามารถโหลดข้อมูลได้', info.kind);
                     })
                     .getParentViewDataBySession(window.parentAuth.session_token, month);
             }
@@ -633,10 +678,14 @@
             function render(data) {
                 if (!data || !data.success) {
                     var message = (data && data.message) || 'กรุณาติดต่อครูประจำชั้นเพื่อขอลิงก์ใหม่';
-                    if (shouldClearParentAuth_(message)) {
+                    var info = describeParentAuthError_(message);
+                    if (info.should_clear_auth) {
                         clearParentAuth_();
                     }
-                    document.getElementById('app').innerHTML = errorPage('ลิงก์ไม่ถูกต้อง', message);
+                    // ลิงก์หมดอายุกับลิงก์ผิด ต้องบอกวิธีแก้ต่างกัน เดิมเหมาเป็น "ลิงก์ไม่ถูกต้อง" หมด
+                    document.getElementById('app').innerHTML =
+                        errorPage(info.title === 'เกิดข้อผิดพลาด' ? 'ลิงก์ไม่ถูกต้อง' : info.title,
+                            info.message || message, info.kind === 'load_failed' ? 'invalid' : info.kind);
                     return;
                 }
 
@@ -794,19 +843,21 @@
                 return pct === null ? 0 : Math.max(0, Math.min(100, pct));
             }
 
-            function errorPage(title, sub) {
+            /**
+             * ★ ชนิดของ error ต้องส่งมาตรงๆ ห้ามเดาจาก title/sub ที่ตัวเองเพิ่งสร้าง
+             * ของเดิมค้นคำใน title ที่รับเข้ามา = แก้ถ้อยคำบนจอแล้ว "สิ่งที่ควรทำต่อ" เปลี่ยนตามเงียบๆ
+             */
+            var PARENT_ERROR_NEXT_STEPS_ = {
+                expired: 'ติดต่อครูประจำชั้นเพื่อขอลิงก์ผู้ปกครองใหม่ แล้วเปิดจากลิงก์ล่าสุดอีกครั้ง',
+                invalid: 'ตรวจว่าลิงก์ที่เปิดมาจากครูประจำชั้นโดยตรง และเปิดใหม่จากลิงก์นั้นอีกครั้ง',
+                logged_out: 'ปิดหน้าต่างนี้ได้เลย หรือเปิดลิงก์ผู้ปกครองเดิมใหม่เมื่อต้องการใช้งานอีกครั้ง',
+                load_failed: 'ลองเปิดลิงก์นี้ใหม่อีกครั้ง ถ้ายังไม่ได้ให้ติดต่อครูประจำชั้นเพื่อตรวจลิงก์'
+            };
+
+            function errorPage(title, sub, kind) {
                 var resolvedTitle = String(title || 'เกิดข้อผิดพลาด');
                 var resolvedSub = String(sub || 'ไม่สามารถโหลดข้อมูลได้');
-                var nextStep = 'ลองเปิดลิงก์นี้ใหม่อีกครั้ง';
-                if (resolvedTitle.indexOf('ลิงก์หมดอายุ') >= 0 || resolvedSub.indexOf('ขอลิงก์ใหม่') >= 0) {
-                    nextStep = 'ติดต่อครูประจำชั้นเพื่อขอลิงก์ผู้ปกครองใหม่ แล้วเปิดจากลิงก์ล่าสุดอีกครั้ง';
-                } else if (resolvedTitle.indexOf('ลิงก์ไม่ถูกต้อง') >= 0) {
-                    nextStep = 'ตรวจว่าลิงก์ที่เปิดมาจากครูประจำชั้นโดยตรง และเปิดใหม่จากลิงก์นั้นอีกครั้ง';
-                } else if (resolvedTitle.indexOf('ออกจากระบบแล้ว') >= 0) {
-                    nextStep = 'ปิดหน้าต่างนี้ได้เลย หรือเปิดลิงก์ผู้ปกครองเดิมใหม่เมื่อต้องการใช้งานอีกครั้ง';
-                } else if (resolvedSub.indexOf('โหลดข้อมูลไม่ได้') >= 0) {
-                    nextStep = 'ลองเปิดลิงก์นี้ใหม่อีกครั้ง ถ้ายังไม่ได้ให้ติดต่อครูประจำชั้นเพื่อตรวจลิงก์';
-                }
+                var nextStep = PARENT_ERROR_NEXT_STEPS_[String(kind || '')] || 'ลองเปิดลิงก์นี้ใหม่อีกครั้ง';
                 return '<div class="error-page"><div class="error-icon">' + renderParentIcon('lock') + '</div><div class="error-msg">' + esc(resolvedTitle) + '</div><div class="error-sub">' + esc(resolvedSub) + '</div><div class="error-next"><div class="error-next-title">สิ่งที่ควรทำต่อ</div><div class="error-next-text">' + esc(nextStep) + '</div></div></div>';
             }
 

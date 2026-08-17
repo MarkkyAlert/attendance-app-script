@@ -393,20 +393,34 @@ body {
     }
   }
 
-  function showError(err) {
-    var message = err && err.message ? err.message : err || 'ไม่ทราบสาเหตุ';
-    var title = 'ยังเปิดหน้าพิมพ์ไม่ได้';
-    var detail = 'ระบบยังสร้างเอกสารหน้านี้ไม่สำเร็จ';
-    var nextStep = 'กลับไปเปิดหน้าพิมพ์ใหม่จากระบบครูอีกครั้ง';
-    if (String(message).indexOf('หมดอายุ') >= 0) {
-      title = 'ลิงก์พิมพ์หมดอายุแล้ว';
-      detail = 'ลิงก์พิมพ์นี้ใช้ต่อไม่ได้แล้ว เพราะเซสชันพิมพ์หมดอายุหรือข้อมูลยืนยันตัวตนไม่ครบ';
-      nextStep = 'กลับไปที่หน้า reports แล้วกดพิมพ์ใหม่จากระบบครูอีกครั้ง';
-    } else if (String(message).indexOf('ไม่ถูกต้อง') >= 0) {
-      title = 'ลิงก์พิมพ์ไม่ถูกต้อง';
-      detail = 'หน้าพิมพ์นี้ไม่ได้เปิดจากลิงก์ที่ระบบออกให้ หรือข้อมูลในลิงก์ไม่ครบ';
-      nextStep = 'กลับไปที่ระบบครู แล้วกดปุ่มพิมพ์จากหน้า reports ใหม่อีกครั้ง';
+  /**
+   * ★ ชนิดของ error ส่งเข้ามาตรงๆ ห้ามค้นคำไทยในข้อความ
+   * เดิม showError เดาจาก indexOf('หมดอายุ') / indexOf('ไม่ถูกต้อง') ทั้งที่ handlePrintFailure
+   * **อ่าน code มาแล้ว** แล้วตัดทิ้งก่อนส่งต่อ ข้อมูลที่มีอยู่ในมือจึงถูกโยนหายไปหนึ่งชั้น
+   * ผลคือแก้ข้อความ error ฝั่ง server แล้วหน้านี้เปลี่ยนพฤติกรรมโดยไม่มีอะไรเตือน
+   */
+  var PRINT_ERROR_COPY_ = {
+    expired: {
+      title: 'ลิงก์พิมพ์หมดอายุแล้ว',
+      detail: 'ลิงก์พิมพ์นี้ใช้ต่อไม่ได้แล้ว เพราะเซสชันพิมพ์หมดอายุหรือข้อมูลยืนยันตัวตนไม่ครบ',
+      nextStep: 'กลับไปที่หน้า reports แล้วกดพิมพ์ใหม่จากระบบครูอีกครั้ง'
+    },
+    invalid: {
+      title: 'ลิงก์พิมพ์ไม่ถูกต้อง',
+      detail: 'หน้าพิมพ์นี้ไม่ได้เปิดจากลิงก์ที่ระบบออกให้ หรือข้อมูลในลิงก์ไม่ครบ',
+      nextStep: 'กลับไปที่ระบบครู แล้วกดปุ่มพิมพ์จากหน้า reports ใหม่อีกครั้ง'
     }
+  };
+
+  function showError(err, kind) {
+    var copy = PRINT_ERROR_COPY_[String(kind || '')] || {
+      title: 'ยังเปิดหน้าพิมพ์ไม่ได้',
+      detail: 'ระบบยังสร้างเอกสารหน้านี้ไม่สำเร็จ',
+      nextStep: 'กลับไปเปิดหน้าพิมพ์ใหม่จากระบบครูอีกครั้ง'
+    };
+    var title = copy.title;
+    var detail = copy.detail;
+    var nextStep = copy.nextStep;
     document.getElementById('page-container').innerHTML =
       '<div class="page"><div class="rpt-empty-block">' +
       '<div class="rpt-empty-title">' + esc(title) + '</div>' +
@@ -415,17 +429,23 @@ body {
       '</div></div>';
   }
 
+  // ★ code ที่ server ส่งมา → ชนิดที่หน้าจอใช้ · เพิ่ม code ใหม่ให้เติมที่นี่ที่เดียว
+  var PRINT_ERROR_KIND_BY_CODE_ = {
+    AUTH_EXPIRED: 'expired',
+    PRINT_AUTH_EXPIRED: 'expired',
+    AUTH_REQUIRED: 'invalid',
+    PRINT_AUTH_REQUIRED: 'invalid'
+  };
+
   function handlePrintFailure(err) {
     var message = String(err && err.message ? err.message : err || 'ไม่ทราบสาเหตุ');
-    if (
-      message.indexOf('AUTH_REQUIRED|') === 0 ||
-      message.indexOf('AUTH_EXPIRED|') === 0 ||
-      message.indexOf('PRINT_AUTH_REQUIRED|') === 0 ||
-      message.indexOf('PRINT_AUTH_EXPIRED|') === 0
-    ) {
-      message = message.split('|').slice(1).join('|') || 'เซสชันหมดอายุ กรุณาเปิดหน้าพิมพ์ใหม่จากระบบครู';
+    var pipeIndex = message.indexOf('|');
+    var code = pipeIndex > 0 ? message.substring(0, pipeIndex) : '';
+    var kind = PRINT_ERROR_KIND_BY_CODE_[code] || '';
+    if (kind) {
+      message = message.substring(pipeIndex + 1) || 'เซสชันหมดอายุ กรุณาเปิดหน้าพิมพ์ใหม่จากระบบครู';
     }
-    showError({ message: message });
+    showError({ message: message }, kind);
   }
 
   function stripPrintAuthParams_() {
@@ -526,13 +546,13 @@ body {
             onReady();
             return;
           }
-          showError({ message: (result && result.message) || 'ลิงก์พิมพ์หมดอายุ กรุณาเปิดใหม่จากระบบครู' });
+          showError({ message: (result && result.message) || 'ลิงก์พิมพ์หมดอายุ กรุณาเปิดใหม่จากระบบครู' }, 'expired');
         })
         .withFailureHandler(handlePrintFailure)
         .resolvePrintSession(printToken);
       return;
     }
-    showError({ message: 'กรุณาเปิดหน้าพิมพ์จากระบบครูอีกครั้ง' });
+    showError({ message: 'กรุณาเปิดหน้าพิมพ์จากระบบครูอีกครั้ง' }, 'invalid');
   }
 
   document.getElementById('start-date').value = params.start || monthStart;
