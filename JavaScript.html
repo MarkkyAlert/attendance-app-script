@@ -2564,7 +2564,12 @@
       html += '<h1 class="students-title">จัดการนักเรียน</h1>';
       html += '<p class="students-subtitle">ค้นหา จัดกลุ่ม และแก้ไขข้อมูลนักเรียนจากรายการเดียวให้จบเร็วขึ้น</p>';
       html += '<p class="students-context">นักเรียนที่ใช้งานอยู่ ' + data.total + ' คน';
-      if (groups.length > 0) html += ' · แบ่งเป็น ' + groups.length + ' กลุ่ม';
+      // ★ ถ้าบอกแต่ "แบ่งเป็น N กลุ่ม" ครูจะเข้าใจว่าทุกคนอยู่ในกลุ่มแล้ว
+      // ต้องพูดถึงคนที่ยังไม่มีกลุ่มด้วย ไม่งั้นตัวเลขในชิปจะรวมไม่ครบแบบไม่มีคำอธิบาย
+      if (groups.length > 0) {
+        html += ' · แบ่งเป็น ' + groups.length + ' กลุ่ม';
+        if (ungrouped > 0) html += ' และยังไม่ระบุกลุ่มอีก ' + ungrouped + ' คน';
+      }
       if (flagged > 0) html += ' · มี ' + flagged + ' คนที่ต้องจับตา';
       html += '</p>';
       html += '</div>';
@@ -2651,7 +2656,11 @@
         html += '<section class="students-overview">';
         html += renderStudentsMetric('flag', flagged, 'อยู่ในรายการจับตา', flagged > 0 ? 'red' : 'green', flagged > 0 ? 'ติดตามรายชื่อที่มีสัญญาณเสี่ยงเป็นพิเศษ' : 'ยังไม่มีรายชื่อที่ถูกปักธง');
         html += renderStudentsMetric('mail', parentLinked, 'เชื่อมอีเมลผู้ปกครอง', parentLinked === data.total && data.total > 0 ? 'green' : 'blue', data.total > 0 ? 'ครอบคลุม ' + Math.round((parentLinked / data.total) * 100) + '% ของรายชื่อ' : 'ยังไม่มีรายชื่อ');
-        html += renderStudentsMetric('group', ungrouped, 'ยังไม่ระบุกลุ่ม', ungrouped > 0 ? 'amber' : 'green', ungrouped > 0 ? 'จัดกลุ่มเพื่อค้นหาและติดตามได้ง่ายขึ้น' : 'ทุกคนอยู่ในกลุ่มแล้ว');
+        // การ์ดนี้บอกจำนวนได้แต่กดไม่ได้ ครูเห็นเลขแล้วไม่รู้จะไปหาคนพวกนั้นที่ไหน
+        // ให้กดแล้วกรองไปที่ชิป "ยังไม่ระบุกลุ่ม" เลย
+        html += renderStudentsMetric('group', ungrouped, 'ยังไม่ระบุกลุ่ม', ungrouped > 0 ? 'amber' : 'green',
+          ungrouped > 0 ? 'กดเพื่อดูรายชื่อ แล้วจัดกลุ่มให้ครบ' : 'ทุกคนอยู่ในกลุ่มแล้ว',
+          ungrouped > 0 ? 'App.studentFilterGroup(' + inlineJsArg(NO_GROUP_FILTER_) + ')' : '');
         html += '</section>';
       }
       html += '</div>';
@@ -2659,13 +2668,17 @@
       panel.innerHTML = html;
     }
 
-    function renderStudentsMetric(icon, count, label, color, meta) {
-      return '<article class="students-metric students-metric-' + color + '">' +
-        '<div class="students-metric-icon">' + renderUiIcon(icon) + '</div>' +
+    function renderStudentsMetric(icon, count, label, color, meta, onClickAction) {
+      var inner = '<div class="students-metric-icon">' + renderUiIcon(icon) + '</div>' +
         '<div class="students-metric-value">' + esc(String(count || 0)) + '</div>' +
         '<div class="students-metric-label">' + esc(label) + '</div>' +
-        '<div class="students-metric-meta">' + esc(meta || '') + '</div>' +
-        '</article>';
+        '<div class="students-metric-meta">' + esc(meta || '') + '</div>';
+      // ใช้ <button> ตอนกดได้ เพื่อให้ได้ focus และ Enter/Space ฟรีจากเบราว์เซอร์
+      if (onClickAction) {
+        return '<button type="button" class="students-metric students-metric-' + color + ' students-metric-action"' +
+          ' onclick="' + onClickAction + '">' + inner + '</button>';
+      }
+      return '<article class="students-metric students-metric-' + color + '">' + inner + '</article>';
     }
 
     function renderStudentActionIcon(kind) {

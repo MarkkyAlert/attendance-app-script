@@ -74,6 +74,12 @@
     return value === 'upsert' ? 'upsert' : 'add_only';
   }
 
+  /**
+   * ★ ต้องเป็นปี พ.ศ. — ทั้งระบบใช้ พ.ศ. ที่เดียวที่เคยหลุดเป็น ค.ศ. คือฟังก์ชันนี้
+   * คงรูปแบบ d/m/y ไว้ (ไม่ใช้ชื่อเดือนไทย) เพราะข้อความนี้อยู่ติดกับช่อง
+   * `<input type="date">` ที่เบราว์เซอร์วาดเป็น dd/mm/yyyy ถ้าเปลี่ยนเป็น "1 พ.ย. 2568"
+   * สองบรรทัดที่อยู่ติดกันจะอ่านไม่เข้าชุดกันเอง
+   */
   function formatEffectiveFrom(value) {
     if (!value) return '';
     var parts = String(value).split('-');
@@ -82,7 +88,7 @@
     var m = parseInt(parts[1], 10);
     var d = parseInt(parts[2], 10);
     if (!(y && m && d)) return String(value);
-    return d + '/' + m + '/' + y;
+    return d + '/' + m + '/' + (y + 543);
   }
 
   function setImportUiState(phase, fileName, fileSize, title, detail) {
