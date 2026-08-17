@@ -108,7 +108,7 @@ function seedTestData() {
   try {
     plan = buildSeedPlanOrThrow_();
   } catch (e) {
-    ui.alert('สร้างข้อมูลจำลองไม่ได้', String(e && e.message ? e.message : e), ui.ButtonSet.OK);
+    ui.alert('สร้างข้อมูลจำลองไม่ได้', splitErrorCode_(e).message, ui.ButtonSet.OK);
     return;
   }
 
@@ -131,7 +131,7 @@ function seedTestData() {
     });
   } catch (e) {
     Logger.log('seedTestData_ ล้มเหลว: ' + (e && e.stack ? e.stack : e));
-    ui.alert('สร้างข้อมูลจำลองไม่สำเร็จ', String(e && e.message ? e.message : e), ui.ButtonSet.OK);
+    ui.alert('สร้างข้อมูลจำลองไม่สำเร็จ', splitErrorCode_(e).message, ui.ButtonSet.OK);
     return;
   }
 
@@ -667,7 +667,7 @@ function seedTestDataStatus() {
     requireSeedLocalContext_();
     report = buildSeedStatusReport_();
   } catch (e) {
-    ui.alert('อ่านสถานะไม่ได้', String(e && e.message ? e.message : e), ui.ButtonSet.OK);
+    ui.alert('อ่านสถานะไม่ได้', splitErrorCode_(e).message, ui.ButtonSet.OK);
     return;
   }
   Logger.log(JSON.stringify(report, null, 2));

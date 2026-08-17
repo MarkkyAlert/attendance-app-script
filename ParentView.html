@@ -586,29 +586,40 @@
 
             /**
              * แปลง error เป็นสิ่งที่จะแสดง โดยดู code ก่อนเสมอ
-             * ★ ยังต้องมีตาข่ายรองที่ค้นคำไทย เพราะอีก 2 จุดที่เรียก shouldClearParentAuth_
-             * รับค่าจาก `data.message` ของ payload ที่ตอบ `{ success: false }` กลับมาเฉยๆ
-             * ซึ่ง**ไม่ได้ผ่าน throw จึงไม่มี code ติดมา** ถ้าวันหนึ่งฝั่ง server ใส่ code
-             * ให้ payload พวกนั้นด้วย ให้ลบตาข่ายรองนี้ออกได้เลย
+             * ★ ยังต้องมีตาข่ายรองที่ค้นคำไทย เพราะ payload ที่ตอบ `{ success: false }`
+             * กลับมาเฉยๆ **ไม่ได้ผ่าน throw** บางตัวจึงยังไม่มี code ติดมา
+             * (ตัวที่ผ่าน `buildFailurePayload_` มี `code` มาให้แล้ว รับทาง argument ที่สอง)
+             * เมื่อไหร่ที่ทุก payload มี code ครบ ให้ลบตาข่ายรองนี้ออกได้เลย
              */
-            function describeParentAuthError_(rawMessage) {
+            function describeParentAuthError_(rawMessage, payloadCode) {
                 var parsed = parseParentServerError_(rawMessage);
+                var code = String(payloadCode || parsed.code || '');
                 var text = String(parsed.message || '');
-                var isExpired = parsed.code === 'PARENT_AUTH_EXPIRED' ||
-                    (!parsed.code && (text.indexOf('หมดอายุ') >= 0 || text.indexOf('ขอลิงก์ใหม่') >= 0));
-                var isInvalid = parsed.code === 'PARENT_AUTH_REQUIRED' ||
-                    (!parsed.code && text.indexOf('ไม่ถูกต้อง') >= 0);
-                return {
-                    code: parsed.code,
-                    message: text,
-                    should_clear_auth: isExpired || isInvalid,
-                    kind: isExpired ? 'expired' : (isInvalid ? 'invalid' : 'load_failed'),
-                    title: isExpired ? 'ลิงก์หมดอายุ' : (isInvalid ? 'ลิงก์ไม่ถูกต้อง' : 'เกิดข้อผิดพลาด')
-                };
-            }
+                var hasCode = !!code;
+                var sawExpired = text.indexOf('หมดอายุ') >= 0 || text.indexOf('ขอลิงก์ใหม่') >= 0;
+                var sawInvalid = text.indexOf('ไม่ถูกต้อง') >= 0;
+                var isExpired = code === 'PARENT_AUTH_EXPIRED' || (!hasCode && sawExpired);
+                var isInvalid = code === 'PARENT_AUTH_REQUIRED' || (!hasCode && sawInvalid);
 
-            function shouldClearParentAuth_(message) {
-                return describeParentAuthError_(message).should_clear_auth;
+                // ★ openParentSession ตอบ 'ลิงก์ไม่ถูกต้องหรือหมดอายุ' ก้อนเดียวโดยเจตนา
+                // ไม่บอกว่าเป็นกรณีไหน (ไม่ให้คนเดา token รู้ว่าเดาใกล้แล้วหรือยัง)
+                // → ห้ามเลือกข้างแทนมัน ไม่งั้นหน้าจอพูดแน่นอนกว่าความจริงที่ระบบรู้
+                var isAmbiguous = !hasCode && sawExpired && sawInvalid;
+                var kind = isAmbiguous ? 'expired_or_invalid'
+                    : (isExpired ? 'expired' : (isInvalid ? 'invalid' : 'load_failed'));
+                var titles = {
+                    expired_or_invalid: 'ลิงก์นี้ใช้งานไม่ได้',
+                    expired: 'ลิงก์หมดอายุ',
+                    invalid: 'ลิงก์ไม่ถูกต้อง',
+                    load_failed: 'เกิดข้อผิดพลาด'
+                };
+                return {
+                    code: code,
+                    message: text,
+                    should_clear_auth: isAmbiguous || isExpired || isInvalid,
+                    kind: kind,
+                    title: titles[kind]
+                };
             }
 
             function stripSensitiveQuery_(month) {
@@ -657,15 +668,15 @@
                             persistParentAuth_(data.auth);
                             stripSensitiveQuery_(data.month || month);
                         } else if (!data || !data.success) {
-                            var errorMessage = (data && data.message) || '';
-                            if (shouldClearParentAuth_(errorMessage)) {
+                            var errorInfo = describeParentAuthError_((data && data.message) || '', data && data.code);
+                            if (errorInfo.should_clear_auth) {
                                 clearParentAuth_();
                             }
                         }
                         render(data);
                     })
                     .withFailureHandler(function (err) {
-                        var info = describeParentAuthError_(err && err.message ? err.message : err);
+                        var info = describeParentAuthError_(err && err.message ? err.message : err, '');
                         if (info.should_clear_auth) {
                             clearParentAuth_();
                         }
@@ -678,14 +689,16 @@
             function render(data) {
                 if (!data || !data.success) {
                     var message = (data && data.message) || 'กรุณาติดต่อครูประจำชั้นเพื่อขอลิงก์ใหม่';
-                    var info = describeParentAuthError_(message);
+                    var info = describeParentAuthError_(message, data && data.code);
                     if (info.should_clear_auth) {
                         clearParentAuth_();
                     }
-                    // ลิงก์หมดอายุกับลิงก์ผิด ต้องบอกวิธีแก้ต่างกัน เดิมเหมาเป็น "ลิงก์ไม่ถูกต้อง" หมด
+                    // ลิงก์หมดอายุ ลิงก์ผิด และ "ไม่รู้ว่าอันไหน" ต้องบอกวิธีแก้ต่างกัน
+                    // เดิมเหมาเป็น "ลิงก์ไม่ถูกต้อง" หมด · ถ้าไม่เข้าเคสไหนเลยให้คงคำเดิมไว้
+                    var isAuthCase = info.kind !== 'load_failed';
                     document.getElementById('app').innerHTML =
-                        errorPage(info.title === 'เกิดข้อผิดพลาด' ? 'ลิงก์ไม่ถูกต้อง' : info.title,
-                            info.message || message, info.kind === 'load_failed' ? 'invalid' : info.kind);
+                        errorPage(isAuthCase ? info.title : 'ลิงก์ไม่ถูกต้อง',
+                            info.message || message, isAuthCase ? info.kind : 'invalid');
                     return;
                 }
 
@@ -848,6 +861,8 @@
              * ของเดิมค้นคำใน title ที่รับเข้ามา = แก้ถ้อยคำบนจอแล้ว "สิ่งที่ควรทำต่อ" เปลี่ยนตามเงียบๆ
              */
             var PARENT_ERROR_NEXT_STEPS_ = {
+                expired_or_invalid: 'ตรวจว่าเปิดจากลิงก์ล่าสุดที่ครูประจำชั้นส่งให้ ' +
+                    'ถ้าเปิดจากลิงก์นั้นแล้วยังไม่ได้ ให้ติดต่อครูเพื่อขอลิงก์ใหม่',
                 expired: 'ติดต่อครูประจำชั้นเพื่อขอลิงก์ผู้ปกครองใหม่ แล้วเปิดจากลิงก์ล่าสุดอีกครั้ง',
                 invalid: 'ตรวจว่าลิงก์ที่เปิดมาจากครูประจำชั้นโดยตรง และเปิดใหม่จากลิงก์นั้นอีกครั้ง',
                 logged_out: 'ปิดหน้าต่างนี้ได้เลย หรือเปิดลิงก์ผู้ปกครองเดิมใหม่เมื่อต้องการใช้งานอีกครั้ง',

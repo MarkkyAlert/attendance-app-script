@@ -56,7 +56,7 @@ function openParentSession(token, month) {
   try {
     link = validateParentLinkToken_(token);
   } catch (e) {
-    return { success: false, message: String(e && e.message ? e.message : e || 'ไม่สามารถเปิดลิงก์ได้') };
+    return buildFailurePayload_(e, 'ไม่สามารถเปิดลิงก์ได้');
   }
   if (!link) {
     return { success: false, message: 'ลิงก์ไม่ถูกต้องหรือหมดอายุ' };
@@ -92,11 +92,10 @@ function getParentViewDataBySession(sessionToken, month) {
       return data;
     });
   } catch (e) {
-    var raw = String(e && e.message ? e.message : e || '');
-    if (raw.indexOf('PARENT_AUTH_REQUIRED|') === 0 || raw.indexOf('PARENT_AUTH_EXPIRED|') === 0) {
-      return { success: false, message: raw.split('|').slice(1).join('|') || 'ลิงก์หมดอายุ กรุณาขอลิงก์ใหม่จากครู' };
-    }
-    return { success: false, message: raw || 'ไม่สามารถโหลดข้อมูลได้' };
+    // ★ buildFailurePayload_ ถอด CODE| ออกจากข้อความและส่ง code มาเป็นฟิลด์แยก
+    // ของเดิมถอด code ของ PARENT_AUTH_* ทิ้งไปเลย หน้าจอจึงต้องเดาจากคำไทยเอง
+    // และ code อื่น (เช่น SHEET_MISSING) หลุดขึ้นจอผู้ปกครองทั้งก้อน
+    return buildFailurePayload_(e, 'ไม่สามารถโหลดข้อมูลได้');
   }
 }
 
