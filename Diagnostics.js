@@ -220,6 +220,27 @@ function runP0Diagnostics_() {
         result['attendance_pass' + pass + '_students'] = payload && payload.students ? payload.students.length : 0;
       }
 
+      // ★★ pass3 = "วันที่สอง" ซึ่งเป็นเคสเดียวที่วัดผลของการเลิก cache ผูกช่วงวันที่ได้
+      // pass1/pass2 อยู่บนวันเดียวกัน ทั้งโค้ดเก่าและใหม่จึงอ่านปฏิทินหนึ่งครั้งแล้ว hit
+      // เหมือนกันหมด → **วัดความต่างไม่ได้เลย** ความต่างโผล่ตอนเปลี่ยนวันที่
+      // โค้ดเก่า: คีย์ `[date-35, date]` เปลี่ยนตามวันที่ = miss = อ่านชีตใหม่ (~800 ms)
+      // โค้ดใหม่: คีย์ไม่ผูกช่วง = hit = เกือบ 0
+      var secondDate = '';
+      Object.keys(buckets).sort().forEach(function(date) {
+        if (date !== probeDate && !secondDate && buckets[date] && buckets[date].length) secondDate = date;
+      });
+      result.second_date = secondDate || '(ไม่พบวันที่สอง)';
+      if (secondDate) {
+        var secondStartedAt = new Date().getTime();
+        var secondPayload = buildAttendanceDailyPayload_(secondDate, {
+          source_info: sourceInfo,
+          active_semester: semester,
+          capture_timing_detail: true
+        });
+        result.attendance_pass3_other_date_ms = new Date().getTime() - secondStartedAt;
+        result.attendance_pass3_other_date_steps = String(secondPayload && secondPayload.__timing_detail || '(ไม่มี)');
+      }
+
       // เทียบกับรายงานรายวันทั้งภาคเรียน สร้างสดไม่ผ่าน cache เพื่อไม่ให้ได้เวลาปลอม
       var range = clampRangeToActiveSemester_(normalizeDateRange_(semester.start_date, semester.end_date));
       if (isEffectiveRangeEmpty_(range)) {
