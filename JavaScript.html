@@ -99,6 +99,33 @@
     // ยาวกว่าช่องค้นหาเพราะช่องวันที่ต้องพิมพ์หลายช่อง (วัน/เดือน/ปี) กว่าจะครบ
     var ATTENDANCE_DATE_TYPING_DEBOUNCE_MS = 800;
 
+    // ★ เผื่อนาฬิกาเครื่องครูไม่ตรงกับ server — ดู isStoredTeacherAuthExpired_
+    var TEACHER_AUTH_CLOCK_SKEW_MS = 60 * 1000;
+
+    /**
+     * session ที่เก็บไว้หมดอายุแล้วหรือยัง
+     *
+     * ★ เดิมเก็บ `expires_at` ไว้แต่**ไม่มีใครเทียบเลย** ผลคือเปิดหน้าใหม่หลังทิ้งไว้นาน
+     * ครูเห็น **จอกำลังโหลดค้างหลายวินาที แล้วค่อยเด้งไปหน้าเข้าสู่ระบบ**
+     * เพราะต้องยิง request ให้ server ตอบ `AUTH_EXPIRED` กลับมาก่อนถึงจะรู้
+     * (`ParentView.html` เช็คตั้งแต่ตอนอ่านกลับอยู่แล้ว — ยกวิธีเดียวกันมาใช้)
+     *
+     * ⚠️ **ไม่มี `expires_at` ให้ถือว่ายังไม่หมดอายุ** ไม่ใช่หมดอายุ
+     * เพราะ session ที่เก็บไว้ก่อนหน้านี้ไม่มีฟิลด์นี้ ถ้าตีเป็นหมดอายุ
+     * ครูทุกคนจะถูกเตะออกหนึ่งครั้งตอนอัปเดตโค้ดโดยไม่มีเหตุผล
+     *
+     * ⚠️ เทียบกับ `Date.now()` ของเครื่องครูซึ่งอาจเพี้ยน จึงเผื่อ skew ไว้
+     * และ**ใช้เฉพาะตอนอ่านกลับ ไม่เอาไปตัดสินทุก request** — ถ้านาฬิกาเพี้ยนมาก
+     * อาการที่แย่ที่สุดคือต้องล็อกอินใหม่หนึ่งครั้ง (การล็อกอินเขียน `expires_at` ชุดใหม่ทับ)
+     * ไม่ใช่ใช้งานไม่ได้ · ส่วนกรณีหมดอายุระหว่างใช้งาน `handleTeacherSessionExpired_`
+     * รับไว้อยู่แล้วจาก `AUTH_EXPIRED` ของ server ซึ่งเชื่อถือได้กว่านาฬิกาเครื่อง
+     */
+    function isStoredTeacherAuthExpired_(auth) {
+      var expiresAt = parseInt(auth && auth.expires_at, 10) || 0;
+      if (!expiresAt) return false;
+      return (expiresAt + TEACHER_AUTH_CLOCK_SKEW_MS) <= Date.now();
+    }
+
     function loadStoredTeacherAuth_() {
       var raw = '';
       try {
@@ -460,6 +487,10 @@
 
     function initializeTeacherAuth_() {
       teacherAuth = loadStoredTeacherAuth_();
+
+      // ★ รู้ว่าหมดอายุตั้งแต่ตอนนี้ ไม่ต้องรอ server ปฏิเสธ = ไม่มีจอโหลดค้างก่อนเด้ง
+      var expiredOnRestore = isStoredTeacherAuthExpired_(teacherAuth);
+      if (expiredOnRestore) clearTeacherAuth_();
       state.auth = teacherAuth;
 
       if (teacherAuth && teacherAuth.session_token) {
@@ -468,7 +499,8 @@
       }
 
       loadTeacherLoginOptions_(function () {
-        renderTeacherLoginState();
+        // บอกเหตุผลด้วย ไม่ใช่โยนฟอร์มเปล่าให้ครูเดาว่าทำไมต้องล็อกอินอีก
+        renderTeacherLoginState(expiredOnRestore ? 'เซสชันหมดอายุแล้ว กรุณาใส่รหัสครูเพื่อเข้าใช้งานอีกครั้ง' : '');
       });
     }
 
