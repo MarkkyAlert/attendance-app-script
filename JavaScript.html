@@ -49,11 +49,15 @@
     var TEACHER_DEVICE_STORAGE_KEY = 'att_teacher_device_id';
     var BACKUP_META_STORAGE_KEY = 'att_last_backup_meta';
     var SETUP_ONBOARDING_STORAGE_KEY = 'att_setup_onboarding';
+    // ★ มีแค่ `global` เพราะเป็นฟิลด์เดียวที่โค้ดอ่านจริง
+    // เดิมมี `page` อยู่ 4 ตัวแต่**ไม่มีใครอ่านเลย** ตัวที่ตัดสินว่าหน้าไหนใช้โมดูลไหน
+    // คือ `PAGE_MODULE_MAP` ข้างล่าง · หลักฐานว่ามันตายแล้วคือ `profile` กับ `photoGrid`
+    // ไม่เคยมี `page` แต่ทำงานได้ปกติมาตลอด — เป็นเอกสารที่ปลอมตัวเป็นโค้ด แก้แล้วไม่มีผล
     var CLIENT_MODULE_REGISTRY = {
-      dashboard: { page: 'dashboard', global: 'DashboardPage' },
-      reports: { page: 'reports', global: 'ReportsPage' },
-      analytics: { page: 'analytics', global: 'AnalyticsPage' },
-      import: { page: 'import', global: 'ImportPage' },
+      dashboard: { global: 'DashboardPage' },
+      reports: { global: 'ReportsPage' },
+      analytics: { global: 'AnalyticsPage' },
+      import: { global: 'ImportPage' },
       profile: { global: 'ProfilePage' },
       photoGrid: { global: 'PhotoGrid' }
     };
@@ -5629,6 +5633,11 @@
       resetFileInput: resetFileInput,
       openDownloadWindow: openDownloadWindow,
       getTeacherAuth: getTeacherAuth,
+      // ★ โมดูลลูกต้องเรียกผ่านตัวนี้ ห้ามอ้าง global `SCRIPT_URL` ตรงๆ
+      // `SCRIPT_URL` ถูกประกาศใน `Index.html` [บรรทัด 382] ด้วย template ของ Apps Script
+      // โมดูลที่อ้างตรงๆ จะพังเงียบๆ ถ้าวันหนึ่งย้ายที่ประกาศ และหาต้นเหตุยาก
+      // เพราะ error จะไปโผล่ในไฟล์ที่ไม่ได้แก้
+      getScriptUrl: function () { return String(window.SCRIPT_URL || ''); },
       activateOverlayFocus_: activateOverlayFocus_,
       deactivateOverlayFocus_: deactivateOverlayFocus_
     };

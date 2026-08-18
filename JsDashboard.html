@@ -11,6 +11,21 @@
     var chartJsLoadPromise = null;
     var dashboardRenderFrameId = 0;
     var CHART_JS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js';
+    /**
+     * ★ SRI ของไฟล์ข้างบน — **ต้องเปลี่ยนคู่กับ `CHART_JS_URL` เสมอ**
+     * นี่คือ dependency ภายนอกตัวเดียวของทั้งโปรเจกต์ และมันถูกโหลดเข้าหน้าที่แสดง
+     * ข้อมูลนักเรียน ถ้า CDN ถูกแทรกโค้ด เบราว์เซอร์จะปฏิเสธไฟล์ที่ hash ไม่ตรง
+     * แล้วตกไปที่ทางล้มเหลวเดิม (`script.onerror` → กราฟกลายเป็นการ์ดอธิบาย)
+     * ซึ่ง**ปลอดภัยกว่ารันโค้ดที่ไม่รู้ว่าใครแก้**
+     *
+     * ค่านี้ยืนยัน 2 ทางเมื่อ 18 ส.ค. 2569: คำนวณจากไฟล์ที่ดาวน์โหลดจริง (200,807 ไบต์)
+     * และตรงกับที่ cdnjs ประกาศผ่าน API ของตัวเอง
+     * วิธีหาใหม่ถ้าอัปเวอร์ชัน:
+     *   curl -fsSL <url> | openssl dgst -sha512 -binary | openssl base64 -A
+     * ★ `crossOrigin = 'anonymous'` จำเป็นสำหรับ SRI ข้าม origin ถ้าไม่ใส่ เบราว์เซอร์
+     *   จะบล็อกไฟล์ทิ้งทั้งที่ hash ถูก
+     */
+    var CHART_JS_SRI = 'sha512-CQBWl4fJHWbryGE+Pc7UAxWMUMNMWzWxF4SQo9CgkJIN1kx6djDQZjh3Y8SZ1d+6I+1zze6Z7kHXO7q3UyZAWw==';
     var S, E; // state, shared
 
     function init() {
@@ -509,6 +524,8 @@
           }
           var script = document.createElement('script');
           script.src = CHART_JS_URL;
+          script.integrity = CHART_JS_SRI;
+          script.crossOrigin = 'anonymous';
           script.async = true;
           script.dataset.chartjsDashboard = '1';
           script.onload = function () { resolve(window.Chart); };

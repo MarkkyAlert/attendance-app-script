@@ -1626,7 +1626,7 @@
         E.toast(preflightIssue, 'error');
         return;
       }
-      var url = SCRIPT_URL + '?page=print&type=' + type;
+      var url = E.getScriptUrl() + '?page=print&type=' + type;
       var printContext = { type: type };
       var popupWindow = null;
       try {
