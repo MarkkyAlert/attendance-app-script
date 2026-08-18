@@ -3548,7 +3548,8 @@
       html += '<input type="file" id="restore-backup-input" accept=".zip" style="display:none" onchange="App.handleRestoreBackupFile(this)">';
       html += '<div class="settings-status-list">';
       html += settingsStatusItem('calendar', 'สำรองล่าสุดบนอุปกรณ์นี้', latestBackupLabel, 'settings-backup-latest-value');
-      html += settingsStatusItem('download', 'ปลายทางไฟล์สำรอง', 'ดาวน์โหลดลงเครื่องนี้ทันที');
+      // ★ ไม่เขียนว่า "ทันที" อีกแล้ว เพราะถ้าเบราว์เซอร์บล็อก pop-up ครูต้องกดลิงก์ในกล่องเอง
+      html += settingsStatusItem('download', 'ปลายทางไฟล์สำรอง', 'ดาวน์โหลดลงเครื่องนี้');
       html += settingsStatusItem('confirmed', 'ควรใช้ก่อน', 'แก้ข้อมูลจำนวนมากหรือส่งต่อระบบ');
       html += settingsStatusItem('note', 'ข้อจำกัดการกู้คืน', 'ไม่รวมรหัสครู, PIN และ session ปัจจุบัน');
       html += '</div>';
@@ -4540,9 +4541,12 @@
           if (latestBackupEl) latestBackupEl.textContent = formatBackupMetaLabel_(backupMeta);
 
           if (result.file_id) {
+            // ★ 5 นาที ไม่ใช่ 1 นาที เพราะถ้า pop-up ถูกบล็อก ครูต้องกดลิงก์ในกล่องเอง
+            // ซึ่งใช้เวลาอ่านและตัดสินใจ · ของเดิม 60 วินาทีทำให้ไฟล์หายก่อนครูกดทัน
+            // (`registerTempDriveFile_` ลงทะเบียนไว้ 1800 วินาที จึงยังอยู่ในขอบเขต)
             setTimeout(function () {
               serverCall('cleanupBackupFile', [result.file_id], function () {});
-            }, 60000);
+            }, 300000);
           }
         } else {
           toast('ไม่สามารถสร้างไฟล์สำรองได้', 'error');
@@ -5163,14 +5167,52 @@
       input.value = '';
     }
 
+    /**
+     * ★★ เปิดหน้าต่างดาวน์โหลด และ**มีทางออกให้เสมอถ้าถูกบล็อก**
+     *
+     * `window.open` ถูกเรียกหลังจบ round-trip ของ `serverCall` แล้ว จึง**เสีย transient
+     * user activation** เบราว์เซอร์จึงบล็อกได้ตามปกติ ไม่ใช่ความผิดของครู
+     * เกิดจริง 18 ส.ค. 2569: กด "สร้างไฟล์สำรอง" สำเร็จฝั่ง server แต่ไฟล์ไม่ถึงเครื่องเลย
+     * (ไม่มีในประวัติดาวน์โหลดของ Chrome และไม่มีแท็บใหม่)
+     * เป็นปัญหาชนิดเดียวกับบั๊ก `execCommand('copy')` ของลิงก์ผู้ปกครอง
+     *
+     * ★ เดิมบอกแค่ "กรุณาอนุญาต pop-up แล้วลองใหม่" ซึ่งโยนงานกลับให้ครูไปตั้งค่าเบราว์เซอร์
+     * และถ้าเป็นไฟล์สำรอง ไฟล์บน Drive จะถูกลบทิ้งก่อนครูกลับมาเสียด้วยซ้ำ
+     * → เปลี่ยนเป็นเปิดกล่องที่มี**ลิงก์ให้กดเอง** การกดลิงก์คือ user gesture จริง
+     * จึงไม่ถูกบล็อก ครูได้ไฟล์ในคลิกเดียวโดยไม่ต้องแตะการตั้งค่าใดๆ
+     *
+     * ใช้ร่วมกัน 3 ที่: ไฟล์สำรอง · CSV หน้ารายงาน · แม่แบบหน้านำเข้า
+     */
     function openDownloadWindow(url, blockedMessage) {
       var win = window.open(url, '_blank', 'noopener');
       if (win) {
         try { win.opener = null; } catch (e) {}
         return true;
       }
-      if (blockedMessage) toast(blockedMessage, 'error');
+      showBlockedDownloadModal_(url, blockedMessage);
       return false;
+    }
+
+    function showBlockedDownloadModal_(url, blockedMessage) {
+      var safeUrl = String(url || '');
+      if (!safeUrl) {
+        if (blockedMessage) toast(blockedMessage, 'error');
+        return;
+      }
+
+      var body = '';
+      body += '<p class="text-sm" style="margin-bottom:.75rem">เบราว์เซอร์บล็อกการเปิดหน้าต่างดาวน์โหลดอัตโนมัติ ' +
+        '<strong>ไฟล์ถูกเตรียมไว้เรียบร้อยแล้ว</strong> กดปุ่มด้านล่างเพื่อดาวน์โหลดได้เลย</p>';
+      body += '<a class="btn btn-primary" style="display:inline-flex;text-decoration:none" ' +
+        'href="' + escAttr(safeUrl) + '" target="_blank" rel="noopener" download>' +
+        renderUiIcon('download') + ' ดาวน์โหลดไฟล์</a>';
+      body += '<div class="settings-note settings-note-stone" style="margin-top:.75rem">' + renderUiIcon('note') +
+        '<span>ไฟล์นี้เตรียมไว้ชั่วคราวและจะถูกลบออกจาก Google Drive หลังจากนี้ไม่นาน ' +
+        'ถ้ายังไม่ได้กดดาวน์โหลด ให้กดก่อนปิดหน้าต่างนี้</span></div>';
+
+      showModal('ดาวน์โหลดไฟล์', body, [
+        { label: 'ปิด', class: 'btn btn-ghost', action: 'closeModal()' }
+      ], { initialFocusSelector: '#modal-body a' });
     }
 
     function getFocusableElements_(container) {
