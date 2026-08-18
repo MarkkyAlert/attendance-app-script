@@ -317,7 +317,6 @@ function recordAttendance(payload, auth) {
       }
 
       invalidateAttendanceCaches_(date);
-      try { warmLikelyDerivedCachesForDate_(date, { mode: 'record' }); } catch (eWarm) { Logger.log('warmLikelyDerivedCachesForDate_ record failed: ' + eWarm.message); }
       logAsync_(studentNumber, studentId, date, oldStatus, statusCode, oldNote, note, rowIndex > 0 ? 'update' : 'create');
 
       var statusInfo = STATUS_MAP[statusCode];
@@ -368,7 +367,6 @@ function undoAttendance(payload, auth) {
         return record.row_index;
       }));
       invalidateAttendanceCaches_(date);
-      try { warmLikelyDerivedCachesForDate_(date, { mode: 'undo' }); } catch (eWarm) { Logger.log('warmLikelyDerivedCachesForDate_ undo failed: ' + eWarm.message); }
       logAsync_(studentNumber, studentId, date, String(latestMatch.status_code || ''), '', String(latestMatch.note || ''), '', 'undo');
       return { success: true, message: 'ยกเลิกแล้ว' };
     });
@@ -414,7 +412,6 @@ function bulkMarkPresent(date, auth) {
 
       sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, COL.ATTENDANCE.STUDENT_ID).setValues(rows);
       invalidateAttendanceCaches_(date);
-      try { warmLikelyDerivedCachesForDate_(date, { mode: 'bulk' }); } catch (eWarm) { Logger.log('warmLikelyDerivedCachesForDate_ bulk failed: ' + eWarm.message); }
       logDayEvent_(date, 'bulk_present', '', 'present', 'batch=' + batchId, 'count=' + rows.length);
 
       return {
@@ -461,7 +458,6 @@ function undoBulkPresent(date, batchId, auth) {
         return { success: false, message: 'ไม่พบรายการเช็คมาทั้งหมดที่ยกเลิกได้' };
       }
       invalidateAttendanceCaches_(date);
-      try { warmLikelyDerivedCachesForDate_(date, { mode: 'undo_bulk' }); } catch (eWarm) { Logger.log('warmLikelyDerivedCachesForDate_ undo bulk failed: ' + eWarm.message); }
       logDayEvent_(date, 'undo_bulk_present', 'present', '', 'requested_batch=' + batchId, 'count=' + deleted);
       return { success: true, message: 'ยกเลิก ' + deleted + ' คน' };
     });
@@ -502,7 +498,9 @@ function confirmDay(date, auth) {
 
       saveDayStatus_(date, 'confirmed', nowString_());
       invalidateAttendanceCaches_(date);
-      try { warmLikelyDerivedCachesForDate_(date, { mode: 'confirm' }); } catch (eWarm) { Logger.log('warmLikelyDerivedCachesForDate_ confirm failed: ' + eWarm.message); }
+      // ★ เคยอุ่น cache ตรงนี้ (mode 'confirm') วัดได้ 5.9-12 วินาที **ในล็อก ขณะครูรอ** — ตัดออกแล้ว
+      // เพราะ client ไม่ยิงคำขอใดๆ ต่อหลังยืนยันสำเร็จ แค่วาดจอใหม่ฝั่งตัวเอง การอุ่นจึงเป็นการเดาล้วนๆ
+      // และ unconfirmDay (mode 'draft') ไม่เคยอุ่นอยู่แล้ว · ดู DECISIONS.md ข้อ 38
       logDayEvent_(date, 'confirm_day', 'draft', 'confirmed', '', '');
       return { success: true, message: 'ยืนยันแล้ว' };
     });
@@ -528,7 +526,6 @@ function unconfirmDay(date, auth) {
       if (dayStatus.status !== 'confirmed') return { success: false, message: 'วันนี้ยังไม่ได้ยืนยัน' };
       saveDayStatus_(date, 'draft', '');
       invalidateAttendanceCaches_(date);
-      try { warmLikelyDerivedCachesForDate_(date, { mode: 'draft' }); } catch (eWarm) { Logger.log('warmLikelyDerivedCachesForDate_ unconfirm failed: ' + eWarm.message); }
       logDayEvent_(date, 'unconfirm_day', 'confirmed', 'draft', '', '');
       return { success: true, message: 'เปิดแก้ไขได้แล้ว' };
     });

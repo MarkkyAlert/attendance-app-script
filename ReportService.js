@@ -334,8 +334,13 @@ function warmLikelyDerivedCachesForDate_(date) {
   date = String(date || '').slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
 
+  // ★ ตอนนี้เหลือผู้เรียกคนเดียวคือ clearHolidayAttendance (mode 'clear_holiday')
+  // mode 'confirm' ถูกตัดออกเพราะวัดได้ 5.9-12 วินาทีในล็อกขณะครูรอ โดยที่ client
+  // ไม่ยิงคำขอใดๆ ต่อหลังยืนยัน — ดู DECISIONS.md ข้อ 38
+  // ส่วนอีก 5 mode ด้านล่างเคยมีผู้เรียกแต่ถูกกันออกที่นี่ = เรียกแล้วไม่ทำอะไร จึงลบผู้เรียกทิ้งไปด้วย
+  // เก็บรายการไว้เป็นด่านกันพลาด เผื่อมีใครเติมผู้เรียกกลับเข้ามาโดยไม่ได้วัดก่อน
   var mode = String(arguments[1] && arguments[1].mode || 'default').trim().toLowerCase();
-  if (['record', 'undo', 'bulk', 'undo_bulk', 'save_note', 'draft'].indexOf(mode) >= 0) {
+  if (['record', 'undo', 'bulk', 'undo_bulk', 'save_note', 'draft', 'confirm'].indexOf(mode) >= 0) {
     return;
   }
 

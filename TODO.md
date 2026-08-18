@@ -553,13 +553,28 @@
 
 </details>
 
-- [ ] **`confirmDay` อุ่น cache 7.5–12 วินาทีในล็อก ขณะครูรออยู่** (วัดแล้ว ควรแก้)
+- [x] **`confirmDay` อุ่น cache 7.5–12 วินาทีในล็อก ขณะครูรออยู่** — **ตัดออกแล้ว รอทดสอบ**
+      วัดซ้ำหลังแยก cache archive: `cold_warm_ms` **5,896** · `hot_warm_ms` **128**
+      → การแยก cache **ไม่ได้แก้ข้อนี้ให้** เพราะอุ่นหลัง invalidate จึงสร้างใหม่จากศูนย์เสมอ
+      ตัดสินด้วยข้อเท็จจริงฝั่ง client: `confirmDay` สำเร็จแล้ว**ไม่ยิงคำขอใดๆ ต่อ** แค่วาดจอเอง
+      การอุ่นจึงเป็นการเดา แต่ครูจ่ายแน่นอน 100% ทุกครั้ง · `DECISIONS.md` ข้อ 38
+      ลบผู้เรียกที่ตายแล้วอีก 5 จุด (`record`/`undo`/`bulk`/`undo_bulk`/`draft`) ซึ่งถูกกันออกที่ต้นฟังก์ชันอยู่แล้ว
+
+- [ ] **`clearHolidayAttendance` ยังอุ่น cache ในล็อกอยู่** (ยังไม่วัด ยังไม่ตัดสิน)
+      เหลือเป็นผู้เรียก `warmLikelyDerivedCachesForDate_` คนเดียวในโปรเจกต์ [AttendanceService.js:1871]
+      วัดได้จาก `perf:in_lock_cache_warm_cost` · ยังไม่รู้ว่าครูกด "ล้างข้อมูลวันหยุด" บ่อยแค่ไหน
+      ถ้าแพงและทำบ่อย ให้ตัดแบบเดียวกับ `confirmDay`
+
+<details><summary>ตัวเลขเดิมก่อนแก้</summary>
+
       `derived_cache_warm_ms` ค่ากลาง **7,510 ms** สูงสุด **12,243 ms**
       [AttendanceService.js:478-501] ในล็อก `withAttendanceMutationLock_` ทำตามลำดับ
       `saveDayStatus_` → `invalidateAttendanceCaches_` (ล้างทุก cache) →
       `warmLikelyDerivedCachesForDate_` (สร้าง dashboard + รายงาน + ตารางรายวันทั้งเดือนใหม่จากศูนย์)
       ตรงกับ "ยืนยันวัน ~16 วิ" ในตาราง UAT
       ทางเลือก: ย้ายออกนอกล็อก → อุ่นเฉพาะตัวที่เปิดต่อบ่อยสุด → ตัดทิ้ง
+
+</details>
 
 - [ ] **เหลืออีก ~1.6 วินาทีบนการเปิดหน้าเช็คชื่อครั้งแรกของ session** (ไม่เร่ง)
       `students_ms` 665 · `records_day_status_ms` 367 · `alerts_ms` 338 · `pf_settings_ms` 279

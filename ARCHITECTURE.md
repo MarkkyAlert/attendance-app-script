@@ -613,9 +613,14 @@ percent     = round(attend_days / basis_days × 1000) / 10
 - **ไม่มี lock ทั้งที่เป็น mutation**: `repairParentEmailNotifications` · `toggleStudentFlag` ·
   `saveSettings` / `saveTeacherSecuritySettings`
 
-⚠️ `warmLikelyDerivedCachesForDate_` ถูกเรียก **ข้างใน** lock สำหรับ mode `confirm` และ `clear_holiday`
-การอุ่นแคชสร้าง dashboard + summary + daily grid ใหม่ทั้งชุด = ถือ lock ยาวในจังหวะที่ครูกด "ยืนยันวัน"
-(mode `record`/`undo`/`bulk`/`save_note`/`draft` ถูกกันออกไปแล้ว)
+⚠️ `warmLikelyDerivedCachesForDate_` ยังถูกเรียก **ข้างใน** lock สำหรับ mode `clear_holiday` เท่านั้น
+การอุ่นแคชสร้าง dashboard + summary + daily grid ใหม่ทั้งชุด = ถือ lock ยาว
+วัดได้ **5,896 ms ตอน cache เย็น เทียบ 128 ms ตอนอุ่นแล้ว** (`perf:confirm_day_warm_cost`)
+แพงเพราะถูกเรียกหลัง `invalidateAttendanceCaches_` จึงต้องสร้างใหม่จากศูนย์เสมอ
+
+mode `confirm` **ถูกตัดออกแล้ว** (ดู `DECISIONS.md` ข้อ 38) ส่วน mode
+`record`/`undo`/`bulk`/`undo_bulk`/`save_note`/`draft` ถูกกันออกไปตั้งแต่ก่อนหน้า
+→ เหลือ `clear_holiday` เป็นทางเดียวที่ยังอุ่นอยู่ **ยังเป็นงานค้างใน `TODO.md`**
 
 ---
 
