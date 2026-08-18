@@ -294,6 +294,59 @@ function runP0Diagnostics_() {
       return result;
     }));
 
+    // 1จ. สรุป `_timing_log` — ข้อมูลความช้าจากการใช้งานจริงที่สะสมไว้แล้ว
+    // ★ อ่านอย่างเดียว · โปรเจกต์เขียน log นี้มาตลอดผ่าน `measureTiming_` แต่**ไม่มีใครอ่านออกมาดู**
+    //   เพราะไม่มีฟังก์ชันอ่าน ต้องไปเปิดชีตซ่อนเอง — เป็นข้อมูลที่ดีที่สุดที่มี
+    //   เพราะมาจากครูใช้งานจริง ไม่ใช่การจำลองใน Diagnostics
+    // ★ บันทึกเฉพาะที่เกิน threshold (ดู `TIMING_LOG_THRESHOLDS_MS` [Utils.js])
+    //   จึงเป็นรายการ "ครั้งที่ช้า" ไม่ใช่ค่าเฉลี่ยของทุกครั้ง **อย่าตีความว่าเป็นค่ากลาง**
+    checks.push(runPreReleaseSmokeCheck_('perf:timing_log_summary', function() {
+      var sheet = getSheetByNameOrNull_(TIMING_LOG_SHEET);
+      if (!sheet) return { note: 'ยังไม่มีชีต ' + TIMING_LOG_SHEET + ' (ยังไม่เคยมีครั้งไหนช้าเกินเกณฑ์)' };
+
+      var lastRow = sheet.getLastRow();
+      if (lastRow <= 1) return { note: 'ชีตว่าง ยังไม่เคยมีครั้งไหนช้าเกินเกณฑ์' };
+
+      var values = sheet.getRange(2, 1, lastRow - 1, 13).getValues();
+      var byMetric = {};
+      for (var i = 0; i < values.length; i++) {
+        var metric = String(values[i][1] || '(ไม่ระบุ)');
+        var duration = parseInt(values[i][2], 10) || 0;
+        var status = String(values[i][3] || '');
+        if (!byMetric[metric]) byMetric[metric] = { count: 0, errors: 0, durations: [] };
+        byMetric[metric].count++;
+        if (status === 'error') byMetric[metric].errors++;
+        else byMetric[metric].durations.push(duration);
+      }
+
+      var summary = Object.keys(byMetric).sort().map(function(metric) {
+        var bucket = byMetric[metric];
+        var sorted = bucket.durations.slice().sort(function(a, b) { return a - b; });
+        return {
+          metric: metric,
+          threshold_ms: getTimingThresholdMs_(metric),
+          slow_count: sorted.length,
+          error_count: bucket.errors,
+          median_ms: sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0,
+          max_ms: sorted.length ? sorted[sorted.length - 1] : 0
+        };
+      });
+
+      // 10 แถวล่าสุด เอาไว้ดูว่าอะไรช้าล่าสุดและช้าตอนทำอะไร
+      var recent = values.slice(Math.max(0, values.length - 10)).map(function(row) {
+        return {
+          at: String(row[0] || ''),
+          metric: String(row[1] || ''),
+          ms: parseInt(row[2], 10) || 0,
+          status: String(row[3] || ''),
+          fn: String(row[5] || ''),
+          detail: String(row[12] || '').slice(0, 160)
+        };
+      }).reverse();
+
+      return { total_rows: values.length, by_metric: summary, recent_10: recent };
+    }));
+
     // 2. หัวใจของงานชุดนี้: ลบแถวไม่ติดกัน บนชีตทดสอบที่แยกออกมาต่างหาก
     checks.push(runPreReleaseSmokeCheck_('delete_rows:non_contiguous', function() {
       var ss = getSpreadsheet_();
