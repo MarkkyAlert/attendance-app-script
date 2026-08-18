@@ -24,7 +24,7 @@ function getStudentList(auth) {
     rate_limit_limit: 120,
     rate_limit_window_sec: 60
   }, function() {
-    return sanitizeStudentListForClient_(getStudentListData_());
+    return sanitizeStudentListForClient_(getCachedStudentList_());
   });
 }
 

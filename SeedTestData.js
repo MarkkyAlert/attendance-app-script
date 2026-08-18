@@ -884,7 +884,7 @@ function clearSeedCaches_() {
   try { invalidateSemesterCaches_(); } catch (e4) {}
   try { clearAttendanceDayStatusExecutionCache_(); } catch (e5) {}
   try { bumpDerivedDataCacheVersion_(); } catch (e6) {}
-  try { CacheService.getScriptCache().remove('st'); } catch (e7) {}
+  try { invalidateSettingsCache_(); } catch (e7) {}
 }
 
 // ─── ตัวช่วยเล็กๆ ─────────────────────────────────────────────────────

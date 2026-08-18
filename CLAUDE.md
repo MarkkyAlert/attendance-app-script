@@ -113,6 +113,11 @@
   เจอ `null` ได้ทุกที่ที่อ่าน `stats.*` — `ReportService` / `PrintService` / `AnalyticsService` / `ProfileService`
   ฝั่งแสดงผลมี `formatPercentLabel` ที่คืน `-` และ CSV เขียน `''` อยู่แล้ว อย่าทำพัง
 - เขียน mutation ใหม่ต้องครอบด้วย `withAttendanceMutationLock_` หรือ `LockService.getDocumentLock()` และ `require_csrf: true`
+- **ล้าง cache ชีต `ตั้งค่า` ต้องใช้ `invalidateSettingsCache_()` เสมอ** ห้ามเรียก `cache.remove('st')` เดี่ยวๆ
+  เพราะมี memo ระดับ execution คู่กันอยู่ ลืมล้าง = อ่านของเก่าค้างทั้งคำขอ
+- **ข้อมูลเช็คชื่อมี cache 2 ชั้นคนละอายุ** — ส่วนชีต archive ใช้ `attendance_archive_version` (6 ชม.)
+  ส่วนชีตหลักใช้ `derived_cache_version` (180 วิ) เพราะการแตะสถานะ 1 ครั้งเคยทิ้งผลสแกน 2,586 แถว
+  ที่ใช้เวลาสร้าง 3–18 วินาที · รายละเอียดอยู่ใน `ARCHITECTURE.md` ชั้น C2
 
 ## จุดที่ห้ามแตะโดยไม่ถามก่อน
 - `deleteSheetRowsByIndexes_` [SheetDB.js] — ลบแถวโดยจัดกลุ่มแถวติดกันแล้วไล่จากล่างขึ้นบน ใช้ร่วมกันทั้ง
@@ -121,6 +126,8 @@
   อยู่ใน deployment เดียวกันและจะเปิดไม่ได้ ผลคือ "รหัสครู" เป็นปราการเดียวจริงๆ
 - `runAsTeacher_` / `requireTeacherSession_` / trusted device / session generation — แตะแล้วครูหลุดออกจากระบบทั้งหมด
 - student identity key (`id:` / `num:`), roster bounds, `getUniqueLatestRecords_` — ตรรกะกลางที่ทุกรายงานใช้ร่วมกัน
+- ลำดับ `archive.concat(main)` ใน `getAllAttendanceRecords_` [ReportService.js] — สลับแล้วแถวเก่าจะชนะ
+  แถวใหม่ตอน `getUniqueLatestRecords_` ตัดคีย์ซ้ำ ผลคือครูแก้สถานะแล้วเหมือนไม่ถูกบันทึก
 - `calculateAttendancePercent_` / `basis_days` — ตัวเลขนี้ขึ้นเอกสารทางการ ปพ.6
 - `ensureStudentIdentityMigration_` / `ensureSecurityMigration_` และสตริงเวอร์ชันของมัน — แก้แล้ว migration
   จะรันใหม่กับข้อมูลจริงของครู

@@ -589,3 +589,85 @@ transient user activation → เบราว์เซอร์บล็อก *
 (`registerTempDriveFile_` ลงทะเบียน 1800 วินาที จึงยังอยู่ในขอบเขต)
 และแก้ข้อความบนหน้าตั้งค่าจาก "ดาวน์โหลดลงเครื่องนี้ทันที" เป็น "ดาวน์โหลดลงเครื่องนี้"
 เพราะคำว่า "ทันที" ไม่จริงเสมอไปแล้ว
+
+---
+
+## 36. เลิกอ่านของเดิมซ้ำด้วย memo ระดับ execution ไม่ใช่ยืดอายุ cache
+
+**บริบท** — ผลวัดจาก `_timing_log` 594 แถว (18 ส.ค. 2569) ชี้ว่าคอขวดไม่ใช่อัลกอริทึม
+(`rows_ms = 1` — ปั้น HTML นักเรียน 39 คนใช้ 1 มิลลิวินาที) แต่เป็นการอ่านของเดิมซ้ำ
+4 จุดที่ยืนยันกับโค้ดแล้ว
+
+1. `getInitialData` [Code.js:101-102] อ่านชีต `ตั้งค่า` **เต็มใบ 2 ครั้ง** ผ่าน `getTeacherSessionUser_`
+   และ `getPinStateData_` ซึ่งเรียก `getSettings_()` ตรงๆ ทั้งที่ `getCachedSettings_()` มีอยู่แล้ว
+   และทั้งคู่ไม่ populate คีย์ `'st'` → ตัวถัดไปอาจอ่านเป็นครั้งที่ 3 (วัดได้ `pf_settings_ms=151` ตอน cold)
+2. `getStudentList` [StudentService.js] อ่านชีตนักเรียนเต็มทุกครั้ง ไม่ผ่าน `getCachedStudentList_`
+3. `getDerivedDataCacheVersion_` อ่าน ScriptProperties **ทุกครั้งที่สร้างคีย์ cache**
+   หน้าเช็คชื่อ 1 ครั้งสร้าง ~10–15 คีย์
+4. `getCurrentAttendanceSourceInfo_` เปิดชีต 2 ใบ + `getLastRow()` 2 ครั้งทุกครั้ง มี call site **37 จุด**
+   เพื่อได้สตริงเดิม
+
+**ทางที่เลือก** — memo ระดับ execution ทุกตัว + เปลี่ยน 3 จุดให้ใช้ตัวที่ cache อยู่แล้ว
+
+**ทางที่ทิ้ง**
+
+- **ยืดอายุ CacheService ให้นานขึ้น** — ไม่แก้ปัญหา เพราะต้นทุนที่วัดได้คือการเรียกซ้ำ**ภายใน execution เดียว**
+  ซึ่งจ่ายค่า CacheService/PropertiesService round-trip อยู่ดี และการยืดอายุเพิ่มความเสี่ยงข้อมูลเก่า
+- **memo `getCachedSettings_` โดยไม่แตะจุดที่ล้าง `'st'`** — จะได้ของเก่าค้างทั้ง execution
+  จึงรวมการล้างเป็น `invalidateSettingsCache_()` แล้วไล่แก้ทั้ง 6 จุดที่เคย `remove('st')` เอง
+- **memo `getCurrentAttendanceSourceInfo_` แล้วล้างเองรายจุด** — มี invalidate 4 ทาง เสี่ยงลืม
+  จึงล้างที่ `bumpDerivedDataCacheVersion_` จุดเดียว ซึ่งทุก mutation ผ่านอยู่แล้ว
+
+**ที่ยอมแลก** — `DERIVED_CACHE_VERSION_MEMO_` ทำให้ execution หนึ่งไม่เห็น bump จาก execution อื่น
+ที่เกิดระหว่างทาง รับได้เพราะ cache ปลายทางอายุ 180–300 วินาทีอยู่แล้ว และ mutation ทุกตัวผ่าน
+`withAttendanceMutationLock_` · ถ้าเจออาการ "แก้แล้วไม่อัปเดตในคำขอเดียวกัน" ให้สงสัยข้อนี้ก่อน
+
+**ตรวจก่อนแก้ว่าไม่มีใครแก้ object ที่จะ memo** — grep `sourceInfo.<field> =` และ `settings.<field> =`
+เจอแค่ 2 บรรทัดใน `getSettings_()` เอง (normalize ก่อนคืนค่า) ไม่ใช่การแก้จากภายนอก
+และ `sanitizeStudentListForClient_` สร้าง object ใหม่ทั้งหมด ไม่กลายพันธุ์ของที่ memo ไว้
+
+**ผลข้างเคียงที่ตรวจแล้วว่าไม่กระทบ** — `getCachedStudentList_` ผ่าน JSON ทำให้ `created_at`
+เปลี่ยนจาก `Date` เป็นสตริง ISO · grep แล้ว client **ไม่ใช้ `student.created_at` เลย**
+(ที่เจอเป็น metadata ของ backup ใน localStorage คนละเรื่อง)
+
+---
+
+## 37. ให้ข้อมูลที่เก็บถาวรแล้วมีเวอร์ชัน cache ของตัวเอง แทนการเลิก invalidate
+
+**บริบท** — `_timing_log` 594 แถว (18 ส.ค. 2569) ชี้ตัวเดียวซ้ำๆ ใน 10 รายการล่าสุด:
+`readAllAttendanceRecords_` อ่าน 2,586 แถว ใช้เวลา 2,269 / 3,968 / 4,070 / 4,735 / 16,903 / 18,245 / 18,620 ms
+และอธิบายทั้ง `attendance_load_ms` (ค่ากลาง 6,246) · `dashboard_build_ms` (4,226) · `report_build_ms` (4,165)
+
+ไล่ครบวงจรแล้ว: `markStatus` → `invalidateAttendanceCaches_` → `bumpDerivedDataCacheVersion_`
+→ คีย์ derived cache **ทุกตัว**เปลี่ยน รวม `attendance_all_records` และ `attendance_date_buckets`
+→ ครั้งถัดไปสแกนชีตใหม่ทั้งหมด
+
+**ประเด็นคือ 2,586 แถวนั้นอยู่ในชีต `_att_archive_1` ทั้งหมด (ชีตหลักมี 0 แถว)
+และชีต archive ไม่เปลี่ยนเลยเมื่อครูเช็คชื่อ** — เช้าหนึ่งเช็ค 40 คน = ทิ้ง cache 40 รอบ
+ครูไม่รู้สึกตอนแตะเพราะ optimistic UI แต่จ่ายเต็มตอนเปิดหน้าแรกหรือรายงาน
+
+**ทางที่เลือก** — แยก `getAllAttendanceRecords_` เป็น 2 cache แล้ว `concat` ตามลำดับเดิม
+ส่วน archive ใช้ `attendance_archive_version` (Script Properties) ซึ่ง bump เฉพาะตอนชีต archive เปลี่ยนจริง
+อายุ 6 ชั่วโมง · ส่วนชีตหลักยังใช้ `derived_cache_version` อายุ 180 วินาทีตามเดิม
+
+**ทางที่ทิ้ง**
+
+- **เลิก bump ตอน `markStatus` แล้วล้างเป็นรายคีย์แทน** — ระบบไม่มี invalidate รายคีย์เลย
+  ต้องเขียนใหม่ทั้งชุดและต้องไล่ให้ครบทุกคีย์ที่ derived จากข้อมูลเช็คชื่อ พลาดจุดเดียว = ครูเห็นตัวเลขเก่า
+  บนเอกสาร ปพ.6 ซึ่งเป็นความเสียหายที่หนักกว่าความช้ามาก
+- **ยืดอายุ cache รวมให้ยาวขึ้นเฉยๆ** — ไม่ได้ผล เพราะปัญหาคือถูก**ทิ้ง**ไม่ใช่**หมดอายุ**
+- **แก้ `attendance_date_buckets` ให้ patch เฉพาะวันที่เปลี่ยน แทนการทิ้งทั้งก้อน** — แก้อาการปลายทาง
+  แต่ต้นทางยังสแกนใหม่อยู่ดีเมื่อ bucket หลุด cache และการ patch ผิดจะทำให้ตัวเลขเพี้ยนแบบเงียบๆ
+- **ย้ายข้อมูลเก่าออกจาก Sheets ไปที่อื่น** — ผิดข้อจำกัดของสินค้า ครูต้องเปิดชีตดูข้อมูลตัวเองได้
+
+**ที่ตั้งใจไม่แตะ** — ลำดับ `archive.concat(main)` เหมือนเดิมเป๊ะ และไม่แตะ `getUniqueLatestRecords_`
+(`CLAUDE.md` ระบุเป็นจุดห้ามแตะโดยไม่ถาม จึงถามก่อนลงมือ)
+สำหรับภาคเรียนที่**ยังไม่เก็บถาวร** ส่วน archive จะว่าง พฤติกรรมเท่าเดิมทุกประการ ไม่มีทางแย่ลง
+
+**ด่านที่สอง** — คีย์ชั้น C2 ใส่ `<ชื่อชีต>:<getLastRow()>` ไว้ด้วย เผื่อมีเส้นทางเขียนชีต archive
+แล้วลืม bump เวอร์ชัน (ตรวจแล้วว่าทุกเส้นทางผ่าน `invalidateSemesterCaches_` ซึ่ง bump ให้)
+
+**พิสูจน์ยังไง** — `perf:archive_cache_survives_mark` ใน `Diagnostics.js` เทียบ `readAllAttendanceRecords_`
+(สแกนตรง) กับ `getAllAttendanceRecords_` (เส้นทางแยก cache) ทั้งจำนวนและลายเซ็นรายแถวตามลำดับ
+แล้ว bump เวอร์ชันจำลองการแตะสถานะ วัดซ้ำ — `after_simulated_mark_ms` ต้องต่ำกว่า `direct_scan_ms` มาก
+

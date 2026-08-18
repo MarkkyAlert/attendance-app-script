@@ -510,7 +510,24 @@
       **ส่วนที่เหลืออีก 2 ก้อน** `preflight_validate_ms=845` และ `students_ms=556`
       รวมกัน 1.4 วินาที มากกว่าการสร้างรายงานทั้งภาคเรียน — ยังไม่ได้สืบ
 
-- [ ] **★★★ เช็คชื่อ 1 ครั้ง ทิ้ง cache ที่เพิ่งใช้เวลาสร้าง 3–18 วินาที** (วัดแล้ว 18 ส.ค. 2569)
+- [x] **★★★ เช็คชื่อ 1 ครั้ง ทิ้ง cache ที่เพิ่งใช้เวลาสร้าง 3–18 วินาที** — **แก้แล้ว รอทดสอบ**
+      แยก `getAllAttendanceRecords_` เป็น 2 cache: ส่วน archive ใช้ `attendance_archive_version` (6 ชม.)
+      ส่วนชีตหลักใช้ `derived_cache_version` (180 วิ) ตามเดิม แล้ว `archive.concat(main)` ลำดับเดิมเป๊ะ
+      ไม่แตะ `getUniqueLatestRecords_` · ภาคเรียนที่ยังไม่เก็บถาวรพฤติกรรมเท่าเดิมทุกประการ
+      **วัดแล้ว 18 ส.ค. 2569 19:40** — `perf:archive_cache_survives_mark` เขียว
+      `direct_scan_ms` 3,275 → `after_simulated_mark_ms` **273** · `records_identical: true` (2,586 แถว)
+      `_timing_log` ยืนยันอีกทาง: มี `scan=archive` ครั้งเดียวแล้วไม่มีอีก
+      รายละเอียดเต็มใน `DECISIONS.md` ข้อ 37
+
+- [x] **รอบ 1 เลิกอ่านของเดิมซ้ำ** — **แก้แล้ว รอทดสอบ** (`DECISIONS.md` ข้อ 36)
+      memo ชีตตั้งค่า + `getTeacherSessionUser_` / `getPinStateData_` เลิกอ่านสด ·
+      `getStudentList` ใช้ตัวที่ cache · memo `getDerivedDataCacheVersion_` · memo `getCurrentAttendanceSourceInfo_`
+      **วัดแล้ว** — `pf_settings_ms` pass2/pass3 เหลือ **0** (เดิม 17/17) · `records_day_status_ms` **0** (เดิม 18/14)
+      ⚠️ pass1 1264 → 1492 ms เป็นการแกว่งของ Apps Script เอง ไม่ใช่การถดถอย (ให้ดูสัดส่วน ไม่ใช่เลขดิบ)
+
+<details><summary>บันทึกผลวัดที่นำไปสู่การแก้ 2 ข้อบน</summary>
+
+**★★★ เช็คชื่อ 1 ครั้ง ทิ้ง cache ที่เพิ่งใช้เวลาสร้าง 3–18 วินาที** (วัดแล้ว 18 ส.ค. 2569)
       **ข้อมูลจริงจาก `_timing_log` 594 แถว** (อ่านผ่าน `perf:timing_log_summary`)
       | metric | ครั้งที่ช้า | ค่ากลาง | สูงสุด |
       |---|---:|---:|---:|
@@ -531,9 +548,10 @@
       แต่ถูกทิ้งทุกครั้งที่แตะสถานะ · เช้าหนึ่งเช็ค 40 คน = ทิ้ง cache 40 รอบ
       ครูไม่รู้สึกตอนแตะเพราะ optimistic UI **แต่พอเปิดหน้าแรกหรือรายงานจะจ่ายค่าสแกนใหม่เต็มๆ**
 
-      **ทางแก้ที่ตรงจุด**: แยก cache ของชีต archive (ไม่เปลี่ยนระหว่างวัน) ออกจากชีตหลัก (เล็กมาก)
-      ให้ส่วน archive ใช้คีย์ที่ไม่ผูก mutation version แล้วอ่านชีตหลักสดทุกครั้ง
-      ⚠️ **ต้องตกลงก่อนลงมือ** เพราะแตะลำดับ archive-ก่อน-ชีตหลัก ที่ `CLAUDE.md` ห้ามแตะโดยไม่ถาม
+      **ทางแก้ที่เลือก**: แยก cache ของชีต archive ออกจากชีตหลัก แล้ว `archive.concat(main)` ลำดับเดิม
+      (ถามก่อนลงมือแล้วเพราะใกล้จุดห้ามแตะใน `CLAUDE.md` — ผลคือไม่ได้แตะ `getUniqueLatestRecords_` เลย)
+
+</details>
 
 - [ ] **`confirmDay` อุ่น cache 7.5–12 วินาทีในล็อก ขณะครูรออยู่** (วัดแล้ว ควรแก้)
       `derived_cache_warm_ms` ค่ากลาง **7,510 ms** สูงสุด **12,243 ms**

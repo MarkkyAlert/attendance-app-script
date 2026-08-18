@@ -492,8 +492,8 @@ function invalidateSchoolCalendarCaches_() {
   try {
     var cache = CacheService.getScriptCache();
     cache.remove('sl');
-    cache.remove('st');
   } catch (e) {}
+  invalidateSettingsCache_();
   SCHOOL_CALENDAR_ENTRY_EXECUTION_MEMO_ = {};
   bumpDerivedDataCacheVersion_();
 }

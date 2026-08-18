@@ -241,7 +241,7 @@ function saveSetting_(key, value) {
     for (var i = 0; i < data.length; i++) {
       if (String(data[i][0]) === String(key)) {
         sheet.getRange(i + 2, 2).setValue(sanitizeSheetText_(value));
-        try { CacheService.getScriptCache().remove('st'); } catch (e) {}
+        invalidateSettingsCache_();
         return;
       }
     }
@@ -249,7 +249,7 @@ function saveSetting_(key, value) {
 
   // Key not found, append
   sheet.appendRow([key, sanitizeSheetText_(value)]);
-  try { CacheService.getScriptCache().remove('st'); } catch (e) {}
+  invalidateSettingsCache_();
 }
 
 function removeSetting_(key) {
@@ -269,7 +269,7 @@ function removeSetting_(key) {
       sheet.deleteRow(i + 2);
     }
   }
-  try { CacheService.getScriptCache().remove('st'); } catch (e) {}
+  invalidateSettingsCache_();
 }
 
 // ─── UUID Generator ──────────────────────────────

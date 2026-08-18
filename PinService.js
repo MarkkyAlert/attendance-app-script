@@ -13,7 +13,7 @@ function getPinState(auth) {
 }
 
 function getPinStateData_() {
-  var settings = getSettings_();
+  var settings = getCachedSettings_();
   return {
     pin_enabled: settings.pin_enabled === 'true' || settings.pin_enabled === true,
     pin_set: !!getStoredPinHash_(),

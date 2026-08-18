@@ -515,9 +515,10 @@ percent     = round(attend_days / basis_days × 1000) / 10
 
 | ชั้น | ตัวอย่าง | อายุ | ล้างยังไง |
 |---|---|---|---|
-| **A. Execution memo** (ตัวแปร global) | `CACHED_STUDENT_LIST_MEMO_`, `ATTENDANCE_DAY_STATUS_MAP_MEMO_` | จบ execution | เซ็ตเป็น `{}` |
+| **A. Execution memo** (ตัวแปร global) | `CACHED_STUDENT_LIST_MEMO_`, `CACHED_SETTINGS_MEMO_`, `CACHED_ATTENDANCE_SOURCE_INFO_MEMO_`, `DERIVED_CACHE_VERSION_MEMO_`, `ATTENDANCE_DAY_STATUS_MAP_MEMO_` | จบ execution | เซ็ตเป็น `null` / `{}` |
 | **B. Fixed-key** (ไม่มีเวอร์ชัน) | `'sl'` (รายชื่อ), `'st'` (settings), `'semester_rows_base'` | 300 วิ | `cache.remove()` ตรงๆ |
 | **C. Derived** (คีย์ฝังเวอร์ชัน) | `getOrBuildCachedJson_` / `getOrBuildLargeCachedJson_` | 120–300 วิ | bump `derived_cache_version` |
+| **C2. Archive** (คีย์ฝัง**คนละ**เวอร์ชัน) | `attendance_archive_records` ผ่าน `buildAttendanceArchiveCacheKey_` | **6 ชม.** | bump `attendance_archive_version` |
 | **D. Session / rate limit** | `teacher_session:<t>`, `rl:<bucket>` | ตาม TTL | remove ตอน logout / rotate generation |
 
 รูปแบบคีย์ชั้น C — `buildDerivedCacheKey_` ใน `Utils.js`:
@@ -525,6 +526,39 @@ percent     = round(attend_days / basis_days × 1000) / 10
 <prefix> | <derived_cache_version> | MD5(JSON.stringify(parts))
 ```
 `parts` เกือบทุกที่ขึ้นต้นด้วย `sourceInfo.key` = `'live|<semId>'` หรือ `'archive|<semId>'` ซึ่งแยก live/archive
+
+### ★★ ชั้น C2 — ทำไมข้อมูล archive ถึงมีเวอร์ชันของตัวเอง
+
+`markStatus` → `invalidateAttendanceCaches_` → `bumpDerivedDataCacheVersion_` **ล้างคีย์ชั้น C ทั้งชุด**
+ก่อนแยกชั้น C2 ออกมา ผลสแกนชีต `_att_archive_<id>` (2,586 แถว ใช้เวลา **2.8–18.6 วินาที** วัดจาก `_timing_log`)
+อยู่ในชั้น C ด้วย จึงถูกทิ้งทุกครั้งที่ครูแตะสถานะ **ทั้งที่ชีต archive ไม่ได้เปลี่ยนเลย**
+
+`getAllAttendanceRecords_` [ReportService.js] จึงแยกเป็น 2 ส่วนแล้วต่อกัน
+
+| ส่วน | ฟังก์ชัน | ชั้น | ถูกล้างเมื่อ |
+|---|---|---|---|
+| ชีต `_att_archive_<id>` | `getArchivedAttendanceRecordsCached_` | C2 | เก็บถาวร / ยกเลิก / ลบภาคเรียน / restore / seed |
+| ชีต `เช็คชื่อ` | `getMainAttendanceRecordsCached_` | C | ทุก mutation ตามเดิม |
+
+**ห้ามสลับลำดับการต่อ** — `archive.concat(main)` เพื่อให้แถวใหม่ในชีตหลักชนะตอน `getUniqueLatestRecords_`
+ตัดคีย์ซ้ำ เป็นลำดับเดียวกับที่ `getAttendanceReadSheets_` คืนมาแต่เดิม
+
+คีย์ชั้น C2 ใส่ `<ชื่อชีต>:<getLastRow()>` ไว้ด้วยเป็นด่านที่สอง เผื่อมีเส้นทางเขียนชีต archive แล้วลืม bump
+`readAllAttendanceRecords_` (สแกนตรง ไม่ผ่าน cache) เหลือไว้ให้ `perf:archive_cache_survives_mark`
+ใน `Diagnostics.js` เทียบว่าเส้นทางแยก cache ได้ข้อมูลและลำดับตรงกับการสแกนตรงทุกแถว
+
+### ⚠️ memo ชั้น A 3 ตัวที่เพิ่มมาทีหลัง — ล้างที่จุดเดียวเท่านั้น
+
+| memo | ใครล้าง | ห้ามทำอะไร |
+|---|---|---|
+| `CACHED_SETTINGS_MEMO_` | `invalidateSettingsCache_()` [AttendanceService.js] | **ห้ามเรียก `cache.remove('st')` เดี่ยวๆ** memo จะค้างทั้ง execution |
+| `CACHED_ATTENDANCE_SOURCE_INFO_MEMO_` | `bumpDerivedDataCacheVersion_()` | — (ทุก mutation ผ่านตัวนี้อยู่แล้ว) |
+| `DERIVED_CACHE_VERSION_MEMO_` | `bumpDerivedDataCacheVersion_()` | — |
+
+`DERIVED_CACHE_VERSION_MEMO_` แปลว่า execution หนึ่งจะ**ไม่เห็น bump จาก execution อื่นที่เกิดระหว่างทาง**
+ยอมรับได้เพราะ cache ปลายทางอายุ 180–300 วินาทีอยู่แล้ว และ mutation ทุกตัวผ่าน `withAttendanceMutationLock_`
+
+ทั้ง 3 ตัวถูกล้างเพิ่มใน `resetAttendanceBootstrapExecutionMemos_` [Code.js] ตอน retry bootstrap ด้วย
 
 ### `derived_cache_version`
 
@@ -548,8 +582,9 @@ percent     = round(attend_days / basis_days × 1000) / 10
 
    ถ้าแก้โมดูลแล้วทดสอบไม่เห็นผล ให้สงสัยข้อนี้ก่อนสงสัยว่าแก้ผิด
 
-2. `saveSetting_` / `removeSetting_` ใน `SheetDB.js` ลบแค่คีย์ `'st'` **ไม่ bump** ขณะที่ `saveSettings`
-   ใน `StudentService.js` bump ให้ — พฤติกรรมไม่สม่ำเสมอระหว่างสองทาง
+2. `saveSetting_` / `removeSetting_` ใน `SheetDB.js` เรียก `invalidateSettingsCache_()` (ลบ `'st'` + memo)
+   **แต่ไม่ bump `derived_cache_version`** ขณะที่ `saveSettings` ใน `StudentService.js` bump ให้
+   — พฤติกรรมไม่สม่ำเสมอระหว่างสองทาง
 
 3. `repairParentEmailNotifications` เป็น mutation แต่ไม่มี lock และไม่ invalidate อะไรเลย
 

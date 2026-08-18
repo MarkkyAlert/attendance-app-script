@@ -717,8 +717,10 @@ function invalidateSemesterCaches_() {
   try {
     var cache = CacheService.getScriptCache();
     cache.remove('sl');
-    cache.remove('st');
     cache.remove('semester_rows_base');
   } catch (e) {}
+  invalidateSettingsCache_();
+  // ★ ทุกเส้นทางที่ทำให้ชีต archive เปลี่ยน (เก็บถาวร / ยกเลิก / ลบภาคเรียน / restore / seed) ผ่านตรงนี้
+  bumpAttendanceArchiveDataVersion_();
   bumpDerivedDataCacheVersion_();
 }

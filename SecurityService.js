@@ -1081,7 +1081,7 @@ function runAsTeacher_(auth, options, fn) {
 }
 
 function getTeacherSessionUser_(session) {
-  var settings = getSettings_();
+  var settings = getCachedSettings_();
   var email = String(session && session.teacher_email || '').trim();
   var displayName = String(settings.teacher_name || '').trim();
 

@@ -260,6 +260,67 @@ function runP0Diagnostics_() {
     // 1ง. ไฟล์สำรองมีชีตลิงก์ผู้ปกครองไหม และคอลัมน์ token ถูกล้างจริงไหม
     // ★ อ่านอย่างเดียว — `buildBackupSnapshot_` แค่อ่านชีต ไม่เขียนอะไร และไม่สร้างไฟล์บน Drive
     //   ตรวจทางนี้เพราะการกดปุ่มบนหน้าจอต้องพึ่ง pop-up ซึ่งถูกเบราว์เซอร์บล็อกได้
+    // ★★ พิสูจน์ 2 อย่างพร้อมกัน — ดู DECISIONS.md ข้อ 37
+    // 1) เส้นทางที่แยก cache แล้ว ได้ข้อมูล "ชุดเดียวกันและลำดับเดียวกัน" กับการสแกนตรงๆ
+    // 2) cache ส่วน archive รอดจากการแตะสถานะ (จำลองด้วยการ bump derived_cache_version เอง)
+    // ⚠️ check นี้ bump เวอร์ชันจริง = ล้าง derived cache ทั้งชุด คำขอถัดไปจะช้าลงชั่วคราว แต่ไม่แก้ข้อมูลใดๆ
+    checks.push(runPreReleaseSmokeCheck_('perf:archive_cache_survives_mark', function() {
+      var semester = getActiveSemesterRow_();
+      assertPreReleaseSmoke_(!!semester, 'ยังไม่มีภาคเรียนที่ใช้งานอยู่');
+      var sourceInfo = getAttendanceSourceInfoForSemester_(semester);
+
+      function signature_(records) {
+        return (records || []).map(function(r) {
+          return String(r.sheet_name || '') + '#' + String(r.row_index || '') + '|' +
+                 String(r.date || '') + '|' + String(r.student_number || '') + '|' +
+                 String(r.student_id || '') + '|' + String(r.status_code || '') + '|' + String(r.note || '');
+        }).join('~');
+      }
+
+      var scanStarted = new Date().getTime();
+      var direct = readAllAttendanceRecords_(sourceInfo);
+      var directMs = new Date().getTime() - scanStarted;
+
+      var warmStarted = new Date().getTime();
+      var viaSplit = getAllAttendanceRecords_(sourceInfo);
+      var warmMs = new Date().getTime() - warmStarted;
+
+      assertPreReleaseSmoke_(
+        direct.length === viaSplit.length,
+        'จำนวน record ไม่ตรง: สแกนตรง ' + direct.length + ' แต่เส้นทางแยก cache ' + viaSplit.length
+      );
+      assertPreReleaseSmoke_(
+        signature_(direct) === signature_(viaSplit),
+        'ข้อมูลหรือลำดับไม่ตรงกันระหว่างการสแกนตรงกับเส้นทางแยก cache'
+      );
+
+      // จำลองสิ่งที่เกิดขึ้นจริงเมื่อครูแตะสถานะ 1 ครั้ง
+      bumpDerivedDataCacheVersion_();
+      var afterStarted = new Date().getTime();
+      var afterBump = getAllAttendanceRecords_(sourceInfo);
+      var afterMs = new Date().getTime() - afterStarted;
+
+      assertPreReleaseSmoke_(
+        signature_(afterBump) === signature_(direct),
+        'หลังจำลองการแตะสถานะ ข้อมูลไม่ตรงกับการสแกนตรง'
+      );
+
+      var archiveSheets = getArchiveAttendanceReadSheets_(sourceInfo);
+      return {
+        semester: String(semester.name || ''),
+        source_key: String(sourceInfo.key || ''),
+        archive_sheets: archiveSheets.map(function(sh) { return sh.getName() + ':' + sh.getLastRow(); }),
+        records_total: direct.length,
+        direct_scan_ms: directMs,
+        split_path_ms: warmMs,
+        after_simulated_mark_ms: afterMs,
+        // ★ ตัวเลขที่ต้องดู: after_simulated_mark_ms ควรต่ำกว่า direct_scan_ms มาก
+        // ถ้าใกล้เคียงกัน แปลว่า cache ส่วน archive ไม่รอด ให้สงสัยว่ามีใคร bump เวอร์ชัน archive เกินจำเป็น
+        archive_cache_survived: afterMs * 2 < directMs || directMs < 300,
+        records_identical: true
+      };
+    }));
+
     checks.push(runPreReleaseSmokeCheck_('backup:includes_parent_links', function() {
       var snapshot = buildBackupSnapshot_();
       var sheets = (snapshot && snapshot.sheets) || {};

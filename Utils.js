@@ -17,6 +17,11 @@ var THAI_MONTHS_LONG = [
 var THAI_WEEKDAYS = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
 var APP_TIMEZONE = 'Asia/Bangkok';
 var DERIVED_CACHE_VERSION_PROP = 'derived_cache_version';
+// ★★ เวอร์ชันแยกสำหรับ "ข้อมูลที่เก็บถาวรแล้ว" ซึ่งไม่เปลี่ยนเมื่อครูเช็คชื่อ — ดู DECISIONS.md ข้อ 37
+// จงใจไม่ผูกกับ derived_cache_version เพื่อให้การแตะสถานะ 1 ครั้ง ไม่ทิ้งผลสแกนชีต archive
+var ATTENDANCE_ARCHIVE_VERSION_PROP = 'attendance_archive_version';
+// ชีต archive ไม่เปลี่ยนระหว่างวัน จึงเก็บได้ยาวเท่าที่ CacheService ยอม (เพดาน 6 ชั่วโมง)
+var ATTENDANCE_ARCHIVE_CACHE_TTL_SEC = 21600;
 var LARGE_CACHE_CHUNK_SIZE = 80000;
 var TIMING_LOG_SHEET = '_timing_log';
 var TIMING_LOG_MAX_ROWS = 1000;
@@ -38,20 +43,72 @@ function bytesToHex_(bytes) {
   }).join('');
 }
 
+// ★ ถูกเรียกทุกครั้งที่สร้างคีย์ cache — หน้าเช็คชื่อ 1 ครั้งสร้าง ~10-15 คีย์
+// ก่อนมี memo จึงจ่ายค่าอ่าน ScriptProperties ซ้ำ 10-15 รอบต่อคำขอ ปนอยู่ในทุกตัวเลขที่วัดได้
+// ★ ยอมรับได้ที่ execution นี้จะไม่เห็น bump จาก execution อื่นที่เกิดระหว่างทาง
+// เพราะ cache ปลายทางมีอายุ 180-300 วินาทีอยู่แล้ว และ mutation ทุกตัวผ่าน withAttendanceMutationLock_
+var DERIVED_CACHE_VERSION_MEMO_ = '';
+
 function getDerivedDataCacheVersion_() {
+  if (DERIVED_CACHE_VERSION_MEMO_) return DERIVED_CACHE_VERSION_MEMO_;
   var props = PropertiesService.getScriptProperties();
   var version = String(props.getProperty(DERIVED_CACHE_VERSION_PROP) || '').trim();
   if (!version) {
     version = String(Date.now());
     props.setProperty(DERIVED_CACHE_VERSION_PROP, version);
   }
+  DERIVED_CACHE_VERSION_MEMO_ = version;
   return version;
+}
+
+// ★ bump เฉพาะตอนที่ชีต archive เปลี่ยนจริง — เก็บถาวร / ยกเลิกเก็บถาวร / ลบภาคเรียน / restore backup / seed
+// ทุกเส้นทางเหล่านั้นผ่าน invalidateSemesterCaches_ [SemesterService.js] ซึ่งเรียกตัวนี้ให้แล้ว
+var ATTENDANCE_ARCHIVE_VERSION_MEMO_ = '';
+
+function getAttendanceArchiveDataVersion_() {
+  if (ATTENDANCE_ARCHIVE_VERSION_MEMO_) return ATTENDANCE_ARCHIVE_VERSION_MEMO_;
+  var version = '';
+  try {
+    var props = PropertiesService.getScriptProperties();
+    version = String(props.getProperty(ATTENDANCE_ARCHIVE_VERSION_PROP) || '').trim();
+    if (!version) {
+      version = String(Date.now());
+      props.setProperty(ATTENDANCE_ARCHIVE_VERSION_PROP, version);
+    }
+  } catch (e) {
+    version = 'na';
+  }
+  ATTENDANCE_ARCHIVE_VERSION_MEMO_ = version;
+  return version;
+}
+
+function bumpAttendanceArchiveDataVersion_() {
+  var version = String(Date.now());
+  try {
+    PropertiesService.getScriptProperties().setProperty(ATTENDANCE_ARCHIVE_VERSION_PROP, version);
+  } catch (e) {}
+  ATTENDANCE_ARCHIVE_VERSION_MEMO_ = version;
+  return version;
+}
+
+// ★ ตั้งใจไม่เรียก buildDerivedCacheKey_ เพราะตัวนั้นฝัง derived_cache_version
+// ซึ่งเปลี่ยนทุกครั้งที่ครูแตะสถานะ = สิ่งที่ทั้งหมดนี้พยายามหนี
+function buildAttendanceArchiveCacheKey_(prefix, parts) {
+  var serialized = JSON.stringify(parts || []);
+  var hash = bytesToHex_(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, serialized));
+  return String(prefix || 'cache') + '|arch' + getAttendanceArchiveDataVersion_() + '|' + hash;
 }
 
 function bumpDerivedDataCacheVersion_() {
   var version = String(Date.now());
   try {
     PropertiesService.getScriptProperties().setProperty(DERIVED_CACHE_VERSION_PROP, version);
+  } catch (e) {}
+  DERIVED_CACHE_VERSION_MEMO_ = version;
+  // ★ memo ที่ผูกกับสถานะข้อมูล ต้องล้างพร้อมกันที่จุดเดียวนี้ ซึ่งทุก mutation ผ่านอยู่แล้ว
+  // ไม่งั้น execution ที่ทั้งเขียนและอ่าน จะอ่านต่อด้วยของเก่า
+  try {
+    if (typeof CACHED_ATTENDANCE_SOURCE_INFO_MEMO_ !== 'undefined') CACHED_ATTENDANCE_SOURCE_INFO_MEMO_ = null;
   } catch (e) {}
   return version;
 }

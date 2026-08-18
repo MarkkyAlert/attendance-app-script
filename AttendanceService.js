@@ -12,6 +12,12 @@ var ATTENDANCE_DAY_ARCHIVE_SHEET_PREFIX = '_att_day_archive_';
 var ATTENDANCE_DAY_STATUS_MAP_MEMO_ = {};
 var ATTENDANCE_CONFIRMED_DATE_MAP_MEMO_ = {};
 var CACHED_STUDENT_LIST_MEMO_ = null;
+// ★ ชีต `ตั้งค่า` ถูกอ่านหลายรอบต่อ 1 คำขอ (session ครู · PIN · รายงาน · อีเมล)
+// ล้างผ่าน `invalidateSettingsCache_` เสมอ ห้ามล้าง CacheService key 'st' เดี่ยวๆ ไม่งั้น memo จะค้าง
+var CACHED_SETTINGS_MEMO_ = null;
+// ★ ตอบแค่ "ต้องอ่านชีต archive ด้วยไหม" แต่มี call site 37 จุด และแต่ละครั้งเปิดชีต 2 ใบ + getLastRow 2 ครั้ง
+// ล้างที่ `bumpDerivedDataCacheVersion_` จุดเดียว ซึ่งทุก mutation ผ่านอยู่แล้ว
+var CACHED_ATTENDANCE_SOURCE_INFO_MEMO_ = null;
 
 function withAttendanceMutationLock_(callback) {
   var lock = LockService.getDocumentLock();
@@ -632,15 +638,25 @@ function invalidateStudentCache_() {
 }
 
 function getCachedSettings_() {
+  if (CACHED_SETTINGS_MEMO_) return CACHED_SETTINGS_MEMO_;
   var cache = CacheService.getScriptCache();
   var cached = cache.get('st');
   if (cached) {
-    try { return JSON.parse(cached); } catch (e) {}
+    try {
+      CACHED_SETTINGS_MEMO_ = JSON.parse(cached);
+      return CACHED_SETTINGS_MEMO_;
+    } catch (e) {}
   }
 
   var data = getSettings_();
   try { cache.put('st', JSON.stringify(data), 300); } catch (e) {}
-  return data;
+  CACHED_SETTINGS_MEMO_ = data;
+  return CACHED_SETTINGS_MEMO_;
+}
+
+function invalidateSettingsCache_() {
+  CACHED_SETTINGS_MEMO_ = null;
+  try { CacheService.getScriptCache().remove('st'); } catch (e) {}
 }
 
 function getAttendanceArchiveSheetName_(semester) {
@@ -752,10 +768,13 @@ function buildDefaultAttendanceSourceInfo_() {
 }
 
 function getCurrentAttendanceSourceInfo_() {
+  if (CACHED_ATTENDANCE_SOURCE_INFO_MEMO_) return CACHED_ATTENDANCE_SOURCE_INFO_MEMO_;
   var activeSemester = null;
   try { activeSemester = getActiveSemesterRow_(); } catch (e) {}
-  if (activeSemester) return getAttendanceSourceInfoForSemester_(activeSemester);
-  return buildDefaultAttendanceSourceInfo_();
+  CACHED_ATTENDANCE_SOURCE_INFO_MEMO_ = activeSemester
+    ? getAttendanceSourceInfoForSemester_(activeSemester)
+    : buildDefaultAttendanceSourceInfo_();
+  return CACHED_ATTENDANCE_SOURCE_INFO_MEMO_;
 }
 
 function getAttendanceSourceSheet_(sourceInfo) {
@@ -777,6 +796,22 @@ function getAttendanceDaySourceSheet_(sourceInfo) {
  *
  * ชีต archive อาจไม่มีอยู่จริง (ยังไม่เคยเก็บถาวร) จึงใช้ getSheetByNameOrNull_
  */
+// ★★ แยกรายการชีตออกเป็น 2 ชุด เพื่อให้ cache ของ 2 ส่วนมีอายุคนละแบบ — ดู DECISIONS.md ข้อ 37
+// ห้ามเอาไปใช้แทน getAttendanceReadSheets_ ในเส้นทางที่ต้องการ "ทุกชีตตามลำดับเดิม"
+function getArchiveAttendanceReadSheets_(sourceInfo) {
+  sourceInfo = sourceInfo || getCurrentAttendanceSourceInfo_();
+  var name = String(sourceInfo.attendance_archive_sheet_name || '').trim();
+  if (!name) return [];
+  var sheet = getSheetByNameOrNull_(name);
+  return sheet ? [sheet] : [];
+}
+
+function getMainAttendanceReadSheets_(sourceInfo) {
+  sourceInfo = sourceInfo || getCurrentAttendanceSourceInfo_();
+  var sheet = getSheetByNameOrNull_(String(sourceInfo.attendance_sheet_name || SHEET.ATTENDANCE));
+  return sheet ? [sheet] : [];
+}
+
 function getAttendanceReadSheets_(sourceInfo) {
   sourceInfo = sourceInfo || getCurrentAttendanceSourceInfo_();
   return collectAttendanceReadSheets_(

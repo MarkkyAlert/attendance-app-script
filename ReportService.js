@@ -507,13 +507,62 @@ function buildDailyGridCsvExport_(range) {
 function getAllAttendanceRecords_(sourceInfo) {
   ensureStudentIdentityMigration_();
   sourceInfo = sourceInfo || getCurrentAttendanceSourceInfo_();
-  return getOrBuildLargeCachedJson_('attendance_all_records', [String(sourceInfo.key || 'live')], 180, function() {
-    return readAllAttendanceRecords_(sourceInfo);
+
+  // ★★ แยก cache เป็น 2 ส่วนโดยตั้งใจ — ดู DECISIONS.md ข้อ 37
+  // ส่วน archive ไม่ถูกทิ้งเมื่อครูแตะสถานะ (ชีตนั้นไม่เปลี่ยน) ส่วนชีตหลักถูกทิ้งตามเดิม
+  // ก่อนแยก: แตะสถานะ 1 ครั้ง = ทิ้งผลสแกน 2,586 แถวที่เพิ่งใช้เวลา 2.8-18.6 วินาทีสร้าง
+  var archiveRecords = getArchivedAttendanceRecordsCached_(sourceInfo);
+  var mainRecords = getMainAttendanceRecordsCached_(sourceInfo);
+
+  // ★ ห้ามสลับลำดับ — archive ก่อน ชีตหลักทีหลัง เพื่อให้แถวใหม่ในชีตหลักชนะ
+  // ตอน getUniqueLatestRecords_ ตัดคีย์ซ้ำ (ลำดับเดียวกับที่ getAttendanceReadSheets_ คืนมาแต่เดิม)
+  if (!archiveRecords.length) return mainRecords;
+  if (!mainRecords.length) return archiveRecords;
+  return archiveRecords.concat(mainRecords);
+}
+
+function getArchivedAttendanceRecordsCached_(sourceInfo) {
+  sourceInfo = sourceInfo || getCurrentAttendanceSourceInfo_();
+  var sheets = getArchiveAttendanceReadSheets_(sourceInfo);
+  if (!sheets.length) return [];
+
+  // ★ ใส่จำนวนแถวลงในคีย์เป็นด่านที่สอง เผื่อมีเส้นทางที่เขียนชีต archive แล้วลืม bump เวอร์ชัน
+  var fingerprint = [];
+  sheets.forEach(function(sheet) {
+    fingerprint.push(sheet.getName() + ':' + sheet.getLastRow());
+  });
+
+  var key = buildAttendanceArchiveCacheKey_('attendance_archive_records', [
+    String(sourceInfo.key || 'live'),
+    String(sourceInfo.from || ''),
+    String(sourceInfo.to || ''),
+    fingerprint.join(',')
+  ]);
+  var cached = getLargeCachedJsonByKey_(key);
+  if (cached !== null) return cached;
+
+  var records = readAttendanceRecordsFromSheets_(sheets, sourceInfo, 'archive');
+  putLargeCachedJsonByKey_(key, records, ATTENDANCE_ARCHIVE_CACHE_TTL_SEC);
+  return records;
+}
+
+function getMainAttendanceRecordsCached_(sourceInfo) {
+  sourceInfo = sourceInfo || getCurrentAttendanceSourceInfo_();
+  return getOrBuildLargeCachedJson_('attendance_main_records', [String(sourceInfo.key || 'live')], 180, function() {
+    return readAttendanceRecordsFromSheets_(getMainAttendanceReadSheets_(sourceInfo), sourceInfo, 'main');
   });
 }
 
+// อ่านทุกชีตตามลำดับเดิมในคำสั่งเดียว ไม่ผ่าน cache — เหลือไว้ให้ Diagnostics ใช้เทียบผล
+// ว่าเส้นทางที่แยก cache แล้วยังได้ข้อมูลชุดเดียวกับการสแกนตรงๆ
 function readAllAttendanceRecords_(sourceInfo) {
   sourceInfo = sourceInfo || getCurrentAttendanceSourceInfo_();
+  return readAttendanceRecordsFromSheets_(getAttendanceReadSheets_(sourceInfo), sourceInfo, 'all');
+}
+
+function readAttendanceRecordsFromSheets_(readSheets, sourceInfo, scanLabel) {
+  sourceInfo = sourceInfo || getCurrentAttendanceSourceInfo_();
+  scanLabel = String(scanLabel || 'all');
   var startedAt = new Date().getTime();
   var sheet = null;
   var lastRow = 0;
@@ -521,10 +570,7 @@ function readAllAttendanceRecords_(sourceInfo) {
   var scannedSheetNames = [];
   var scannedRowCount = 0;
   try {
-    // อ่านรวมชีต archive ด้วย (ถ้าภาคเรียนนี้เก็บถาวรแล้ว) โดยชีตหลักถูกอ่านทีหลังเสมอ
-    // เพื่อให้แถวใหม่ในชีตหลักชนะเวลา getUniqueLatestRecords_ ตัดคีย์ซ้ำ
-    var readSheets = getAttendanceReadSheets_(sourceInfo);
-    if (!readSheets.length) return [];
+    if (!readSheets || !readSheets.length) return [];
 
     readSheets.forEach(function(readSheet) {
       sheet = readSheet;
@@ -570,12 +616,12 @@ function readAllAttendanceRecords_(sourceInfo) {
         duration_ms: durationMs,
         status: 'slow',
         page: 'reports',
-        fn_name: 'readAllAttendanceRecords_',
+        fn_name: 'readAttendanceRecordsFromSheets_',
         range_from: String(sourceInfo.from || ''),
         range_to: String(sourceInfo.to || ''),
         semester_id: String(sourceInfo.semester_id || ''),
         semester_name: sourceInfo && sourceInfo.semester ? String(sourceInfo.semester.name || '') : '',
-        detail: 'source=' + String(sourceInfo.key || 'live') + ';sheet=' + scannedSheetNames.join('+') + ';rows=' + scannedRowCount + ';records=' + records.length
+        detail: 'scan=' + scanLabel + ';source=' + String(sourceInfo.key || 'live') + ';sheet=' + scannedSheetNames.join('+') + ';rows=' + scannedRowCount + ';records=' + records.length
       });
     }
 
@@ -587,12 +633,12 @@ function readAllAttendanceRecords_(sourceInfo) {
       duration_ms: errorDurationMs,
       status: 'error',
       page: 'reports',
-      fn_name: 'readAllAttendanceRecords_',
+      fn_name: 'readAttendanceRecordsFromSheets_',
       range_from: String(sourceInfo && sourceInfo.from || ''),
       range_to: String(sourceInfo && sourceInfo.to || ''),
       semester_id: String(sourceInfo && sourceInfo.semester_id || ''),
       semester_name: sourceInfo && sourceInfo.semester ? String(sourceInfo.semester.name || '') : '',
-      detail: 'source=' + String(sourceInfo && sourceInfo.key || 'live') + ';sheet=' + String(sheet && sheet.getName ? sheet.getName() : '') + ';rows=' + Math.max(0, lastRow - 1) + ';records=' + records.length + ';message=' + String(eScan && eScan.message || eScan)
+      detail: 'scan=' + scanLabel + ';source=' + String(sourceInfo && sourceInfo.key || 'live') + ';sheet=' + String(sheet && sheet.getName ? sheet.getName() : '') + ';rows=' + Math.max(0, lastRow - 1) + ';records=' + records.length + ';message=' + String(eScan && eScan.message || eScan)
     });
     throw eScan;
   }

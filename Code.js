@@ -166,6 +166,10 @@ function isRequestedDocumentPermissionError_(error) {
 
 function resetAttendanceBootstrapExecutionMemos_() {
   try { CACHED_STUDENT_LIST_MEMO_ = null; } catch (e) {}
+  try { if (typeof CACHED_SETTINGS_MEMO_ !== 'undefined') CACHED_SETTINGS_MEMO_ = null; } catch (eS) {}
+  try {
+    if (typeof CACHED_ATTENDANCE_SOURCE_INFO_MEMO_ !== 'undefined') CACHED_ATTENDANCE_SOURCE_INFO_MEMO_ = null;
+  } catch (eA) {}
   try {
     if (typeof STUDENTS_FOR_ATTENDANCE_DATE_MEMO_ !== 'undefined') {
       STUDENTS_FOR_ATTENDANCE_DATE_MEMO_ = {};
