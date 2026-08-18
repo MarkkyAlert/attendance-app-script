@@ -639,9 +639,27 @@ TextFinder จับจาก**ข้อความที่แสดง** ด�
 
 **กฎ**: อ่านคอลัมน์วันที่จากชีตไหนก็ตาม **ห้ามใช้ `createTextFinder`**
 ให้ `getValues()` แล้วเทียบผ่าน `formatDate_` เสมอ
-⚠️ `readSchoolCalendarEntryByDate_` [CalendarService.js:296] ยังใช้ `createTextFinder` อยู่ —
-**ตอนนี้ยังทำงานได้ แต่ได้เพราะ format ของเซลล์บังเอิญตรง ไม่ใช่เพราะโค้ดถูก**
-(มีตาข่ายรองอยู่บ้าง เพราะเทียบ `entry.date !== date` ซ้ำอีกชั้น จึงผิดได้เฉพาะแบบ "หาไม่เจอ")
+✅ **ไม่เหลือ `createTextFinder` ในโปรเจกต์แล้ว** (18 ส.ค. 2569)
+จุดสุดท้ายคือ `readSchoolCalendarEntryByDate_` ซึ่งเปลี่ยนไปอ่านจาก
+`getAllSchoolCalendarEntries_` แทน — ให้ `row_index` ชุดเดียวกันเป๊ะเพราะสแกนทั้งชีต
+เหมือนกันและตัดคีย์ซ้ำด้วย `shouldReplaceSchoolCalendarEntry_` ตัวเดียวกัน
+**ที่ต้องเหมือนกันเป๊ะเพราะ `deleteSchoolCalendarEntry` เอา `row_index` จากทางนี้ไป
+`deleteRow` ตรงๆ** ถ้าเลข row เพี้ยนจะลบผิดแถวแบบเงียบๆ
+
+### ⚠️ `row_index` ของปฏิทินมาจาก cache — ปลอดภัยด้วย 2 อย่างเท่านั้น
+
+`deleteSchoolCalendarEntry` และ `saveSchoolCalendarEntry` เรียก `getSchoolCalendarRowByDate_`
+→ `getSchoolCalendarEntryByDate_` ซึ่งอ่านจาก **cache 300 วินาที + memo ระดับ execution**
+แล้วเอา `row_index` ไปเขียน/ลบแถวโดยตรง สิ่งที่กันไม่ให้ลบผิดแถวมีแค่
+
+1. **`LockService.getDocumentLock()`** ครอบทั้งสองฟังก์ชัน → ไม่มีสองคนแก้พร้อมกัน
+2. **`invalidateSchoolCalendarCaches_()`** เรียก `bumpDerivedDataCacheVersion_()` ทุกครั้งหลังแก้
+   → cache key เปลี่ยน คนถัดไปได้ของใหม่เสมอ
+   (สำคัญเป็นพิเศษเพราะ `saveSchoolCalendarEntry` เรียก `sortSchoolCalendarSheet_`
+   ซึ่ง **สลับลำดับทุกแถว** `row_index` เก่าทั้งชุดใช้ไม่ได้ทันที)
+
+**เพิ่ม mutation ใหม่ที่แตะชีตปฏิทินต้องมีครบทั้งสองข้อ** ขาดข้อใดข้อหนึ่งแล้วจะลบผิดแถว
+โดยไม่มี error ให้เห็น
 
 ### ตัดชีตประวัติแก้ไข
 

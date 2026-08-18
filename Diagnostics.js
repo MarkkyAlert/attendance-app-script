@@ -145,10 +145,12 @@ function runP0Diagnostics_() {
       return result;
     }));
 
-    // 1ข. ชนิดของค่าในคอลัมน์วันที่ + จุดเดียวที่ยังใช้ createTextFinder กับวันที่
-    // ★ อ่านอย่างเดียว ไม่แก้ชีต · มีไว้เพราะไฟล์สำรองเขียนวันที่กลับเป็น "ข้อความ" เสมอ
-    //   ถ้ากู้คืนลงสำเนาใหม่แล้ว Sheets แปลงข้อความเป็น Date ให้เอง
-    //   `readSchoolCalendarEntryByDate_` จะหาไม่เจอแบบเงียบๆ ทั้งที่ปฏิทินมีวันนั้นอยู่
+    // 1ข. ชนิดของค่าในคอลัมน์วันที่ + การหาวันในปฏิทินให้ผลตรงกับการสแกนตรงไหม
+    // ★ อ่านอย่างเดียว ไม่แก้ชีต
+    // เดิมมีไว้จับ `createTextFinder` ซึ่งเทียบกับ "ข้อความที่แสดง" — **ตอนนี้ไม่มีใครใช้แล้ว**
+    // `readSchoolCalendarEntryByDate_` เปลี่ยนไปใช้ `getAllSchoolCalendarEntries_` แทน
+    // แต่ check นี้ยังมีค่า เพราะกลายเป็นการตรวจว่า **เส้นทางที่ cache ไว้ ให้ผลตรงกับ
+    // การสแกนชีตตรงๆ** ซึ่งเป็นสิ่งที่ `deleteSchoolCalendarEntry` พึ่งพา (เอา `row_index` ไปลบแถว)
     checks.push(runPreReleaseSmokeCheck_('calendar:date_lookup_vs_scan', function() {
       var result = { date_cell_types: describeDateCellTypes_() };
 
@@ -182,8 +184,7 @@ function runP0Diagnostics_() {
       assertPreReleaseSmoke_(
         !!entry,
         'readSchoolCalendarEntryByDate_ หา ' + probeDate + ' ไม่เจอ ทั้งที่สแกนตรงๆ เจอ ' +
-        scannedCount + ' วัน — createTextFinder [CalendarService.js] เทียบกับ "ข้อความที่แสดง" ' +
-        'ถ้าเซลล์เป็น Date object จะหาไม่เจอแบบเงียบๆ'
+        scannedCount + ' วัน — เส้นทางที่ cache ไว้กับการสแกนชีตให้ผลไม่ตรงกัน'
       );
       return result;
     }));

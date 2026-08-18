@@ -267,7 +267,30 @@
 
 ### 🟡 ขัดใจ
 
-- [ ] **`readSchoolCalendarEntryByDate_` ใช้ `createTextFinder` กับคอลัมน์วันที่** [CalendarService.js:296]
+- [x] ~~**`readSchoolCalendarEntryByDate_` ใช้ `createTextFinder` กับคอลัมน์วันที่**~~
+      **แก้แล้ว ยังไม่ได้ทดสอบ · ไม่เหลือ `createTextFinder` ในโปรเจกต์แล้ว**
+      เปลี่ยนไปอ่านจาก `getAllSchoolCalendarEntries_` (ตัวที่สร้างตอนแก้ความช้า)
+      ซึ่งอ่านทั้งชีตด้วย `getValues()` + `formatDate_` จึงรับได้ทั้ง Date และข้อความ
+
+      **★ เหตุผลที่กล้าแก้ทั้งที่แตะเส้นทางลบปฏิทิน** — ไล่แล้วพบว่า `row_index`
+      **ไหลไปถึง `deleteRow` จริง** (`deleteSchoolCalendarEntry` → `getSchoolCalendarRowByDate_`
+      → `getSchoolCalendarEntryByDate_` → ตัวนี้) แต่ `getAllSchoolCalendarEntries_`
+      ให้ `row_index` **ชุดเดียวกันเป๊ะ** เพราะสแกนทั้งชีตเหมือนกัน นับ `index + 2` เหมือนกัน
+      และตัดคีย์ซ้ำด้วย `shouldReplaceSchoolCalendarEntry_` **ตัวเดียวกัน**
+      ผลพลอยได้: ของเดิมอ่านชีตซ้ำ 1 ครั้งต่อแถวที่ match ตอนนี้ไม่อ่านชีตเพิ่มเลย
+
+      **บันทึกอันตรายที่เจอระหว่างไล่** (ลง `ARCHITECTURE.md` แล้ว)
+      `row_index` ที่เอาไปลบแถว**มาจาก cache 300 วินาที + memo ระดับ execution**
+      สิ่งที่กันไม่ให้ลบผิดแถวมีแค่ 2 อย่าง คือ `LockService.getDocumentLock()` ครอบไว้
+      และ `invalidateSchoolCalendarCaches_()` ที่ bump version ทุกครั้งหลังแก้
+      สำคัญเป็นพิเศษเพราะ `saveSchoolCalendarEntry` เรียก `sortSchoolCalendarSheet_`
+      ซึ่ง**สลับลำดับทุกแถว** → `row_index` เก่าทั้งชุดใช้ไม่ได้ทันที
+      **เพิ่ม mutation ใหม่ที่แตะชีตปฏิทินต้องมีครบทั้งสองข้อ**
+
+      **ทดสอบยังไง** — `runP0Diagnostics` → `calendar:date_lookup_vs_scan` ต้องเขียว
+      (ตอนนี้กลายเป็นการตรวจว่าเส้นทาง cache ให้ผลตรงกับการสแกนชีตตรงๆ) ·
+      แล้วบนของจริง: **เพิ่มรายการปฏิทิน 1 วัน แล้วลบทิ้ง** ตัวเลขวันเรียนต้องขึ้นแล้วลงกลับที่เดิม
+      = ยืนยันว่า `row_index` ที่ใช้ลบยังชี้ถูกแถว
       ★ **วัดแล้ว 17 ส.ค. 2569 — ยังไม่พัง แต่ที่ไม่พังคือความบังเอิญ ไม่ใช่เพราะโค้ดถูก**
       `calendar:date_lookup_vs_scan` ได้ `dates_via_scan: 218` · `lookup_found: true`
       **แต่ข้อมูลที่ได้มาพร้อมกันล้มสมมติฐานเดิมทั้งหมด**: คอลัมน์วันที่**เป็น Date object

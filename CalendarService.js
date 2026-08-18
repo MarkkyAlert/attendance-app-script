@@ -314,25 +314,33 @@ function getSchoolCalendarSummaryForRange_(range) {
   return summarizeSchoolCalendarEntries_(getSchoolCalendarEntriesForRange_(range));
 }
 
+/**
+ * ★★ เลิกใช้ `createTextFinder` กับคอลัมน์วันที่ — เป็นจุดสุดท้ายในโปรเจกต์
+ *
+ * TextFinder จับจาก **ข้อความที่แสดง** ไม่ใช่ค่าจริง และวัดแล้ว (`calendar:date_lookup_vs_scan`)
+ * ว่าคอลัมน์วันที่**เป็น Date object ทุกชีต** ตัวที่ตัดสินว่าเจอหรือไม่เจอคือ
+ * **number format ของเซลล์ ซึ่งมองไม่เห็นจากโค้ด** ที่ผ่านมามันเจอเพราะปฏิทินบังเอิญ
+ * ได้ format `yyyy-mm-dd` ตามสตริงที่โค้ดพิมพ์ลงไป — ไม่ใช่เพราะโค้ดถูก
+ * ครูแก้ชีตด้วยมือหรือกู้คืนจากไฟล์สำรองก็เปลี่ยน format ได้ แล้วจะ**หาไม่เจอแบบเงียบๆ**
+ * (เคยพังแบบนี้มาแล้วกับชีต archive ของการเช็คชื่อ — คืน 0 แถวโดยไม่มี error)
+ *
+ * ★ ใช้ `getAllSchoolCalendarEntries_` ซึ่งอ่านทั้งชีตผ่าน `getValues()` + `formatDate_`
+ * (รับได้ทั้ง Date และข้อความ) แล้ว cache ไว้ — **ให้ `row_index` ชุดเดียวกันเป๊ะ**
+ * เพราะสแกนทั้งชีตเหมือนกัน นับ `index + 2` เหมือนกัน และตัดคีย์ซ้ำด้วย
+ * `shouldReplaceSchoolCalendarEntry_` ตัวเดียวกัน
+ * **ข้อนี้สำคัญ** เพราะ `deleteSchoolCalendarEntry` เอา `row_index` จากทางนี้ไป `deleteRow` ตรงๆ
+ * ถ้าเปลี่ยนวิธีหาแถวแล้วเลข row เพี้ยน จะลบผิดแถวแบบเงียบๆ
+ *
+ * ผลพลอยได้: ของเดิมอ่านชีตซ้ำ 1 ครั้งต่อแถวที่ match (`getRange(rowIndex, ...)` ในลูป)
+ * ตอนนี้ใช้ผลที่ cache ไว้แล้ว ไม่อ่านชีตเพิ่มเลย
+ */
 function readSchoolCalendarEntryByDate_(date) {
-  var sheet = getSchoolCalendarSheetForRead_();
-  if (!sheet) return null;
-  if (sheet.getLastColumn() < SCHOOL_CALENDAR_COL.LABEL) return null;
-  var lastRow = sheet.getLastRow();
-  if (lastRow <= 1) return null;
-
-  var matches = sheet.getRange(2, SCHOOL_CALENDAR_COL.DATE, lastRow - 1, 1)
-    .createTextFinder(String(date || ''))
-    .matchEntireCell(true)
-    .findAll();
-  if (!matches.length) return null;
+  date = String(date || '').slice(0, 10);
+  if (!date) return null;
 
   var selected = null;
-  matches.forEach(function(range) {
-    var rowIndex = range.getRow();
-    var row = sheet.getRange(rowIndex, 1, 1, SCHOOL_CALENDAR_COL.LABEL).getValues()[0];
-    var entry = buildSchoolCalendarEntry_(row, rowIndex);
-    if (!entry.date || entry.date !== date) return;
+  getAllSchoolCalendarEntries_().forEach(function(entry) {
+    if (!entry || !entry.date || entry.date !== date) return;
     if (!selected || shouldReplaceSchoolCalendarEntry_(selected, entry)) {
       selected = entry;
     }
