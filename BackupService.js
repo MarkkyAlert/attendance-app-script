@@ -2,7 +2,9 @@
  * Teacher-only backup pack generation and restore.
  */
 
-var BACKUP_VERSION = 3;
+// v4 = เพิ่มชีต `ลิงก์ผู้ปกครอง` เข้าไฟล์สำรอง · ยังกู้คืนไฟล์ v3 ได้ตามปกติ
+// (ตัวกู้คืนข้ามชีตนี้ถ้าไฟล์ไม่มีข้อมูลส่วนนั้น ดู restoreBackupSnapshotUnsafe_)
+var BACKUP_VERSION = 4;
 
 function createBackup(auth) {
   return runAsTeacher_(auth, {
@@ -109,7 +111,12 @@ function previewRestoreBackup(dataUrl, filename, auth) {
         semesters: getBackupSheetRowCount_(snapshot, 'semesters'),
         school_calendar: getBackupSheetRowCount_(snapshot, 'school_calendar'),
         change_log: getBackupSheetRowCount_(snapshot, 'change_log'),
-        note: 'การกู้คืนนี้จะเขียนทับข้อมูลนักเรียน การเช็คชื่อ ภาคเรียน ปฏิทินวันเรียน และการตั้งค่าในชีตทั้งหมด แต่จะไม่เปลี่ยนรหัสครูหรือ PIN'
+        parent_links: getBackupSheetRowCount_(snapshot, 'parent_links'),
+        // ★ ข้อความนี้เป็นคำสัญญาที่ครูอ่านก่อนกดยืนยัน ต้องตรงกับสิ่งที่โค้ดทำจริง
+        // ไฟล์ v3 ไม่มีส่วนลิงก์ผู้ปกครอง การกู้คืนจึงข้ามชีตนั้นไป ไม่ใช่ล้างทิ้ง
+        note: parseInt(snapshot.version, 10) >= 4
+          ? 'การกู้คืนนี้จะเขียนทับข้อมูลนักเรียน การเช็คชื่อ ภาคเรียน ปฏิทินวันเรียน ลิงก์ผู้ปกครอง และการตั้งค่าในชีตทั้งหมด แต่จะไม่เปลี่ยนรหัสครูหรือ PIN'
+          : 'การกู้คืนนี้จะเขียนทับข้อมูลนักเรียน การเช็คชื่อ ภาคเรียน ปฏิทินวันเรียน และการตั้งค่าในชีตทั้งหมด แต่จะไม่เปลี่ยนรหัสครูหรือ PIN · ไฟล์สำรองรุ่นนี้ยังไม่มีลิงก์ผู้ปกครอง ลิงก์ที่ใช้อยู่ตอนนี้จะไม่ถูกแตะ'
       }
     };
   });
@@ -126,10 +133,17 @@ function restoreBackupSnapshotUnsafe_(snapshot) {
   restoreBackupSheet_(SHEET.SETTINGS, sheets.settings, ['Key', 'Value']);
   restoreBackupSheet_(SEMESTER_SHEET, sheets.semesters, ['id', 'ชื่อภาคเรียน', 'วันเริ่มต้น', 'วันสิ้นสุด', 'ใช้งาน']);
   restoreBackupSheet_(SCHOOL_CALENDAR_SHEET, sheets.school_calendar, ['id', 'วันที่', 'ประเภท', 'รายละเอียด']);
+  // ★ ไฟล์สำรอง v3 ไม่มีส่วนนี้ **ต้องข้ามไปเฉยๆ ห้ามเขียนทับ**
+  // ไม่งั้นการกู้คืนไฟล์เก่าจะล้างลิงก์ผู้ปกครองที่ใช้งานอยู่ทิ้งทั้งหมด
+  if (sheets.parent_links) {
+    restoreBackupSheet_(PARENT_LINK_SHEET, sheets.parent_links,
+      ['student_number', 'token', 'token_hash', 'created_at', 'expires_at', 'revoked', 'student_id']);
+  }
   restoreBackupArchiveSheets_(ATTENDANCE_ARCHIVE_SHEET_PREFIX, sheets.attendance_archives, ensureAttendanceArchiveSheetSchema_);
   restoreBackupArchiveSheets_(ATTENDANCE_DAY_ARCHIVE_SHEET_PREFIX, sheets.attendance_day_archives, ensureAttendanceArchiveDaySheetSchema_);
 
   ensureStudentIdentityMigration_();
+  getOrCreateParentLinkSheet_();
   ensureSemesterSchema_(getOrCreateSemesterSheet_());
   ensureSchoolCalendarSchema_(getOrCreateSchoolCalendarSheet_());
   invalidateStudentCache_();
@@ -260,10 +274,34 @@ function buildBackupSnapshot_() {
       settings: exportSheetSnapshot_(SHEET.SETTINGS),
       semesters: exportSheetSnapshot_(SEMESTER_SHEET),
       school_calendar: exportSheetSnapshot_(SCHOOL_CALENDAR_SHEET),
+      parent_links: exportParentLinkSnapshot_(),
       attendance_archives: exportSheetSnapshotsByPrefix_(ATTENDANCE_ARCHIVE_SHEET_PREFIX),
       attendance_day_archives: exportSheetSnapshotsByPrefix_(ATTENDANCE_DAY_ARCHIVE_SHEET_PREFIX)
     }
   };
+}
+
+/**
+ * ★★ สำรองชีต `ลิงก์ผู้ปกครอง` ด้วย — ก่อนหน้านี้ตกหล่นไป
+ *
+ * ทำไมถึงสำคัญ: `restoreBackup` เป็นช่องทางเดียวที่ครูซึ่งซื้อไปแล้วจะได้โค้ดเวอร์ชันใหม่
+ * ซึ่งแปลว่าครู copy Spreadsheet+Script ชุดใหม่แล้วกู้คืนข้อมูลเข้าไป
+ * ถ้าไม่สำรองชีตนี้ **สำเนาใหม่จะไม่มีลิงก์ผู้ปกครองเลย ลิงก์ทุกใบที่แจกไปแล้วตายทันที**
+ * และครูต้องออกใหม่ทีละคนโดยไม่มีอะไรบอกว่าต้องทำ
+ *
+ * ★ ล้างคอลัมน์ `token` ทิ้งก่อนใส่ไฟล์เสมอ
+ * ปกติคอลัมน์นี้ว่างอยู่แล้ว (ระบบเก็บแค่ `token_hash` ส่วนตัว token จริงโชว์ครั้งเดียว
+ * ตอนออกลิงก์แล้วล้างทิ้ง) แต่ไฟล์สำรองเป็นของที่ครูดาวน์โหลดไปเก็บและอาจส่งต่อ
+ * **ถ้าวันหนึ่งมี token หลงเหลือในชีต มันจะกลายเป็นกุญแจเปิดข้อมูลนักเรียนที่อยู่ในไฟล์**
+ * จึงล้างซ้ำอีกชั้นตรงนี้ · การกู้คืนไม่ต้องใช้คอลัมน์นี้ เพราะตรวจด้วย hash
+ */
+function exportParentLinkSnapshot_() {
+  var snapshot = exportSheetSnapshot_(PARENT_LINK_SHEET);
+  var tokenIndex = PARENT_LINK_COL.TOKEN - 1;
+  (snapshot.rows || []).forEach(function(row) {
+    if (row.length > tokenIndex) row[tokenIndex] = '';
+  });
+  return snapshot;
 }
 
 function exportSheetSnapshotsByPrefix_(prefix) {
@@ -326,8 +364,11 @@ function buildBackupReadme_(snapshot) {
   lines.push('จำนวนบันทึกเช็คชื่อ: ' + getBackupSheetRowCount_(snapshot, 'attendance_records'));
   lines.push('จำนวนภาคเรียน: ' + getBackupSheetRowCount_(snapshot, 'semesters'));
   lines.push('จำนวนรายการปฏิทินวันเรียน: ' + getBackupSheetRowCount_(snapshot, 'school_calendar'));
+  lines.push('จำนวนลิงก์ผู้ปกครอง: ' + getBackupSheetRowCount_(snapshot, 'parent_links'));
   lines.push('');
   lines.push('หมายเหตุ: ไฟล์สำรองนี้ไม่รวมรหัสครู, PIN, หรือ session ปัจจุบัน');
+  lines.push('ลิงก์ผู้ปกครองถูกสำรองไว้ในรูปแบบที่ตรวจสอบด้วยรหัสย่อเท่านั้น');
+  lines.push('ไฟล์นี้จึงเปิดข้อมูลนักเรียนด้วยตัวเองไม่ได้ แต่ยังควรเก็บเป็นความลับ');
   return lines.join('\r\n');
 }
 

@@ -694,7 +694,7 @@ TextFinder จับจาก**ข้อความที่แสดง** ด�
 ### ขีดจำกัดที่ใกล้ชนที่สุด
 
 1. **Migration บนชีตใหญ่** (ข้างบน) — เสี่ยงสุด
-2. **`restoreBackup`** — สร้าง snapshot ปัจจุบันไว้ใน memory เพื่อ rollback แล้วเขียนทับ 7 ชีต +
+2. **`restoreBackup`** — สร้าง snapshot ปัจจุบันไว้ใน memory เพื่อ rollback แล้วเขียนทับ 8 ชีต +
    ชีต archive ทั้งหมด ถ้าพังต้อง restore กลับอีกรอบ = อาจเขียนทั้งสเปรดชีต 2 รอบใน 1 execution
 3. **`attendance_date_buckets`** — 10,000 แถว ≈ 1.5 MB → ~19 chunk ต้องอยู่ครบถึงจะ hit
    **ยิ่งข้อมูลโตยิ่ง hit rate ต่ำ** archive ภาคเรียนคือทางระบายเดียว

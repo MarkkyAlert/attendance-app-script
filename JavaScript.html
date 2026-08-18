@@ -3805,13 +3805,18 @@
             return;
           }
           var data = result.data;
+          // ★ ใช้ `data.note` จาก server ไม่ใช่เขียนประโยคของตัวเองซ้ำอีกชุด
+          // เดิมมีคำสัญญา 2 ชุดที่ต้องแก้พร้อมกัน และชุดนี้ตกหล่นไปแล้วครั้งหนึ่ง
+          // (ตอนเพิ่มลิงก์ผู้ปกครองเข้าไฟล์สำรอง) · ข้อความต่างกันตามรุ่นของไฟล์ด้วย
+          var restoreNote = String(data.note || 'การกู้คืนนี้จะเขียนทับข้อมูลในชีตทั้งหมด (ไม่รวมรหัสครูและ PIN)');
           confirm_dialog(
             'กู้คืนข้อมูลจากไฟล์ "' + data.filename + '"\n' +
             '- นักเรียน: ' + data.students + ' แถว\n' +
             '- เช็คชื่อ: ' + data.attendance_records + ' แถว\n' +
             '- ภาคเรียน: ' + data.semesters + ' รายการ\n' +
-            '- ปฏิทินวันเรียน: ' + data.school_calendar + ' รายการ\n\n' +
-            'การกู้คืนนี้จะเขียนทับข้อมูลในชีตทั้งหมด (ไม่รวมรหัสครูและ PIN) ต้องการดำเนินการต่อหรือไม่?',
+            '- ปฏิทินวันเรียน: ' + data.school_calendar + ' รายการ\n' +
+            '- ลิงก์ผู้ปกครอง: ' + (data.parent_links || 0) + ' รายการ\n\n' +
+            restoreNote + '\n\nต้องการดำเนินการต่อหรือไม่?',
             function () {
               serverCall('restoreBackup', [data.preview_token], function (restoreResult) {
                 if (restoreResult && restoreResult.success) {
