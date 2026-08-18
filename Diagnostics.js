@@ -256,6 +256,43 @@ function runP0Diagnostics_() {
       return result;
     }));
 
+    // 1ง. ไฟล์สำรองมีชีตลิงก์ผู้ปกครองไหม และคอลัมน์ token ถูกล้างจริงไหม
+    // ★ อ่านอย่างเดียว — `buildBackupSnapshot_` แค่อ่านชีต ไม่เขียนอะไร และไม่สร้างไฟล์บน Drive
+    //   ตรวจทางนี้เพราะการกดปุ่มบนหน้าจอต้องพึ่ง pop-up ซึ่งถูกเบราว์เซอร์บล็อกได้
+    checks.push(runPreReleaseSmokeCheck_('backup:includes_parent_links', function() {
+      var snapshot = buildBackupSnapshot_();
+      var sheets = (snapshot && snapshot.sheets) || {};
+      var parentLinks = sheets.parent_links || null;
+      var rows = (parentLinks && parentLinks.rows) || [];
+      var tokenIndex = PARENT_LINK_COL.TOKEN - 1;
+
+      var rowsWithToken = 0;
+      rows.forEach(function(row) {
+        if (row.length > tokenIndex && String(row[tokenIndex] || '').trim()) rowsWithToken++;
+      });
+
+      var result = {
+        backup_version: parseInt(snapshot && snapshot.version, 10) || 0,
+        sheet_keys: Object.keys(sheets).sort(),
+        has_parent_links_key: !!parentLinks,
+        parent_link_rows: rows.length,
+        parent_link_headers: (parentLinks && parentLinks.headers) || [],
+        rows_with_plaintext_token: rowsWithToken
+      };
+
+      assertPreReleaseSmoke_(!!parentLinks, 'ไฟล์สำรองไม่มีส่วน parent_links');
+      assertPreReleaseSmoke_(
+        (parseInt(snapshot && snapshot.version, 10) || 0) >= 4,
+        'BACKUP_VERSION ควรเป็น 4 ขึ้นไปเมื่อมีลิงก์ผู้ปกครองในไฟล์'
+      );
+      // ★ ข้อนี้สำคัญกว่าจำนวนแถว — token ที่หลุดไปในไฟล์ = กุญแจเปิดข้อมูลนักเรียน
+      assertPreReleaseSmoke_(
+        rowsWithToken === 0,
+        'มี token แบบอ่านได้หลงเหลือใน backup ' + rowsWithToken + ' แถว'
+      );
+      return result;
+    }));
+
     // 2. หัวใจของงานชุดนี้: ลบแถวไม่ติดกัน บนชีตทดสอบที่แยกออกมาต่างหาก
     checks.push(runPreReleaseSmokeCheck_('delete_rows:non_contiguous', function() {
       var ss = getSpreadsheet_();
