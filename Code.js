@@ -38,12 +38,15 @@ function extractClientModuleScript_(filename) {
 }
 
 /**
- * ★★ ต้องใช้ตัวแบ่ง chunk ไม่ใช่คีย์เดียว — `JsReports` หลัง JSON.stringify มีขนาด
- * ~115,000 ไบต์ (สคริปต์ 89,600 ตัวอักษร แต่มีภาษาไทย 11,220 ตัว ซึ่งตัวละ 3 ไบต์)
- * เกินเพดาน 100KB ต่อคีย์ของ CacheService → เขียนไม่ติด และ `putCachedJsonByKey_`
- * กลืน error ทิ้ง → **เปิดหน้ารายงานทุกครั้ง server ต้องอ่านไฟล์ + รัน regex ใหม่**
- * โดยไม่มีอะไรเตือนเลย · `JsDashboard` อยู่ที่ 97,895 ไบต์ = เหลือที่แค่ ~4.5KB
- * พิสูจน์ด้วย `cache:client_modules_fit` ใน `Diagnostics.js`
+ * ใช้ตัวแบ่ง chunk ตามไบต์ **เพื่อกันไว้ล่วงหน้า ไม่ใช่เพราะเคยพังจริง**
+ * `JsReports` หลัง JSON.stringify อยู่ที่ 107,972 ไบต์ ซึ่งเกินตัวเลข 100KB ที่เอกสาร
+ * CacheService ระบุ **แต่วัดแล้วเขียนด้วยคีย์เดียวยังติด** (`cache:client_modules_fit`
+ * รายงาน `single_key_cached: true` และ `broken_with_single_key: []` ทั้ง 6 โมดูล)
+ * → **ห้ามสรุปว่า cache พลาดเพราะขนาดเกิน จนกว่าจะวัด** ยังไม่รู้ว่าเพดานจริงอยู่ตรงไหน
+ *
+ * ⚠️ ข้อเสียที่ยอมรับไว้ — หั่นหลาย chunk แล้ว **chunk เดียวถูก evict = พลาดทั้งก้อน**
+ * ขณะที่คีย์เดียวอยู่หรือหลุดเป็นหน่วยเดียว · แลกกับการไม่ต้องพึ่งพฤติกรรมที่เอกสารไม่รับรอง
+ * และ `JsDashboard` (92,807 ไบต์) ก็โตเข้าใกล้ขึ้นเรื่อยๆ
  */
 function getCachedClientAssetContent_(cacheKey, builder) {
   cacheKey = String(cacheKey || '').trim();
