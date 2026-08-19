@@ -343,44 +343,6 @@ function runP0Diagnostics_() {
       };
     }));
 
-    // วัดต้นทุนของการอุ่น cache ที่ยัง "อยู่ในล็อก" — ตอนนี้เหลือทางเดียวคือ clearHolidayAttendance
-    // ★ ต้องใช้ mode 'clear_holiday' เท่านั้น mode อื่นถูกกันออกที่ต้นฟังก์ชันแล้วจะวัดได้ 0 ms
-    //   แล้วรายงานเท็จว่าไม่มีปัญหา (mode 'confirm' ถูกตัดออกไปแล้ว ดู DECISIONS.md ข้อ 38)
-    // ⚠️ check นี้ bump เวอร์ชันจริงแล้วสร้าง cache ใหม่ = ผลข้างเคียงเหมือน mutation 1 ครั้ง แต่ไม่แก้ข้อมูล
-    checks.push(runPreReleaseSmokeCheck_('perf:in_lock_cache_warm_cost', function() {
-      var semester = getActiveSemesterRow_();
-      assertPreReleaseSmoke_(!!semester, 'ยังไม่มีภาคเรียนที่ใช้งานอยู่');
-      var sourceInfo = getAttendanceSourceInfoForSemester_(semester);
-
-      var probeDate = '';
-      var buckets = getCachedAttendanceDateBuckets_(sourceInfo) || {};
-      Object.keys(buckets).sort().forEach(function(date) {
-        if (!probeDate && buckets[date] && buckets[date].length) probeDate = date;
-      });
-      assertPreReleaseSmoke_(!!probeDate, 'ไม่พบวันที่มีข้อมูลเช็คชื่อให้วัด');
-
-      // จำลองลำดับใน clearHolidayAttendance: invalidateAttendanceCaches_ แล้วค่อย warm
-      bumpDerivedDataCacheVersion_();
-      var coldStarted = new Date().getTime();
-      warmLikelyDerivedCachesForDate_(probeDate, { mode: 'clear_holiday' });
-      var coldMs = new Date().getTime() - coldStarted;
-
-      var hotStarted = new Date().getTime();
-      warmLikelyDerivedCachesForDate_(probeDate, { mode: 'clear_holiday' });
-      var hotMs = new Date().getTime() - hotStarted;
-
-      return {
-        probe_date: probeDate,
-        month: probeDate.slice(0, 7),
-        threshold_ms: getTimingThresholdMs_('derived_cache_warm_ms'),
-        cold_warm_ms: coldMs,
-        hot_warm_ms: hotMs,
-        // ★ นี่คือเวลาที่ครูรอเพิ่มเมื่อกด "ล้างข้อมูลวันหยุด" และเป็นเวลาที่ lock ถูกถือไว้
-        // ยังไม่ตัดสินว่าจะแก้ เพราะยังไม่รู้ว่าครูทำบ่อยแค่ไหน — อยู่ใน TODO.md
-        still_over_threshold: coldMs > getTimingThresholdMs_('derived_cache_warm_ms')
-      };
-    }));
-
     // ★★ วัดว่าโมดูล client แต่ละตัวใหญ่แค่ไหน และ **เขียน cache ติดจริงไหม**
     // เทียบทางคีย์เดียวกับทางแบ่ง chunk ตามไบต์ ในรอบเดียว
     // ★ ผลรอบ 19 ส.ค. 2569: `single_key_cached` เป็น true ทั้ง 6 ตัว รวม JsReports ที่ 107,972 ไบต์

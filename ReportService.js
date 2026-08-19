@@ -330,43 +330,6 @@ function buildSummaryTableData_(range, skipComparison) {
   });
 }
 
-function warmLikelyDerivedCachesForDate_(date) {
-  date = String(date || '').slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
-
-  // ★ ตอนนี้เหลือผู้เรียกคนเดียวคือ clearHolidayAttendance (mode 'clear_holiday')
-  // mode 'confirm' ถูกตัดออกเพราะวัดได้ 5.9-12 วินาทีในล็อกขณะครูรอ โดยที่ client
-  // ไม่ยิงคำขอใดๆ ต่อหลังยืนยัน — ดู DECISIONS.md ข้อ 38
-  // ส่วนอีก 5 mode ด้านล่างเคยมีผู้เรียกแต่ถูกกันออกที่นี่ = เรียกแล้วไม่ทำอะไร จึงลบผู้เรียกทิ้งไปด้วย
-  // เก็บรายการไว้เป็นด่านกันพลาด เผื่อมีใครเติมผู้เรียกกลับเข้ามาโดยไม่ได้วัดก่อน
-  var mode = String(arguments[1] && arguments[1].mode || 'default').trim().toLowerCase();
-  if (['record', 'undo', 'bulk', 'undo_bulk', 'save_note', 'draft', 'confirm'].indexOf(mode) >= 0) {
-    return;
-  }
-
-  try {
-    measureTiming_('derived_cache_warm_ms', {
-      page: 'attendance',
-      fn_name: 'warmLikelyDerivedCachesForDate_',
-      date: date,
-      month: date.slice(0, 7),
-      detail: 'mode=' + mode
-    }, function() {
-      var month = date.slice(0, 7);
-      getOrBuildCachedJson_('dashboard_data', [month], 120, function() {
-        return buildDashboardData_(month);
-      });
-
-      var monthRange = getEffectiveMonthRange_(month);
-      if (!isEffectiveRangeEmpty_(monthRange)) {
-        getCachedSummaryTableDataForRange_(monthRange, true);
-        getCachedDailyGridDataForRange_(monthRange);
-      }
-    });
-  } catch (e) {
-    Logger.log('warmLikelyDerivedCachesForDate_ failed: ' + e.message);
-  }
-}
 
 /**
  * สร้างไฟล์ CSV ชั่วคราวบน Drive แล้วส่ง URL ดาวน์โหลดกลับให้ client

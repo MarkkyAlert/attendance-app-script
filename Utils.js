@@ -34,6 +34,8 @@ var TIMING_LOG_THRESHOLDS_MS = {
   attendance_load_ms: 1500,
   attendance_scan_ms: 2000,
   dashboard_build_ms: 2000,
+  // ★ ไม่มีใครส่ง metric นี้แล้วตั้งแต่ตัดการอุ่น cache ในล็อกออกทั้งหมด (DECISIONS ข้อ 38 และ 46)
+  // เก็บเกณฑ์ไว้เพื่อให้ perf:timing_log_summary อ่านแถวเก่าใน _timing_log ได้ถูกต้อง
   derived_cache_warm_ms: 1500,
   report_build_ms: 2500,
   analytics_build_ms: 3000,

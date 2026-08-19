@@ -635,10 +635,15 @@
       ข้ามการสแกนตรงถ้าเดินมาถึงช้ากว่า 30 วินาที แล้วรายงาน `direct_scan_skipped`
       การเทียบก่อน/หลัง bump ยังทำได้เสมอ · `DECISIONS.md` ข้อ 45.2
 
-- [ ] **`clearHolidayAttendance` ยังอุ่น cache ในล็อกอยู่** (ยังไม่วัด ยังไม่ตัดสิน)
-      เหลือเป็นผู้เรียก `warmLikelyDerivedCachesForDate_` คนเดียวในโปรเจกต์ [AttendanceService.js:1871]
-      วัดได้จาก `perf:in_lock_cache_warm_cost` · ยังไม่รู้ว่าครูกด "ล้างข้อมูลวันหยุด" บ่อยแค่ไหน
-      ถ้าแพงและทำบ่อย ให้ตัดแบบเดียวกับ `confirmDay`
+- [x] **`clearHolidayAttendance` อุ่น cache ในล็อก** — **ตัดแล้ว รอทดสอบ**
+      วัดได้ `cold_warm_ms` 4,528 / 5,343 / 5,569 ms ทั้งหมดอยู่ในล็อกขณะครูรอ
+      ตอนแรกดูต่างจาก `confirmDay` เพราะ client ยิง `loadSummary`/`loadDailyGrid` ต่อทันที
+      **แต่ไล่แล้วไม่มีสถานการณ์ไหนที่ช่วย** — อุ่น "เดือนของวันที่ล้าง" แต่ client ขอ
+      "ช่วงที่เลือกในหน้ารายงาน" ซึ่งมักไม่ตรง · และถึงตรง `getSummaryTable` ก็ cache ให้เองอยู่แล้ว
+      = ย้ายงานเดิมเข้าไปทำในล็อกเฉยๆ
+      เหลือผู้เรียก 0 ตัว จึง**ลบ `warmLikelyDerivedCachesForDate_` ทิ้งทั้งฟังก์ชัน**
+      พร้อม check `perf:in_lock_cache_warm_cost` · `DECISIONS.md` ข้อ 46
+      **ไม่มี mutation ตัวไหนสร้าง derived cache ในล็อกอีกแล้ว**
 
 <details><summary>ตัวเลขเดิมก่อนแก้</summary>
 

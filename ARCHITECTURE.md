@@ -635,14 +635,15 @@ percent     = round(attend_days / basis_days × 1000) / 10
 - **ไม่มี lock ทั้งที่เป็น mutation**: `repairParentEmailNotifications` · `toggleStudentFlag` ·
   `saveSettings` / `saveTeacherSecuritySettings`
 
-⚠️ `warmLikelyDerivedCachesForDate_` ยังถูกเรียก **ข้างใน** lock สำหรับ mode `clear_holiday` เท่านั้น
-การอุ่นแคชสร้าง dashboard + summary + daily grid ใหม่ทั้งชุด = ถือ lock ยาว
-วัดได้ **5,896 ms ตอน cache เย็น เทียบ 128 ms ตอนอุ่นแล้ว** (`perf:confirm_day_warm_cost`)
-แพงเพราะถูกเรียกหลัง `invalidateAttendanceCaches_` จึงต้องสร้างใหม่จากศูนย์เสมอ
+✅ **ไม่มีการอุ่น cache ในล็อกเหลืออยู่แล้ว** — `warmLikelyDerivedCachesForDate_` ถูกลบทิ้งทั้งฟังก์ชัน
 
-mode `confirm` **ถูกตัดออกแล้ว** (ดู `DECISIONS.md` ข้อ 38) ส่วน mode
-`record`/`undo`/`bulk`/`undo_bulk`/`save_note`/`draft` ถูกกันออกไปตั้งแต่ก่อนหน้า
-→ เหลือ `clear_holiday` เป็นทางเดียวที่ยังอุ่นอยู่ **ยังเป็นงานค้างใน `TODO.md`**
+เคยสร้าง dashboard + summary + daily grid ใหม่ทั้งชุด**ข้างใน** lock หลัง `invalidateAttendanceCaches_`
+จึงต้องสร้างใหม่จากศูนย์เสมอ วัดได้ **4,500–5,900 ms ตอน cache เย็น เทียบ 128–193 ms ตอนอุ่นแล้ว**
+
+ทยอยตัดออก 3 รอบ: mode `record`/`undo`/`bulk`/`undo_bulk`/`save_note`/`draft` ถูกกันออกก่อนหน้า ·
+`confirm` ตัดตาม `DECISIONS.md` ข้อ 38 · `clear_holiday` ตัดตามข้อ 46 ทำให้เหลือผู้เรียก 0 ตัว
+จึงลบฟังก์ชันทิ้งพร้อมกัน · metric `derived_cache_warm_ms` ไม่มีใครส่งอีกแล้ว
+แต่คงเกณฑ์ไว้ใน `TIMING_LOG_THRESHOLDS_MS` เพื่อให้สรุปแถวเก่าใน `_timing_log` ยังอ่านได้
 
 ---
 

@@ -1868,7 +1868,11 @@ function clearHolidayAttendance(date, auth) {
 
       clearDayNotificationState_(date);
       invalidateAttendanceCaches_(date);
-      try { warmLikelyDerivedCachesForDate_(date, { mode: 'clear_holiday' }); } catch (eWarm) { Logger.log('warmLikelyDerivedCachesForDate_ clear holiday failed: ' + eWarm.message); }
+      // ★ เคยอุ่น cache ตรงนี้ วัดได้ 4.5-5.6 วินาที **ในล็อก ขณะครูรอ** — ตัดออกแล้ว
+      // client ยิง getSummaryTable / getDailyGrid ต่อทันทีอยู่แล้ว และทั้งคู่ cache ให้เอง
+      // การอุ่นก่อนจึงเป็นงานเดิมที่ถูกย้ายเข้าไปทำในล็อก ไม่ได้เร็วขึ้นเลย
+      // ซ้ำร้ายมันอุ่น "เดือนของวันที่ล้าง" แต่ client ขอ "ช่วงที่เลือกในหน้ารายงาน" ซึ่งมักไม่ตรงกัน
+      // ดู DECISIONS.md ข้อ 46
 
       return {
         success: true,
