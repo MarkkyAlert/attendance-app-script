@@ -577,11 +577,15 @@ function buildSmokeFailureDetails_(checks) {
 function runPreReleaseSmokeCheck_(name, fn) {
   var startedAt = new Date().getTime();
   try {
+    // ★ ต้องเรียก fn() ให้เสร็จก่อนแล้วค่อยจับเวลา
+    // เดิมเขียนรวมใน object literal ซึ่งประเมินตามลำดับคีย์ = duration_ms ถูกคำนวณ
+    // ก่อน detail: fn() ทำงาน ทุก check จึงรายงาน 0 มาตลอดและใช้ตัดสินอะไรไม่ได้เลย
+    var detail = fn() || null;
     return {
       name: String(name || ''),
       ok: true,
       duration_ms: new Date().getTime() - startedAt,
-      detail: fn() || null
+      detail: detail
     };
   } catch (e) {
     return {

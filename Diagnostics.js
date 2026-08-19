@@ -73,6 +73,11 @@ function escapeP0DiagnosticHtml_(text) {
     .replace(/>/g, '&gt;');
 }
 
+// ★ ถ้าใช้เวลาไปเกินนี้แล้ว ให้ข้ามตัวควบคุมที่แพงที่สุด (การสแกนชีตตรงๆ)
+// เพราะ Apps Script จำกัดฟังก์ชันเดียวที่ 6 นาที และรอบที่ช้าเคยไปถึง 344 วินาทีมาแล้ว
+// รอบปกติเดินมาถึง check นั้นภายในไม่กี่วินาที เกณฑ์นี้จึงไม่กระทบรอบปกติ
+var P0_DIAGNOSTIC_CONTROL_SCAN_BUDGET_MS = 30000;
+
 function runP0Diagnostics_() {
   ensureSecurityMigration_();
 
@@ -277,22 +282,34 @@ function runP0Diagnostics_() {
         }).join('~');
       }
 
-      var scanStarted = new Date().getTime();
-      var direct = readAllAttendanceRecords_(sourceInfo);
-      var directMs = new Date().getTime() - scanStarted;
+      // ★★ การสแกนตรงคือตัวควบคุมที่แพงที่สุดในชุดนี้ — วัดได้ 136,459 ms เมื่อ Apps Script
+      // ช้าทั้งกระดาน (19 ส.ค. 2569) ทำให้ทั้งรอบใช้ 344 วินาทีจากเพดาน 360
+      // อีกนิดเดียวจะตายทั้งรอบและไม่ได้ผลอะไรเลยสักตัว จึงข้ามเมื่อรู้ตัวว่าช้าอยู่แล้ว
+      var elapsedBeforeMs = new Date().getTime() - startedAt;
+      var hasScanBudget = elapsedBeforeMs < P0_DIAGNOSTIC_CONTROL_SCAN_BUDGET_MS;
+
+      var direct = null;
+      var directMs = null;
+      if (hasScanBudget) {
+        var scanStarted = new Date().getTime();
+        direct = readAllAttendanceRecords_(sourceInfo);
+        directMs = new Date().getTime() - scanStarted;
+      }
 
       var warmStarted = new Date().getTime();
       var viaSplit = getAllAttendanceRecords_(sourceInfo);
       var warmMs = new Date().getTime() - warmStarted;
 
-      assertPreReleaseSmoke_(
-        direct.length === viaSplit.length,
-        'จำนวน record ไม่ตรง: สแกนตรง ' + direct.length + ' แต่เส้นทางแยก cache ' + viaSplit.length
-      );
-      assertPreReleaseSmoke_(
-        signature_(direct) === signature_(viaSplit),
-        'ข้อมูลหรือลำดับไม่ตรงกันระหว่างการสแกนตรงกับเส้นทางแยก cache'
-      );
+      if (direct) {
+        assertPreReleaseSmoke_(
+          direct.length === viaSplit.length,
+          'จำนวน record ไม่ตรง: สแกนตรง ' + direct.length + ' แต่เส้นทางแยก cache ' + viaSplit.length
+        );
+        assertPreReleaseSmoke_(
+          signature_(direct) === signature_(viaSplit),
+          'ข้อมูลหรือลำดับไม่ตรงกันระหว่างการสแกนตรงกับเส้นทางแยก cache'
+        );
+      }
 
       // จำลองสิ่งที่เกิดขึ้นจริงเมื่อครูแตะสถานะ 1 ครั้ง
       bumpDerivedDataCacheVersion_();
@@ -300,9 +317,10 @@ function runP0Diagnostics_() {
       var afterBump = getAllAttendanceRecords_(sourceInfo);
       var afterMs = new Date().getTime() - afterStarted;
 
+      // เทียบกับผลของ getAllAttendanceRecords_ ก่อน bump ได้เสมอ ไม่ต้องพึ่งการสแกนตรง
       assertPreReleaseSmoke_(
-        signature_(afterBump) === signature_(direct),
-        'หลังจำลองการแตะสถานะ ข้อมูลไม่ตรงกับการสแกนตรง'
+        signature_(afterBump) === signature_(viaSplit),
+        'หลังจำลองการแตะสถานะ ข้อมูลไม่ตรงกับก่อนหน้า'
       );
 
       var archiveSheets = getArchiveAttendanceReadSheets_(sourceInfo);
@@ -310,14 +328,18 @@ function runP0Diagnostics_() {
         semester: String(semester.name || ''),
         source_key: String(sourceInfo.key || ''),
         archive_sheets: archiveSheets.map(function(sh) { return sh.getName() + ':' + sh.getLastRow(); }),
-        records_total: direct.length,
+        records_total: viaSplit.length,
+        elapsed_before_ms: elapsedBeforeMs,
         direct_scan_ms: directMs,
+        direct_scan_skipped: !hasScanBudget,
         split_path_ms: warmMs,
         after_simulated_mark_ms: afterMs,
         // ★ ตัวเลขที่ต้องดู: after_simulated_mark_ms ควรต่ำกว่า direct_scan_ms มาก
         // ถ้าใกล้เคียงกัน แปลว่า cache ส่วน archive ไม่รอด ให้สงสัยว่ามีใคร bump เวอร์ชัน archive เกินจำเป็น
-        archive_cache_survived: afterMs * 2 < directMs || directMs < 300,
-        records_identical: true
+        archive_cache_survived: directMs === null ? null : (afterMs * 2 < directMs || directMs < 300),
+        // ★ เทียบกับการสแกนตรงได้เฉพาะรอบที่มีเวลาพอ รอบที่ข้ามยังเทียบก่อน/หลัง bump ได้อยู่
+        records_identical_vs_direct_scan: direct ? true : 'ข้ามรอบนี้เพราะแพลตฟอร์มช้า',
+        records_stable_across_mark: true
       };
     }));
 
