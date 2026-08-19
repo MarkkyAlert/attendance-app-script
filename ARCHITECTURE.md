@@ -577,6 +577,9 @@ percent     = round(attend_days / basis_days × 1000) / 10
 
    → **หลัง `clasp push` + deploy ตัว `JsDashboard` / `JsReports` / `JsAnalytics` / `JsImport` /
    `JsProfile` / `JsPhotoGrid` ยังเสิร์ฟของเก่าได้ถึง 15 นาที**
+
+   ★ **`JsReports` เพิ่งเข้ากลุ่มนี้จริงๆ ตั้งแต่รอบแก้เพดานไบต์** ก่อนหน้านั้นมันใหญ่เกิน 100 KB
+   จึงเขียน cache ไม่ติดเลย = แก้แล้วเห็นผลทันทีมาตลอด **อย่าเอาประสบการณ์เดิมมาใช้ต่อ**
    `Index.html` / `JavaScript.html` และ **CSS ทั้ง 5 ไฟล์ไม่โดน** เพราะ inline ตอน `doGet` ทางเดียว
    (คีย์ `client_style_asset|<ชื่อ>` เลิกใช้แล้วตั้งแต่รอบที่ 4)
 
@@ -590,16 +593,18 @@ percent     = round(attend_days / basis_days × 1000) / 10
 
 ### ข้อจำกัด CacheService
 
-**100 KB/คีย์** — จัดการด้วย `putLargeCachedJsonByKey_` หั่นเป็นชิ้นละ `LARGE_CACHE_CHUNK_SIZE = 80000`
+**100 KB/คีย์ นับเป็นไบต์** — จัดการด้วย `putLargeCachedJsonByKey_` ซึ่งหั่นด้วย
+`splitStringByUtf8Bytes_` ให้ชิ้นละไม่เกิน `LARGE_CACHE_CHUNK_MAX_BYTES = 90000` **ไบต์**
 เขียน `key|c0..cN` + `key|meta` ตอนอ่านต้องได้ครบทุก chunk ไม่งั้นคืน `null` (treat as miss ซึ่งถูกต้อง
 เพราะ chunk ถูก evict แยกกันได้)
 
-⚠️ **80,000 นับเป็น *chars* ไม่ใช่ bytes** — ข้อความไทยเป็น UTF-8 3 ไบต์/ตัว chunk ที่เป็นไทยหนาแน่น
-จะเกิน 100 KB → `put` throw → ถูกกลืนใน `catch` เงียบๆ → กลายเป็น cache miss ตลอดกาล
-อาการที่เห็นคือ **"รายงานช้าลงเรื่อยๆ โดยไม่มี error"**
+✅ **แก้แล้ว** — เดิมค่านี้คือ 80,000 **ตัวอักษร** ซึ่งถ้าเป็นไทยหนาแน่น (3 ไบต์/ตัว) จะได้ chunk
+ถึง 240 KB เกินเพดาน → `put` throw → ถูกกลืนใน `catch` เงียบๆ → cache miss ตลอดกาล
+อาการคือ **"ช้าลงเรื่อยๆ โดยไม่มี error"** · `splitStringByUtf8Bytes_` ไม่ตัดกลาง surrogate pair
+เพราะตัดกลางคู่แล้วต่อกลับจะได้อักขระเสีย และ `JSON.parse` จะพังทั้งก้อน
 
-`putCachedJsonByKey_` (ตัวเล็ก) ไม่เช็คขนาดเลย ถ้า `daily_grid` หรือ `summary_table` โตเกิน 100 KB
-จะล้มเงียบแบบเดียวกัน
+⚠️ **`putCachedJsonByKey_` (ตัวเล็ก) ยังไม่เช็คขนาดเลย** ถ้า `daily_grid` หรือ `summary_table`
+โตเกิน 100 KB จะล้มเงียบแบบเดียวกัน — **ยังเป็นงานค้างใน `TODO.md`**
 
 ### Lock
 

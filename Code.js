@@ -37,15 +37,23 @@ function extractClientModuleScript_(filename) {
   return match ? String(match[1] || '').trim() : String(content || '').trim();
 }
 
+/**
+ * ★★ ต้องใช้ตัวแบ่ง chunk ไม่ใช่คีย์เดียว — `JsReports` หลัง JSON.stringify มีขนาด
+ * ~115,000 ไบต์ (สคริปต์ 89,600 ตัวอักษร แต่มีภาษาไทย 11,220 ตัว ซึ่งตัวละ 3 ไบต์)
+ * เกินเพดาน 100KB ต่อคีย์ของ CacheService → เขียนไม่ติด และ `putCachedJsonByKey_`
+ * กลืน error ทิ้ง → **เปิดหน้ารายงานทุกครั้ง server ต้องอ่านไฟล์ + รัน regex ใหม่**
+ * โดยไม่มีอะไรเตือนเลย · `JsDashboard` อยู่ที่ 97,895 ไบต์ = เหลือที่แค่ ~4.5KB
+ * พิสูจน์ด้วย `cache:client_modules_fit` ใน `Diagnostics.js`
+ */
 function getCachedClientAssetContent_(cacheKey, builder) {
   cacheKey = String(cacheKey || '').trim();
   if (!cacheKey) return String(builder() || '');
 
-  var cached = getCachedJsonByKey_(cacheKey);
+  var cached = getLargeCachedJsonByKey_(cacheKey);
   if (cached !== null) return String(cached || '');
 
   var value = String(builder() || '');
-  putCachedJsonByKey_(cacheKey, value, 900);
+  putLargeCachedJsonByKey_(cacheKey, value, 900);
   return value;
 }
 

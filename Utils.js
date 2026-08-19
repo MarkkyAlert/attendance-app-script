@@ -22,7 +22,12 @@ var DERIVED_CACHE_VERSION_PROP = 'derived_cache_version';
 var ATTENDANCE_ARCHIVE_VERSION_PROP = 'attendance_archive_version';
 // ชีต archive ไม่เปลี่ยนระหว่างวัน จึงเก็บได้ยาวเท่าที่ CacheService ยอม (เพดาน 6 ชั่วโมง)
 var ATTENDANCE_ARCHIVE_CACHE_TTL_SEC = 21600;
-var LARGE_CACHE_CHUNK_SIZE = 80000;
+// ★★ เพดานของ CacheService คือ 100KB ต่อคีย์ นับเป็น **ไบต์** ไม่ใช่ตัวอักษร
+// เดิมค่านี้คือ 80,000 **ตัวอักษร** ซึ่งถ้าเป็นภาษาไทยล้วน (ตัวละ 3 ไบต์) = 240KB ต่อ chunk
+// เกินเพดานแบบเงียบๆ เพราะ putCachedJsonByKey_ / putLargeCachedJsonByKey_ กลืน error ทิ้ง
+// ผลคือ cache "เขียนไม่ติด" แล้วต้องสร้างใหม่ทุกครั้งโดยไม่มีอะไรเตือน
+// เหลือที่ว่างไว้ให้ชื่อคีย์และ overhead ด้วย จึงตั้งไว้ต่ำกว่า 100KB พอสมควร
+var LARGE_CACHE_CHUNK_MAX_BYTES = 90000;
 var TIMING_LOG_SHEET = '_timing_log';
 var TIMING_LOG_MAX_ROWS = 1000;
 var TIMING_LOG_THRESHOLDS_MS = {
@@ -34,6 +39,58 @@ var TIMING_LOG_THRESHOLDS_MS = {
   analytics_build_ms: 3000,
   print_build_ms: 2500
 };
+
+/**
+ * ★ นับความยาวแบบ UTF-8 เอง แทนการสร้าง Blob ซึ่งช้ากว่ามากเมื่อถูกเรียกกับสตริงหลักล้านตัว
+ * นับ surrogate pair เป็น 4 ไบต์ตัวเดียว ไม่ใช่ 3+3
+ */
+function utf8ByteLength_(text) {
+  text = String(text == null ? '' : text);
+  var bytes = 0;
+  var i = 0;
+  while (i < text.length) {
+    var code = text.charCodeAt(i);
+    if (code < 0x80) { bytes += 1; i += 1; }
+    else if (code < 0x800) { bytes += 2; i += 1; }
+    else if (code >= 0xD800 && code <= 0xDBFF && i + 1 < text.length) { bytes += 4; i += 2; }
+    else { bytes += 3; i += 1; }
+  }
+  return bytes;
+}
+
+/**
+ * แบ่งสตริงเป็นชิ้นที่ไม่เกิน maxBytes ต่อชิ้น **โดยไม่ตัดกลาง surrogate pair**
+ * ตัดกลางคู่เมื่อไหร่ ตอนต่อกลับจะได้อักขระเสีย แล้ว JSON.parse จะพังทั้งก้อน
+ */
+function splitStringByUtf8Bytes_(text, maxBytes) {
+  text = String(text == null ? '' : text);
+  maxBytes = parseInt(maxBytes, 10) || LARGE_CACHE_CHUNK_MAX_BYTES;
+  if (!text.length) return [''];
+
+  var parts = [];
+  var start = 0;
+  var bytes = 0;
+  var i = 0;
+  while (i < text.length) {
+    var code = text.charCodeAt(i);
+    var size;
+    var step;
+    if (code < 0x80) { size = 1; step = 1; }
+    else if (code < 0x800) { size = 2; step = 1; }
+    else if (code >= 0xD800 && code <= 0xDBFF && i + 1 < text.length) { size = 4; step = 2; }
+    else { size = 3; step = 1; }
+
+    if (bytes + size > maxBytes && i > start) {
+      parts.push(text.slice(start, i));
+      start = i;
+      bytes = 0;
+    }
+    bytes += size;
+    i += step;
+  }
+  parts.push(text.slice(start));
+  return parts;
+}
 
 function bytesToHex_(bytes) {
   return (bytes || []).map(function(b) {
@@ -208,10 +265,11 @@ function putLargeCachedJsonByKey_(key, value, ttlSec) {
   }
   if (!serialized) return value;
 
-  var chunkCount = Math.max(1, Math.ceil(serialized.length / LARGE_CACHE_CHUNK_SIZE));
+  var chunks = splitStringByUtf8Bytes_(serialized, LARGE_CACHE_CHUNK_MAX_BYTES);
+  var chunkCount = chunks.length;
   var payload = {};
   for (var i = 0; i < chunkCount; i++) {
-    payload[key + '|c' + i] = serialized.slice(i * LARGE_CACHE_CHUNK_SIZE, (i + 1) * LARGE_CACHE_CHUNK_SIZE);
+    payload[key + '|c' + i] = chunks[i];
   }
   payload[key + '|meta'] = JSON.stringify({ chunks: chunkCount });
 

@@ -359,6 +359,69 @@ function runP0Diagnostics_() {
       };
     }));
 
+    // ★★ พิสูจน์ว่าโมดูล client ตัวไหน "เขียน cache ไม่ติด" เพราะเกินเพดาน 100KB ต่อคีย์
+    // เทียบทางเดิม (คีย์เดียว) กับทางใหม่ (แบ่ง chunk ตามไบต์) ในรอบเดียว
+    // ⚠️ เขียนคีย์ทดสอบอายุ 60 วินาที แล้วลบทิ้ง ไม่แตะ cache ที่ระบบใช้จริง
+    checks.push(runPreReleaseSmokeCheck_('cache:client_modules_fit', function() {
+      var moduleNames = ['JsDashboard', 'JsReports', 'JsAnalytics', 'JsImport', 'JsProfile', 'JsPhotoGrid'];
+      var cache = CacheService.getScriptCache();
+      var rows = [];
+      var brokenOnChunked = [];
+
+      moduleNames.forEach(function(name) {
+        var script = extractClientModuleScript_(name);
+        var serialized = JSON.stringify(script);
+        var bytes = utf8ByteLength_(serialized);
+
+        // ทางเดิม: ยัดคีย์เดียว
+        var singleKey = 'p0_probe_single|' + name;
+        putCachedJsonByKey_(singleKey, script, 60);
+        var singleBack = getCachedJsonByKey_(singleKey);
+        var singleOk = singleBack !== null && String(singleBack) === script;
+
+        // ทางใหม่: แบ่ง chunk ตามไบต์
+        var chunkKey = 'p0_probe_chunk|' + name;
+        putLargeCachedJsonByKey_(chunkKey, script, 60);
+        var chunkBack = getLargeCachedJsonByKey_(chunkKey);
+        var chunkOk = chunkBack !== null && String(chunkBack) === script;
+        if (!chunkOk) brokenOnChunked.push(name);
+
+        var chunkCount = splitStringByUtf8Bytes_(serialized, LARGE_CACHE_CHUNK_MAX_BYTES).length;
+
+        rows.push({
+          module: name,
+          chars: script.length,
+          stringify_bytes: bytes,
+          over_100kb: bytes > 102400,
+          chunks_needed: chunkCount,
+          single_key_cached: singleOk,
+          chunked_cached: chunkOk
+        });
+
+        try {
+          cache.remove(singleKey);
+          cache.remove(chunkKey + '|meta');
+          for (var c = 0; c < chunkCount; c++) cache.remove(chunkKey + '|c' + c);
+        } catch (eClean) {}
+      });
+
+      assertPreReleaseSmoke_(
+        brokenOnChunked.length === 0,
+        'แบ่ง chunk แล้วยังอ่านกลับไม่ได้: ' + brokenOnChunked.join(', ')
+      );
+
+      var brokenBefore = [];
+      rows.forEach(function(r) { if (!r.single_key_cached) brokenBefore.push(r.module); });
+
+      return {
+        chunk_max_bytes: LARGE_CACHE_CHUNK_MAX_BYTES,
+        // ★ รายชื่อนี้คือโมดูลที่ "ทางเดิมเขียนไม่ติด" = เปิดหน้านั้นทีไร server อ่านไฟล์ใหม่ทุกครั้ง
+        broken_with_single_key: brokenBefore,
+        all_ok_with_chunking: brokenOnChunked.length === 0,
+        modules: rows
+      };
+    }));
+
     checks.push(runPreReleaseSmokeCheck_('backup:includes_parent_links', function() {
       var snapshot = buildBackupSnapshot_();
       var sheets = (snapshot && snapshot.sheets) || {};
