@@ -567,6 +567,13 @@
       แก้ด้วย token + `pendingAttendanceDate` + `setAttendanceDateLoading_` · `DECISIONS.md` ข้อ 39
       **ยังไม่ผ่านมือผู้ทดสอบ** — เพิ่มขั้นตอนทดสอบไว้ใน `UAT.md` ส่วน ง. แล้ว
 
+- [x] **แตะสถานะ 1 คน = วาด HTML ของนักเรียนทุกคนใหม่** — **แก้แล้ว รอทดสอบบนของจริง**
+      `refreshAttendanceStudentRow_` แทนแถวเดียวด้วย `replaceChild` ใช้ `id="srow-<เลขที่>"` ที่มีอยู่แล้ว
+      **คืน false เมื่อทางลัดใช้ไม่ได้ ให้วาดทั้งลิสต์แทน** — โหมดรูป · แถวถูกกรองออก ·
+      แถวต้องหายหลังเปลี่ยน · จำนวนแถวไม่ตรง
+      `markStatus`/`undoStatus` 4 จุดใช้ทางลัด · bulk/ยืนยัน 5 จุดวาดทั้งลิสต์เหมือนเดิม
+      `DECISIONS.md` ข้อ 40 · **ยังไม่ผ่านมือผู้ทดสอบ** เพิ่มขั้นตอนใน `UAT.md` ส่วน ง. แล้ว
+
 - [ ] **`clearHolidayAttendance` ยังอุ่น cache ในล็อกอยู่** (ยังไม่วัด ยังไม่ตัดสิน)
       เหลือเป็นผู้เรียก `warmLikelyDerivedCachesForDate_` คนเดียวในโปรเจกต์ [AttendanceService.js:1871]
       วัดได้จาก `perf:in_lock_cache_warm_cost` · ยังไม่รู้ว่าครูกด "ล้างข้อมูลวันหยุด" บ่อยแค่ไหน

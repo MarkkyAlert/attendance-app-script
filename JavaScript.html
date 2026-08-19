@@ -2368,10 +2368,61 @@
       if (hintEl) hintEl.textContent = getAttendanceViewHint_(viewState);
     }
 
+    /**
+     * ★★ อัปเดตเฉพาะแถวของนักเรียนคนเดียว แทนการวาด HTML ของทุกคนใหม่
+     * แต่ละแถวมีปุ่มสถานะ 5 ปุ่ม แต่ละปุ่มฝัง SVG เต็มตัวจาก renderUiIcon และมี label 2 ชุด
+     * (mobile/desktop) ห้องละ 40 คน = ทิ้งและสร้าง DOM ~200 ปุ่มใหม่ เพื่อเปลี่ยนสถานะคนเดียว
+     *
+     * คืน false เมื่อทำทางลัดไม่ได้ ให้ผู้เรียกวาดทั้งลิสต์แทน — ต้องคืน false ให้ครบทุกกรณี
+     * ไม่งั้นจะเหลือแถวค้างที่ไม่ควรอยู่ ซึ่งเป็นความผิดที่มองไม่ออกจนกว่าจะเจอเอง
+     */
+    function refreshAttendanceStudentRow_(studentNumber) {
+      // โหมดรูปวาดคนละโครงสร้าง (PhotoGrid) และต้อง hydrate รูปหลังวาด จึงไม่ใช้ทางลัด
+      if (!state.attendance || state.viewMode === 'grid') return false;
+
+      var list = document.getElementById('attendance-list');
+      if (!list) return false;
+
+      var row = document.getElementById('srow-' + studentNumber);
+      if (!row || !row.parentNode) return false;
+
+      var target = null;
+      (state.attendance.students || []).forEach(function (s) {
+        if (s && s.student_number === studentNumber) target = s;
+      });
+      if (!target) return false;
+
+      // ★ ตัวกรองอาจทำให้แถวนี้ต้องหายไป (เช่นกรอง "ยังไม่เช็ค" แล้วเพิ่งเช็คคนนี้)
+      // หรือทำให้จำนวนแถวที่ควรแสดงไม่ตรงกับที่มีอยู่จริง — ทั้งสองกรณีต้องวาดใหม่ทั้งลิสต์
+      var filtered = getFilteredAttendanceStudents_(state.attendance.students);
+      var stillListed = false;
+      filtered.forEach(function (s) {
+        if (s && s.student_number === studentNumber) stillListed = true;
+      });
+      if (!stillListed) return false;
+      if (filtered.length !== list.querySelectorAll('.attendance-student-row').length) return false;
+
+      var isConfirmed = state.attendance.day_status && state.attendance.day_status.status === 'confirmed';
+      var holder = document.createElement('div');
+      holder.innerHTML = renderStudentRows([target], isConfirmed);
+      var nextRow = holder.firstElementChild;
+      if (!nextRow) return false;
+
+      row.parentNode.replaceChild(nextRow, row);
+      return true;
+    }
+
     function syncAttendanceViewAfterStateChange_() {
       recalcSummary_();
       refreshAttendanceHeroState_();
       refreshAttendanceList_();
+    }
+
+    /** ใช้เมื่อรู้แน่ว่ามีนักเรียนเปลี่ยนแค่คนเดียว (แตะสถานะ / ยกเลิกสถานะ) */
+    function syncAttendanceViewAfterStudentChange_(studentNumber) {
+      recalcSummary_();
+      refreshAttendanceHeroState_();
+      if (!refreshAttendanceStudentRow_(studentNumber)) refreshAttendanceList_();
     }
 
     function clearAttendanceFilters() {
@@ -2411,7 +2462,7 @@
           note: noteAllowed && oldAttendance && oldAttendance.note ? oldAttendance.note : ''
         };
 
-        syncAttendanceViewAfterStateChange_();
+        syncAttendanceViewAfterStudentChange_(studentNumber);
 
         serverCall('recordAttendance', [{
           student_number: studentNumber,
@@ -2423,7 +2474,7 @@
             toast(result.message, 'success');
           } else {
             target.attendance = oldAttendance;
-            syncAttendanceViewAfterStateChange_();
+            syncAttendanceViewAfterStudentChange_(studentNumber);
             toast((result && result.message) || 'บันทึกไม่สำเร็จ', 'error');
           }
         });
@@ -2443,7 +2494,7 @@
 
         // optimistic UI
         target.attendance = null;
-        syncAttendanceViewAfterStateChange_();
+        syncAttendanceViewAfterStudentChange_(studentNumber);
 
         serverCall('undoAttendance', [{
           student_number: studentNumber,
@@ -2453,7 +2504,7 @@
             toast('ยกเลิกแล้ว', 'success');
           } else {
             target.attendance = oldAttendance;
-            syncAttendanceViewAfterStateChange_();
+            syncAttendanceViewAfterStudentChange_(studentNumber);
             toast((result && result.message) || 'ยกเลิกไม่สำเร็จ', 'error');
           }
         });
