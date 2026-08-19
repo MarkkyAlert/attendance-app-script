@@ -2043,6 +2043,62 @@
 
     var attendanceDateDebounceId = 0;
 
+    // ★★ ปุ่ม ◀ ▶ ยิงคำขอทุกครั้งที่กด และก่อนหน้านี้ไม่มีอะไรกันคำขอซ้อนเลย
+    // ผลคือกดรัวๆ 3 ครั้ง = คำตอบที่มาถึง "ช้าที่สุด" เป็นตัวชนะ ไม่ใช่วันที่ครูกดล่าสุด
+    // เป็นบั๊กความถูกต้อง ไม่ใช่แค่ความช้า จึงใช้ token แบบเดียวกับ isActivePageLoad_
+    var activeAttendanceLoadId = 0;
+    // วันที่ที่ "ขอไปแล้วแต่ยังไม่กลับมา" — ต้องแยกจาก state.currentDate ซึ่งอัปเดตเมื่อสำเร็จเท่านั้น
+    // ไม่งั้นกด ◀ สามครั้งเร็วๆ จะคำนวณ "เมื่อวาน" จากวันเดิมทั้งสามครั้ง แล้วถอยหลังได้แค่วันเดียว
+    var pendingAttendanceDate = '';
+
+    function beginAttendanceLoad_(date) {
+      activeAttendanceLoadId += 1;
+      pendingAttendanceDate = String(date || '');
+      return { id: activeAttendanceLoadId, date: pendingAttendanceDate };
+    }
+
+    function isActiveAttendanceLoad_(token) {
+      return !!token &&
+        token.id === activeAttendanceLoadId &&
+        String(state.page || '') === 'attendance';
+    }
+
+    function endAttendanceLoad_() {
+      pendingAttendanceDate = '';
+      setAttendanceDateLoading_(false, '');
+    }
+
+    /** วันที่ที่ครูคาดว่ากำลังดูอยู่ ณ ตอนนี้ — ใช้เป็นฐานคำนวณของปุ่ม ◀ ▶ */
+    function currentAttendanceDateForNav_() {
+      return pendingAttendanceDate || state.currentDate;
+    }
+
+    /**
+     * ★ ก่อนหน้านี้ setLoading() คือ `state.loading = show;` เฉยๆ ไม่วาดอะไรเลย
+     * ครูกด ◀ แล้วจอค้างวันเดิมตลอด round-trip จึงกดซ้ำเพราะคิดว่ากดไม่ติด
+     * ตรงนี้ทำให้เห็นจริงว่าระบบรับคำสั่งแล้ว
+     * ⚠️ ห้าม disable ช่องวันที่ เพราะเส้นทางพิมพ์วันที่มี debounce 800ms
+     *    ถ้า disable กลางคัน โฟกัสจะหลุดแล้วครูพิมพ์ต่อไม่ได้
+     */
+    function setAttendanceDateLoading_(isLoading, requestedDate) {
+      var page = document.getElementById('page-attendance');
+      if (!page) return;
+
+      if (isLoading) page.classList.add('is-date-loading');
+      else page.classList.remove('is-date-loading');
+
+      var buttons = page.querySelectorAll('.attendance-date-nav .date-btn');
+      for (var i = 0; i < buttons.length; i++) {
+        buttons[i].disabled = !!isLoading;
+      }
+
+      // ตอบสนองทันทีที่ตัวควบคุมที่ครูเพิ่งใช้ — input[type=date] จัดรูปแบบวันที่ให้เอง
+      var input = page.querySelector('.attendance-date-nav .date-input');
+      if (input && isLoading && requestedDate && input.value !== requestedDate) {
+        input.value = requestedDate;
+      }
+    }
+
     function goAttendanceDate_(date) {
       if (attendanceDateDebounceId) {
         window.clearTimeout(attendanceDateDebounceId);
@@ -2051,7 +2107,8 @@
       if (!date) return;
       if (date > todayStr()) date = todayStr();
       // input[type=date] ยิงทั้ง input และ change กันโหลดซ้ำและกันกดเลือกวันเดิม
-      if (date === state.currentDate) return;
+      // ★ เทียบกับวันที่ที่กำลังโหลดอยู่ด้วย ไม่งั้นเลือกวันเดิมซ้ำระหว่างรอจะยิงคำขอเพิ่มเปล่าๆ
+      if (date === currentAttendanceDateForNav_()) return;
       loadAttendance(date);
     }
 
@@ -2209,13 +2266,23 @@
       // จะขึ้น "แสดง 0/39 คน" ว่างเปล่า ดูเหมือนวันนั้นไม่มีข้อมูล
       // (คำค้นหากับชิปกลุ่มไม่ล้าง เพราะครูตั้งใจใช้ข้ามวันได้)
       if (date && date !== state.currentDate) state.filterUnchecked = false;
+      var token = beginAttendanceLoad_(date || state.currentDate);
       setLoading(true);
+      setAttendanceDateLoading_(true, token.date);
       serverCall('getAttendanceDaily', [date], function (data) {
+        // ★ ล้างสถานะ "กำลังโหลด" ก่อนเสมอถ้านี่คือคำขอล่าสุด แม้ครูจะเปลี่ยนหน้าไปแล้ว
+        // ไม่งั้น pendingAttendanceDate ค้าง แล้วปุ่ม ◀ ▶ จะคำนวณจากวันที่เก่าเมื่อกลับมา
+        if (token.id === activeAttendanceLoadId) endAttendanceLoad_();
+        // ★ ทิ้งคำตอบของคำขอที่ถูกแทนที่ไปแล้ว ไม่งั้นกด ◀ รัวๆ จอจะเด้งไปวันที่ครูไม่ได้ขอเป็นวันสุดท้าย
+        if (!isActiveAttendanceLoad_(token)) return;
         state.attendance = data;
         state.currentDate = data.date;
         renderAttendancePage();
         setLoading(false);
       }, function (message, err) {
+        if (token.id === activeAttendanceLoadId) endAttendanceLoad_();
+        if (!isActiveAttendanceLoad_(token)) return;
+        setLoading(false);
         state.currentDate = date || state.currentDate;
         // ★ แยกประเภทด้วย code ที่ serverCall ติดมาให้ ไม่ใช่ค้นคำไทยในข้อความ
         // `message` ที่ได้มาถูกถอด CODE| ออกแล้ว จึงเอาไปแสดงได้ตรงๆ
@@ -5466,7 +5533,9 @@
     window.App = {
       goToPage: navigateTo,
       shiftDate: function (days) {
-        var d = parseLocalDateString(state.currentDate);
+        // ★ ฐานคือวันที่ที่ "ขอไปแล้ว" ไม่ใช่วันที่โหลดสำเร็จล่าสุด
+        // ไม่งั้นกด ◀ สามครั้งเร็วๆ จะได้เมื่อวานวันเดียวกันสามรอบ
+        var d = parseLocalDateString(currentAttendanceDateForNav_());
         d.setUTCDate(d.getUTCDate() + days);
         var newDate = formatLocalDate(d);
         if (newDate > todayStr()) newDate = todayStr();

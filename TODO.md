@@ -560,6 +560,13 @@
       การอุ่นจึงเป็นการเดา แต่ครูจ่ายแน่นอน 100% ทุกครั้ง · `DECISIONS.md` ข้อ 38
       ลบผู้เรียกที่ตายแล้วอีก 5 จุด (`record`/`undo`/`bulk`/`undo_bulk`/`draft`) ซึ่งถูกกันออกที่ต้นฟังก์ชันอยู่แล้ว
 
+- [x] **ปุ่ม ◀ ▶ ไม่มี feedback เลย และคำตอบที่มาช้าสุดชนะ** — **แก้แล้ว รอทดสอบบนของจริง**
+      3 เรื่องในจุดเดียว: `setLoading` คือ `state.loading = show;` เฉยๆ ไม่วาดอะไร ·
+      `loadAttendance` ไม่มี load token แบบที่ `loadPage` มี ·
+      `shiftDate` คำนวณจาก `state.currentDate` ที่อัปเดตเมื่อสำเร็จเท่านั้น = กด ◀ รัวๆ ถอยได้แค่วันเดียว
+      แก้ด้วย token + `pendingAttendanceDate` + `setAttendanceDateLoading_` · `DECISIONS.md` ข้อ 39
+      **ยังไม่ผ่านมือผู้ทดสอบ** — เพิ่มขั้นตอนทดสอบไว้ใน `UAT.md` ส่วน ง. แล้ว
+
 - [ ] **`clearHolidayAttendance` ยังอุ่น cache ในล็อกอยู่** (ยังไม่วัด ยังไม่ตัดสิน)
       เหลือเป็นผู้เรียก `warmLikelyDerivedCachesForDate_` คนเดียวในโปรเจกต์ [AttendanceService.js:1871]
       วัดได้จาก `perf:in_lock_cache_warm_cost` · ยังไม่รู้ว่าครูกด "ล้างข้อมูลวันหยุด" บ่อยแค่ไหน
