@@ -425,6 +425,52 @@ function runP0Diagnostics_() {
       };
     }));
 
+    // ★ วัดว่าการ inline CSS ทั้ง 5 ไฟล์ตอน doGet กินเวลาฝั่ง server เท่าไร
+    // ใช้ตัดสินว่าควรกลับไปทำ lazy CSS ไหม (`DECISIONS.md` ข้อ 27 ตั้งเงื่อนไขไว้ว่า
+    // "ค่อยกลับมาทำเมื่อ CSS ใหญ่จนหน้าแรกช้าจนครูรู้สึกได้" ซึ่งไม่เคยมีใครวัด)
+    // อ่านอย่างเดียว ไม่เขียนอะไรเลย
+    checks.push(runPreReleaseSmokeCheck_('perf:inline_css_cost', function() {
+      var names = ['Stylesheet', 'StyleReport', 'StylePhase3', 'StylePhase4', 'StylePin'];
+      var rows = [];
+      var totalMs = 0;
+      var totalBytes = 0;
+
+      names.forEach(function(name) {
+        var startedAt = new Date().getTime();
+        var content = include_(name);
+        var ms = new Date().getTime() - startedAt;
+        var bytes = utf8ByteLength_(content);
+        totalMs += ms;
+        totalBytes += bytes;
+        rows.push({ file: name, ms: ms, bytes: bytes });
+      });
+
+      // เรียกซ้ำรอบสอง เผื่อ Apps Script มี cache ของตัวเองที่เรามองไม่เห็น
+      var secondPassMs = 0;
+      names.forEach(function(name) {
+        var startedAt = new Date().getTime();
+        include_(name);
+        secondPassMs += new Date().getTime() - startedAt;
+      });
+
+      var shellStarted = new Date().getTime();
+      var shellBytes = utf8ByteLength_(include_('Index')) + utf8ByteLength_(include_('JavaScript'));
+      var shellMs = new Date().getTime() - shellStarted;
+
+      return {
+        css_total_ms: totalMs,
+        css_total_ms_second_pass: secondPassMs,
+        css_total_bytes: totalBytes,
+        shell_ms: shellMs,
+        shell_bytes: shellBytes,
+        // ★ 3 ไฟล์ที่หน้าส่วนใหญ่ไม่ได้ใช้ — คือส่วนที่ lazy CSS จะประหยัดได้
+        lazy_candidate_bytes: rows.reduce(function(sum, r) {
+          return sum + ((r.file === 'StyleReport' || r.file === 'StylePhase4' || r.file === 'StylePin') ? r.bytes : 0);
+        }, 0),
+        files: rows
+      };
+    }));
+
     checks.push(runPreReleaseSmokeCheck_('backup:includes_parent_links', function() {
       var snapshot = buildBackupSnapshot_();
       var sheets = (snapshot && snapshot.sheets) || {};
