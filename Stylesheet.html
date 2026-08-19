@@ -1957,6 +1957,14 @@
     transform: none;
   }
 
+  /* ★ โหลดซ้ำหน้าที่เปิดอยู่ — หรี่ของเดิมไว้แทนการล้างจอทิ้งแล้ววาดใหม่
+     ครูที่เพิ่งกดบันทึกค่าเดียว ไม่ควรเห็นทั้งหน้าหายไปแล้วโผล่กลับมา */
+  .page-panel.is-soft-reloading {
+    opacity: .55;
+    pointer-events: none;
+    transition: opacity .12s ease-in;
+  }
+
   /* ★ ระหว่างรอข้อมูลของวันใหม่ ต้องเห็นว่าระบบรับคำสั่งแล้ว
      เดิมจอค้างวันเดิมตลอด round-trip (3-8 วินาที) ครูจึงกดซ้ำเพราะคิดว่ากดไม่ติด */
   #page-attendance.is-date-loading .attendance-list-section,

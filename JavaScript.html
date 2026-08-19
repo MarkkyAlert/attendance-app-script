@@ -780,6 +780,42 @@
       return document.getElementById('page-' + String(page || ''));
     }
 
+    // ★★ จำว่า panel ของแต่ละหน้ากำลังแสดงอะไรอยู่ ('loading' | 'content' | 'error')
+    // ใช้ตัดสินว่าการโหลดรอบนี้ควร "ล้างจอแล้ววาดใหม่" หรือ "อัปเดตทับของเดิม"
+    //
+    // ก่อนหน้านี้การบันทึกค่าเดียวในหน้าตั้งค่าเรียก loadPage('settings') ซึ่งล้างจอ 2 รอบ
+    // (renderPagePanelLoading จาก loadPage แล้ว renderPagePanelSkeleton หลังโมดูลโหลดเสร็จ)
+    // ครูเห็น เนื้อหา → จอเปล่า → จอเปล่า → เนื้อหา ทั้งที่แก้ไปแค่ค่าเดียว
+    // มีผู้เรียกแบบนี้ 22 จุด (ตั้งค่า 16 · นักเรียน 5 · เช็คชื่อ 1)
+    var pagePanelState = {};
+
+    function setPagePanelState_(page, value) {
+      pagePanelState[String(page || '')] = String(value || '');
+    }
+
+    function isPagePanelShowingContent_(page) {
+      return pagePanelState[String(page || '')] === 'content';
+    }
+
+    /** หรี่ของเดิมไว้ระหว่างรอข้อมูลใหม่ แทนการล้างจอทิ้ง */
+    function setPageSoftReloading_(page, isReloading) {
+      var panel = getPagePanelEl_(page);
+      if (!panel) return;
+      if (isReloading) panel.classList.add('is-soft-reloading');
+      else panel.classList.remove('is-soft-reloading');
+    }
+
+    /**
+     * ★ ล้างสถานะหรี่ของทุกหน้า — ต้องเรียกทุกครั้งที่เริ่มโหลดหน้าใหม่
+     * ถ้าครูเปลี่ยนหน้าระหว่าง soft reload คำขอเดิมจะถูกทิ้งที่ isActivePageLoad_
+     * แล้วไม่มีใครล้างคลาสให้ = หน้านั้นค้างหรี่และกดไม่ได้ตลอดไป
+     */
+    function clearAllPageSoftReloading_() {
+      document.querySelectorAll('.page-panel.is-soft-reloading').forEach(function (el) {
+        el.classList.remove('is-soft-reloading');
+      });
+    }
+
     function showPagePanel_(page) {
       var panel = getPagePanelEl_(page);
       hideAllPagePanels();
@@ -790,6 +826,7 @@
 
     function beginPageLoad_(page) {
       activePageLoadId += 1;
+      clearAllPageSoftReloading_();
       activePageLoadPage = String(page || '');
       return {
         id: activePageLoadId,
@@ -977,6 +1014,8 @@
     function renderPagePanelLoading(page) {
       var panel = showPagePanel_(page);
       if (!panel) return;
+      setPagePanelState_(page, 'loading');
+      setPageSoftReloading_(page, false);
       var html = buildGenericPageLoadingHtml_(page);
       if (page === 'attendance') html = renderAttendanceLoadingShell_();
       else if (page === 'students') html = renderStudentsLoadingShell_();
@@ -988,6 +1027,8 @@
     function renderPagePanelSkeleton(page) {
       var panel = showPagePanel_(page);
       if (!panel) return;
+      setPagePanelState_(page, 'loading');
+      setPageSoftReloading_(page, false);
       if (page === 'attendance') {
         panel.innerHTML = renderAttendanceLoadingShell_();
       } else if (page === 'students') {
@@ -1010,6 +1051,8 @@
     function renderPagePanelError(page, copy, options) {
       var panel = showPagePanel_(page);
       if (!panel) return;
+      setPagePanelState_(page, 'error');
+      setPageSoftReloading_(page, false);
       options = options || {};
       var retryPage = escAttr(String(options.retryPage || page || 'dashboard'));
       var fallbackPage = escAttr(String(options.fallbackPage || 'dashboard'));
@@ -1510,8 +1553,12 @@
     }
 
     function loadSettingsDetails_(token) {
+      // ★ ผู้เรียกมีตัวเดียว (applyPageDataAndRender_) ซึ่งเพิ่งตั้งสถานะเดียวกันนี้แล้ววาดไปบรรทัดก่อนหน้า
+      // การวาดซ้ำตรงนี้จึงใช้ state เดิมเป๊ะ = วาดหน้าตั้งค่า (~480 บรรทัด) ทิ้งเปล่า 1 รอบ
+      // ต่อการเปิดหน้า 1 ครั้ง · เทียบสถานะก่อน เผื่อวันหน้ามีผู้เรียกใหม่ที่ยังไม่ได้ตั้ง
+      var wasAlreadyLoading = getPageDataStatus_('settings', 'details').status === 'loading';
       setPageDataStatus_('settings', 'details', 'loading', '');
-      if (state.page === 'settings') renderSettingsPage();
+      if (!wasAlreadyLoading && state.page === 'settings') renderSettingsPage();
 
       serverCallQuiet('getSettingsDetails', [], function (result) {
         if (!isActivePageLoad_(token) || state.page !== 'settings') return;
@@ -1607,6 +1654,8 @@
           return;
       }
 
+      setPagePanelState_(page, 'content');
+      setPageSoftReloading_(page, false);
       showPagePanel_(page);
       runPendingReadinessActionForPage_(page);
     }
@@ -1626,7 +1675,17 @@
       clearPageLoadTimeout_();
       resetPageLoadingState();
       var token = beginPageLoad_(page);
-      renderPagePanelLoading(page);
+
+      // ★ 3 ทาง ไม่ใช่ 2
+      // 'content' = โหลดซ้ำหน้าที่เปิดอยู่ (เช่นบันทึกค่าในหน้าตั้งค่าแล้วโหลดใหม่) → หรี่ของเดิมไว้
+      // 'loading' = navigateTo วาด shell ไปแล้ว → ไม่ต้องวาดซ้ำ (เดิมวาด 2 รอบด้วย state เดียวกัน)
+      // อื่นๆ (error / ยังไม่เคยเปิด) → วาด shell ตามปกติ
+      var isSoftReload = isPagePanelShowingContent_(page);
+      if (isSoftReload) {
+        setPageSoftReloading_(page, true);
+      } else if (pagePanelState[String(page || '')] !== 'loading') {
+        renderPagePanelLoading(page);
+      }
       schedulePageLoadTimeout_(page, token);
 
       var dataPromise = fetchPageInitialData_(page, {});
@@ -1635,7 +1694,8 @@
         ensurePageModuleLoaded(page)
       ]).then(function () {
         if (!isActivePageLoad_(token)) return null;
-        renderPagePanelSkeleton(page);
+        // ระหว่าง soft reload ห้ามวาด skeleton ทับ ไม่งั้นของเดิมที่ตั้งใจคงไว้จะหายอยู่ดี
+        if (!isSoftReload) renderPagePanelSkeleton(page);
         return true;
       }).catch(function (err) {
         if (err) err.__source = 'deps';
@@ -3844,7 +3904,9 @@
         setActionButtonState(buttonEl, false);
         if (result && result.success) {
           toast('เพิ่มวันนี้เข้าปฏิทินแล้ว ข้อมูลของวันนี้จะถูกนับในรายงาน', 'success');
-          loadPage('attendance');
+          // ★ ใช้ loadAttendance ไม่ใช่ loadPage — getAttendanceDaily คืน calendar_state มาให้อยู่แล้ว
+          // จึงพอสำหรับลบกล่องเตือน ขณะที่ loadPage โหลด bootstrap ของทั้งหน้าใหม่โดยไม่จำเป็น
+          loadAttendance(state.currentDate);
         } else {
           toast((result && result.message) || 'เพิ่มวันนี้เข้าปฏิทินไม่สำเร็จ', 'error');
         }
