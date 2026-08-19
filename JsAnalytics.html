@@ -7,6 +7,13 @@
     var analyticsLoadStatus = {};
     var S, E;
 
+    // ★★ ปุ่ม ◀ ▶ เดือน ยิง 4 คำขอทุกครั้งที่กด และไม่มีอะไรกันคำขอชุดเก่าเลย
+    // เลื่อน 3 เดือนเร็วๆ = 12 คำขอ และคำตอบของชุดเก่าจะเขียนทับ analyticsData
+    // ที่ชุดใหม่เพิ่งล้าง = ข้อมูลของหลายเดือนปนกันบนจอ (บั๊กความถูกต้อง ไม่ใช่แค่ช้า)
+    var analyticsLoadId = 0;
+    var monthShiftTimerId = 0;
+    var ANALYTICS_MONTH_DEBOUNCE_MS = 400;
+
     function init(state) {
       S = state || window.AppState || {};
       E = window.AppShared || {};
@@ -942,6 +949,11 @@
     }
 
     function loadAll() {
+      // ★ ยกเลิกคิวที่ค้างอยู่เสมอ ไม่งั้น render() ที่เรียกตรงๆ จะโดน timer เก่ายิงซ้ำทีหลัง
+      if (monthShiftTimerId) {
+        window.clearTimeout(monthShiftTimerId);
+        monthShiftTimerId = 0;
+      }
       var panel = document.getElementById('page-analytics');
       if (!panel) return;
       if (!E || typeof E.serverCall !== 'function') {
@@ -952,6 +964,9 @@
       analyticsMonth = getDefaultAnalyticsMonth();
       analyticsData = {};
       analyticsLoadStatus = {};
+
+      analyticsLoadId += 1;
+      var loadId = analyticsLoadId;
 
       var jobs = [
         { key: 'risk', fn: 'getRiskScores' },
@@ -970,15 +985,27 @@
 
       jobs.forEach(function (job) {
         E.serverCall(job.fn, [analyticsMonth], function (result) {
+          // ★ ทิ้งคำตอบของชุดที่ถูกแทนที่ไปแล้ว ไม่งั้นข้อมูลคนละเดือนจะปนกัน
+          if (loadId !== analyticsLoadId) return;
           analyticsData[job.key] = result || {};
           analyticsLoadStatus[job.key] = true;
           finalize();
         }, function () {
+          if (loadId !== analyticsLoadId) return;
           analyticsData[job.key] = {};
           analyticsLoadStatus[job.key] = false;
           finalize();
         });
       });
+    }
+
+    /** หน่วงไว้ให้ครูกดเลื่อนเดือนรัวๆ ได้ แล้วค่อยยิงชุดเดียวตอนหยุดกด */
+    function scheduleLoadAll_() {
+      if (monthShiftTimerId) window.clearTimeout(monthShiftTimerId);
+      monthShiftTimerId = window.setTimeout(function () {
+        monthShiftTimerId = 0;
+        loadAll();
+      }, ANALYTICS_MONTH_DEBOUNCE_MS);
     }
 
     function render(state) {
@@ -1004,8 +1031,9 @@
       }
 
       var panel = document.getElementById('page-analytics');
-      panel.innerHTML = renderLoadingState('กำลังสรุปภาพรวมของเดือนนี้...');
-      loadAll();
+      if (!panel) return;
+      panel.innerHTML = renderLoadingState('กำลังสรุปภาพรวมของ ' + esc(analyticsMonth) + '...');
+      scheduleLoadAll_();
     }
 
     function scrollToSection(sectionId) {

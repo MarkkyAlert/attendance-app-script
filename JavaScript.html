@@ -1520,23 +1520,58 @@
       };
     }
 
-    function loadDashboardFullData_(token, month) {
+    /**
+     * ★★ ยิง getDashboardData ขนานไปกับ bootstrap ตั้งแต่ต้น แทนการรอ bootstrap ตอบก่อน
+     * ทั้งสองตัวอ่านชีตชุดเดียวกัน (settings · รายชื่อ · ปฏิทิน · บันทึกของวันนี้) และ
+     * ตัวที่สองไม่ได้พึ่งผลของตัวแรกเลย การรอจึงเป็นการต่อแถวเปล่าๆ 1 รอบเต็ม
+     *
+     * เดือนที่ใช้เดาจากฝั่ง client (เดือนปัจจุบัน) ซึ่งตรงกับที่ server ใช้เกือบทุกครั้ง
+     * ถ้าไม่ตรง (เช่นวันนี้อยู่นอกภาคเรียน server จะเลื่อนไปเดือนที่มีผล) จะทิ้งผลนี้
+     * แล้วยิงใหม่ด้วยเดือนที่ถูก = แย่สุดเท่าเดิมบวกคำขอที่เสียไป 1 ครั้ง
+     * โควตาคือ 120 ครั้ง/นาที จึงรับได้
+     */
+    function prefetchDashboardFullData_(month) {
+      var targetMonth = String(month || todayMonthStr());
+      var promise = new Promise(function (resolve) {
+        // resolve เสมอ ไม่ reject เพื่อไม่ให้กลายเป็น unhandled rejection ระหว่างที่ flow หลักเดินอยู่
+        serverCallQuiet('getDashboardData', [targetMonth], function (data) {
+          resolve({ ok: true, data: data });
+        }, function (msg) {
+          resolve({ ok: false, message: msg });
+        });
+      });
+      return { month: targetMonth, promise: promise };
+    }
+
+    function loadDashboardFullData_(token, month, prefetched) {
       var targetMonth = String(month || state.dashboardMonth || todayMonthStr());
       setPageDataStatus_('dashboard', 'full', 'loading', '');
       if (state.page === 'dashboard' && window.DashboardPage) window.DashboardPage.render(state);
 
-      serverCallQuiet('getDashboardData', [targetMonth], function (data) {
+      function applyDashboardFull_(data) {
         if (!isActivePageLoad_(token) || state.page !== 'dashboard') return;
         state.dashboard = data || null;
         state.readinessSummary = data && data.readiness_summary ? data.readiness_summary : state.readinessSummary;
         state.dashboardMonth = data && data.month ? data.month : targetMonth;
         setPageDataStatus_('dashboard', 'full', 'ready', '');
         if (window.DashboardPage) window.DashboardPage.render(state);
-      }, function (msg) {
+      }
+
+      function failDashboardFull_(msg) {
         if (!isActivePageLoad_(token) || state.page !== 'dashboard') return;
         setPageDataStatus_('dashboard', 'full', 'error', msg || 'ยังโหลดภาพรวมเพิ่มเติมไม่สำเร็จ');
         if (window.DashboardPage) window.DashboardPage.render(state);
-      });
+      }
+
+      if (prefetched && prefetched.month === targetMonth && prefetched.promise) {
+        prefetched.promise.then(function (result) {
+          if (result && result.ok) applyDashboardFull_(result.data);
+          else failDashboardFull_(result && result.message);
+        });
+        return;
+      }
+
+      serverCallQuiet('getDashboardData', [targetMonth], applyDashboardFull_, failDashboardFull_);
     }
 
     function loadReportsSummaryAfterBootstrap_(token) {
@@ -1576,7 +1611,7 @@
       });
     }
 
-    function applyPageDataAndRender_(page, data, token) {
+    function applyPageDataAndRender_(page, data, token, prefetched) {
       if (!isActivePageLoad_(token)) return;
       refreshTeacherAuth_(data && data.auth);
       state.currentUser = data && data.user ? data.user : null;
@@ -1595,7 +1630,7 @@
           state.setupOnboarding = consumeSetupOnboarding_();
           setPageDataStatus_('dashboard', 'full', 'loading', '');
           if (window.DashboardPage) window.DashboardPage.render(state);
-          loadDashboardFullData_(token, state.dashboardMonth);
+          loadDashboardFullData_(token, state.dashboardMonth, prefetched);
           break;
         case 'attendance':
           state.attendance = data.attendance;
@@ -1688,6 +1723,9 @@
       }
       schedulePageLoadTimeout_(page, token);
 
+      // ★ หน้าแรกต้องยิง 2 คำขอเสมอ ตัวที่สองไม่พึ่งตัวแรก จึงยิงพร้อมกันได้
+      var dashboardPrefetch = (page === 'dashboard') ? prefetchDashboardFullData_(todayMonthStr()) : null;
+
       var dataPromise = fetchPageInitialData_(page, {});
       var depsPromise = Promise.all([
         ensurePageStylesLoaded(page),
@@ -1720,7 +1758,7 @@
           return;
         }
 
-        applyPageDataAndRender_(page, data, token);
+        applyPageDataAndRender_(page, data, token, dashboardPrefetch);
       }).catch(function (err) {
         clearPageLoadTimeout_();
         if (!isActivePageLoad_(token)) return;
