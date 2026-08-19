@@ -359,8 +359,11 @@ function runP0Diagnostics_() {
       };
     }));
 
-    // ★★ พิสูจน์ว่าโมดูล client ตัวไหน "เขียน cache ไม่ติด" เพราะเกินเพดาน 100KB ต่อคีย์
-    // เทียบทางเดิม (คีย์เดียว) กับทางใหม่ (แบ่ง chunk ตามไบต์) ในรอบเดียว
+    // ★★ วัดว่าโมดูล client แต่ละตัวใหญ่แค่ไหน และ **เขียน cache ติดจริงไหม**
+    // เทียบทางคีย์เดียวกับทางแบ่ง chunk ตามไบต์ ในรอบเดียว
+    // ★ ผลรอบ 19 ส.ค. 2569: `single_key_cached` เป็น true ทั้ง 6 ตัว รวม JsReports ที่ 107,972 ไบต์
+    //   → CacheService **ไม่บังคับเพดาน 100KB ตามที่เอกสารระบุ** ยังไม่รู้ว่าเพดานจริงอยู่ตรงไหน
+    //   ให้ดู `broken_with_single_key` ทุกรอบ ถ้าวันหนึ่งมันไม่ว่าง แปลว่าชนเพดานจริงแล้ว
     // ⚠️ เขียนคีย์ทดสอบอายุ 60 วินาที แล้วลบทิ้ง ไม่แตะ cache ที่ระบบใช้จริง
     checks.push(runPreReleaseSmokeCheck_('cache:client_modules_fit', function() {
       var moduleNames = ['JsDashboard', 'JsReports', 'JsAnalytics', 'JsImport', 'JsProfile', 'JsPhotoGrid'];
