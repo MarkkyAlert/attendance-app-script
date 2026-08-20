@@ -1959,6 +1959,13 @@
     transition: opacity .12s ease-in;
   }
 
+  /* ★ เลื่อนเดือนในหน้าติดตาม — หรี่อย่างเดียว **ห้ามใส่ pointer-events: none**
+     เพราะปุ่ม "ก่อนหน้า/ถัดไป" ต้องกดต่อได้ระหว่างโหลด ให้ครูไล่หลายเดือนรวดเดียว */
+  .page-panel.is-month-reloading {
+    opacity: .55;
+    transition: opacity .12s ease-in;
+  }
+
   /* ★ ระหว่างรอข้อมูลของวันใหม่ ต้องเห็นว่าระบบรับคำสั่งแล้ว
      เดิมจอค้างวันเดิมตลอด round-trip (3-8 วินาที) ครูจึงกดซ้ำเพราะคิดว่ากดไม่ติด */
   #page-attendance.is-date-loading .attendance-list-section,

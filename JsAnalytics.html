@@ -957,6 +957,7 @@
       var panel = document.getElementById('page-analytics');
       if (!panel) return;
       if (!E || typeof E.serverCall !== 'function') {
+        panel.classList.remove('is-month-reloading');
         panel.innerHTML = renderLoadingState('ยังไม่พร้อมโหลดข้อมูลของเดือนนี้');
         return;
       }
@@ -979,6 +980,7 @@
       function finalize() {
         pending--;
         if (pending <= 0) {
+          panel.classList.remove('is-month-reloading');
           panel.innerHTML = buildAnalyticsPage();
         }
       }
@@ -1013,6 +1015,7 @@
       analyticsMonth = getDefaultAnalyticsMonth();
       var panel = document.getElementById('page-analytics');
       if (!panel) return;
+      panel.classList.remove('is-month-reloading');
       panel.innerHTML = renderLoadingState('กำลังสรุปภาพรวมของเดือนนี้...');
       loadAll();
     }
@@ -1032,7 +1035,14 @@
 
       var panel = document.getElementById('page-analytics');
       if (!panel) return;
-      panel.innerHTML = renderLoadingState('กำลังสรุปภาพรวมของ ' + esc(analyticsMonth) + '...');
+
+      // ★★ ห้ามเขียนทับ panel.innerHTML ตรงนี้ — มันทำลายปุ่ม "ก่อนหน้า/ถัดไป" ที่ครูกำลังกดอยู่
+      // ทดสอบบนของจริง 20 ส.ค. 2569: กดรัวๆ 3 ครั้งถอยได้เดือนเดียว เพราะคลิกที่ 2-3 ตกใส่ที่ว่าง
+      // ทำให้ debounce กับ analyticsLoadId ที่สร้างมารองรับการกดรัวๆ ไม่มีโอกาสทำงานเลย
+      // หรี่ของเดิมไว้แทน ปุ่มจึงยังอยู่ให้กดต่อ แล้ว debounce จะรวบทุกคลิกเป็นชุดเดียว
+      panel.classList.add('is-month-reloading');
+      var valueEl = panel.querySelector('.analytics-month-value');
+      if (valueEl) valueEl.textContent = analyticsMonth;
       scheduleLoadAll_();
     }
 
