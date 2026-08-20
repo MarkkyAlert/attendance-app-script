@@ -338,9 +338,13 @@ function insertSeedStudents_(plan) {
   });
 
   var startRow = sheet.getLastRow() + 1;
-  // บังคับคอลัมน์ชื่อเป็นข้อความล้วน ไม่งั้นชื่อที่ขึ้นต้นด้วย = จะถูกตีความเป็นสูตร
+  // ★★ เดิมกันด้วย setNumberFormat('@') อย่างเดียว **ซึ่งกันไม่อยู่**
+  // `SecurityService.js` บันทึกไว้ตั้งแต่ต้นว่า "setNumberFormat('@') ก่อนเขียนกันไม่อยู่ ทดสอบแล้ว"
+  // แต่ไฟล์นี้ยังพึ่งมันอยู่ ผลคือเลขที่ 28 (ชื่อขึ้นต้นด้วย =) กลายเป็น #ERROR! ในชีตจริง
+  // เห็นบนหน้าเช็คชื่อและหน้ารายงานตอนทดสอบ 20 ส.ค. 2569
+  // ต้องใช้ sanitizeSheetRows_ ซึ่งเติม ' นำหน้า แบบเดียวกับที่ทุกเส้นทางเขียนจริงใช้
   sheet.getRange(startRow, COL.STUDENTS.FULL_NAME, rows.length, 1).setNumberFormat('@');
-  sheet.getRange(startRow, 1, rows.length, COL.STUDENTS.INACTIVE_AT).setValues(rows);
+  sheet.getRange(startRow, 1, rows.length, COL.STUDENTS.INACTIVE_AT).setValues(sanitizeSheetRows_(rows));
   return rows.length;
 }
 
@@ -433,7 +437,7 @@ function ensureSeedCalendar_(plan) {
     ];
   });
 
-  sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, SCHOOL_CALENDAR_COL.LABEL).setValues(rows);
+  sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, SCHOOL_CALENDAR_COL.LABEL).setValues(sanitizeSheetRows_(rows));
   sortSchoolCalendarSheet_(sheet);
   invalidateSchoolCalendarCaches_();
 
@@ -514,7 +518,7 @@ function insertSeedAttendance_(roster, schoolDays) {
   if (!rows.length) return { rows: 0 };
 
   // เขียนครั้งเดียวทั้งก้อน ห้ามใช้ appendRow ในลูปเด็ดขาด จะเกิน 6 นาที
-  sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, COL.ATTENDANCE.STUDENT_ID).setValues(rows);
+  sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, COL.ATTENDANCE.STUDENT_ID).setValues(sanitizeSheetRows_(rows));
   return { rows: rows.length };
 }
 

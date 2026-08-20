@@ -461,6 +461,43 @@ function runP0Diagnostics_() {
       };
     }));
 
+    // ★★ จับกรณีชื่อนักเรียนถูก Sheets ตีความเป็นสูตรจนกลายเป็น #ERROR!
+    // เกิดขึ้นจริงกับเลขที่ 28 (ชื่อขึ้นต้นด้วย =) เพราะ SeedTestData กันด้วย setNumberFormat('@')
+    // ซึ่ง SecurityService บันทึกไว้เองว่ากันไม่อยู่ · แก้ให้ใช้ sanitizeSheetRows_ แล้ว
+    // เช็คนี้ไว้กันไม่ให้พังซ้ำแบบเงียบๆ — ชื่อหายไปทั้งชื่อทั้งในระบบและบนเอกสาร ปพ.6
+    checks.push(runPreReleaseSmokeCheck_('sheet_text:stored_names_intact', function() {
+      var sheet = getSheet_(SHEET.STUDENTS);
+      var lastRow = sheet.getLastRow();
+      if (lastRow <= 1) return { rows: 0, note: 'ยังไม่มีนักเรียน' };
+
+      var values = sheet.getRange(2, COL.STUDENTS.STUDENT_NUMBER, lastRow - 1, 2).getValues();
+      var broken = [];
+      var startsWithFormulaChar = [];
+      values.forEach(function(row) {
+        var num = row[0];
+        var name = String(row[1] == null ? '' : row[1]);
+        if (/^#[A-Z_]+[!?]?$/.test(name.trim())) {
+          broken.push({ student_number: num, stored: name });
+        } else if (/^[=+\-@]/.test(name)) {
+          // ★ ไม่ใช่ความผิดพลาด — sanitizeSheetText_ กลืน ' ตอนอ่านกลับ ค่านี้จึงถูกต้อง
+          startsWithFormulaChar.push({ student_number: num });
+        }
+      });
+
+      assertPreReleaseSmoke_(
+        broken.length === 0,
+        'ชื่อนักเรียนกลายเป็นค่าสูตรผิดพลาด ' + broken.length + ' คน: ' +
+          broken.map(function(b) { return 'เลขที่ ' + b.student_number + ' = ' + b.stored; }).join(', ')
+      );
+
+      return {
+        rows: values.length,
+        broken_names: broken,
+        // ถ้าชุดข้อมูลตั้งใจมีชื่อขึ้นต้นด้วย = ต้องเห็นตัวเลขนี้ > 0 ไม่งั้นแปลว่าเคสทดสอบหายไป
+        names_starting_with_formula_char: startsWithFormulaChar.length
+      };
+    }));
+
     checks.push(runPreReleaseSmokeCheck_('backup:includes_parent_links', function() {
       var snapshot = buildBackupSnapshot_();
       var sheets = (snapshot && snapshot.sheets) || {};
