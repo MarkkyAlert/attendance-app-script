@@ -498,6 +498,50 @@ function runP0Diagnostics_() {
       };
     }));
 
+    // ★★ กติกาของโปรเจกต์: ชุดข้อมูลทดสอบต้องใช้อีเมล @example.invalid เท่านั้น
+    // เพราะ .invalid เป็นโดเมนสงวนตาม RFC 6761 ส่งออกไปไม่ถึงใครแน่นอน
+    // ⚠️ พบที่อยู่ Gmail จริงในชีตตอนทดสอบ 20 ส.ค. 2569 — ปุ่ม "แจ้งผู้ปกครอง" ที่โผล่
+    // หลังยืนยันวันจะส่งไปที่อยู่นั้นจริง check นี้จึงไว้จับก่อนที่ใครจะเผลอกด
+    // ★ รายงานเฉพาะ "เลขที่" กับ "โดเมน" ไม่เอาที่อยู่เต็มออกมา จะได้ไม่กระจายลงบันทึก
+    checks.push(runPreReleaseSmokeCheck_('privacy:test_data_emails_are_reserved', function() {
+      var sheet = getSheet_(SHEET.STUDENTS);
+      var lastRow = sheet.getLastRow();
+      if (lastRow <= 1) return { rows: 0, note: 'ยังไม่มีนักเรียน' };
+
+      var values = sheet.getRange(2, COL.STUDENTS.STUDENT_NUMBER, lastRow - 1, COL.STUDENTS.PARENT_EMAIL - COL.STUDENTS.STUDENT_NUMBER + 1).getValues();
+      var emailOffset = COL.STUDENTS.PARENT_EMAIL - COL.STUDENTS.STUDENT_NUMBER;
+      var withEmail = 0;
+      var deliverable = [];
+      var domainCount = {};
+
+      values.forEach(function(row) {
+        var num = row[0];
+        var email = String(row[emailOffset] == null ? '' : row[emailOffset]).trim().toLowerCase();
+        if (!email) return;
+        withEmail++;
+        var at = email.lastIndexOf('@');
+        var domain = at >= 0 ? email.substring(at + 1) : '(ไม่มี @)';
+        domainCount[domain] = (domainCount[domain] || 0) + 1;
+        // .invalid / .example / .test เป็นโดเมนสงวน ส่งจริงไม่ถึงใคร
+        if (!/\.(invalid|example|test)$/.test(domain)) {
+          deliverable.push({ student_number: num, domain: domain });
+        }
+      });
+
+      assertPreReleaseSmoke_(
+        deliverable.length === 0,
+        'พบอีเมลที่ส่งถึงคนจริงได้ในชุดข้อมูลทดสอบ ' + deliverable.length + ' รายการ (เลขที่ ' +
+          deliverable.map(function(d) { return d.student_number; }).join(', ') +
+          ') — เปลี่ยนเป็น @example.invalid ก่อนทดสอบต่อ'
+      );
+
+      return {
+        students_with_email: withEmail,
+        domains: domainCount,
+        deliverable_addresses: deliverable
+      };
+    }));
+
     checks.push(runPreReleaseSmokeCheck_('backup:includes_parent_links', function() {
       var snapshot = buildBackupSnapshot_();
       var sheets = (snapshot && snapshot.sheets) || {};
