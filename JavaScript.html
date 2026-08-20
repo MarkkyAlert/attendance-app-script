@@ -5148,18 +5148,65 @@
       }
     }
 
+    // ════════════════════════════════════════════════════════════════
+    // ★★ เครื่องมือวัดชั่วคราว — ถอดออกเมื่อวัดเสร็จ
+    //
+    // ทำไมต้องแสดงบนจอ: แอปรันใน iframe ข้าม origin จึงอ่าน DOM/console จากภายนอกไม่ได้
+    // ช่องทางเดียวที่เห็นตัวเลขได้คือพิกเซล
+    //
+    // ทำไมต้องวัด: `_timing_log` ทั้ง 624 แถววัด **เวลาฝั่ง server** ล้วน (measureTiming_
+    // ครอบเฉพาะตัวฟังก์ชัน) แต่ครูเจอ **round trip ทั้งเส้น** เราไม่เคยวัดส่วนต่างเลย
+    // และ `UAT.md` อ้างว่า "3-8 วินาทีถือว่าธรรมดา" โดยไม่มีหลักฐานรองรับที่ไหน
+    // ════════════════════════════════════════════════════════════════
+    var RTT_SAMPLES_ = [];
+
+    function recordRoundTrip_(fnName, ms) {
+      RTT_SAMPLES_.push({ fn: String(fnName || ''), ms: ms });
+      if (RTT_SAMPLES_.length > 40) RTT_SAMPLES_.shift();
+      try { renderRoundTripDebug_(); } catch (e) {}
+    }
+
+    function roundTripMedian_() {
+      if (!RTT_SAMPLES_.length) return 0;
+      var nums = RTT_SAMPLES_.map(function (s) { return s.ms; }).sort(function (a, b) { return a - b; });
+      var mid = Math.floor(nums.length / 2);
+      return nums.length % 2 ? nums[mid] : Math.round((nums[mid - 1] + nums[mid]) / 2);
+    }
+
+    function renderRoundTripDebug_() {
+      var box = document.getElementById('rtt-debug');
+      if (!box) {
+        box = document.createElement('div');
+        box.id = 'rtt-debug';
+        box.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:99999;background:#1c1917;' +
+          'color:#fafaf9;font:11px/1.45 ui-monospace,Menlo,monospace;padding:8px 10px;border-radius:8px;' +
+          'max-width:340px;white-space:pre;box-shadow:0 4px 16px rgba(0,0,0,.35);pointer-events:none';
+        document.body.appendChild(box);
+      }
+      var recent = RTT_SAMPLES_.slice(-8).map(function (s) {
+        return String(s.ms) + ' ms  ' + s.fn;
+      }).join('\n');
+      box.textContent = 'ROUND TRIP (client)  n=' + RTT_SAMPLES_.length +
+        '  median=' + roundTripMedian_() + ' ms\n' + recent;
+    }
+
     function serverCall(fnName, args, callback, onFailure) {
       var callArgs = (args || []).slice();
       if (fnName !== 'bootstrapTeacherSession') {
         callArgs.push(getTeacherAuth() || {});
       }
+      // ★ จับเวลาก่อนยิง และบันทึกทันทีที่ handler เริ่มทำงาน — ต้องบันทึกก่อนเรียก callback
+      // เพราะ callback ทำการวาดจอ ซึ่งไม่ใช่ส่วนหนึ่งของ round trip
+      var rttStartedAt = new Date().getTime();
       var runner = google.script.run.withSuccessHandler(function (result) {
+        recordRoundTrip_(fnName, new Date().getTime() - rttStartedAt);
         try { callback(result); } catch (e) {
           console.error('Render error:', e);
           toast('เกิดข้อผิดพลาดในการแสดงผล: ' + e.message, 'error');
           setLoading(false);
         }
       }).withFailureHandler(function (err) {
+        recordRoundTrip_(fnName + ' (error)', new Date().getTime() - rttStartedAt);
         var rawMsg = String(err && err.message ? err.message : err || '');
         var parsedError = parseServerError_(rawMsg);
         if (isTeacherSessionExpiredCode_(parsedError.code)) {
@@ -5191,12 +5238,15 @@
       if (fnName !== 'bootstrapTeacherSession') {
         callArgs.push(getTeacherAuth() || {});
       }
+      var rttStartedAt = new Date().getTime();
       var runner = google.script.run.withSuccessHandler(function (result) {
+        recordRoundTrip_(fnName, new Date().getTime() - rttStartedAt);
         try { callback(result); } catch (e) {
           console.error('Render error:', e);
           invokeFailureHandler_(onFailure, e && e.message ? e.message : 'เกิดข้อผิดพลาดในการแสดงผล', e);
         }
       }).withFailureHandler(function (err) {
+        recordRoundTrip_(fnName + ' (error)', new Date().getTime() - rttStartedAt);
         var rawMsg = String(err && err.message ? err.message : err || '');
         var parsedError = parseServerError_(rawMsg);
         if (isTeacherSessionExpiredCode_(parsedError.code)) {
