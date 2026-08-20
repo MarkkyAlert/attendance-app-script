@@ -1951,12 +1951,6 @@
     transform: scale(.97);
   }
 
-  .date-btn[disabled] {
-    opacity: .45;
-    cursor: default;
-    transform: none;
-  }
-
   /* ★ โหลดซ้ำหน้าที่เปิดอยู่ — หรี่ของเดิมไว้แทนการล้างจอทิ้งแล้ววาดใหม่
      ครูที่เพิ่งกดบันทึกค่าเดียว ไม่ควรเห็นทั้งหน้าหายไปแล้วโผล่กลับมา */
   .page-panel.is-soft-reloading {
@@ -1974,6 +1968,9 @@
     transition: opacity .12s ease-in;
   }
 
+  /* ★ ปุ่ม ◀ ▶ ต้องไม่ถูกหรี่และไม่ถูก disable ระหว่างโหลด เพราะมันยังกดได้จริง
+     ครูกดรัวๆ เพื่อไล่วันได้ แล้ว pendingAttendanceDate จะสะสมให้ ส่วน load token
+     จะทิ้งคำตอบของคำขอที่ถูกแทนที่ไปเอง */
   #page-attendance.is-date-loading .attendance-panel-date::after {
     content: ' · กำลังโหลด...';
     font-weight: 600;

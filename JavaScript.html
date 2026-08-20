@@ -2175,8 +2175,13 @@
      * ★ ก่อนหน้านี้ setLoading() คือ `state.loading = show;` เฉยๆ ไม่วาดอะไรเลย
      * ครูกด ◀ แล้วจอค้างวันเดิมตลอด round-trip จึงกดซ้ำเพราะคิดว่ากดไม่ติด
      * ตรงนี้ทำให้เห็นจริงว่าระบบรับคำสั่งแล้ว
-     * ⚠️ ห้าม disable ช่องวันที่ เพราะเส้นทางพิมพ์วันที่มี debounce 800ms
-     *    ถ้า disable กลางคัน โฟกัสจะหลุดแล้วครูพิมพ์ต่อไม่ได้
+     *
+     * ⚠️ **ห้าม disable ปุ่ม ◀ ▶ และช่องวันที่**
+     * - ปุ่ม: เคย disable แล้วทดสอบบนของจริงพบว่า **กดรัวๆ 3 ครั้งถอยได้วันเดียว**
+     *   เพราะปุ่มที่ disabled ไม่ยิง onclick · ทำให้ token กับ pendingAttendanceDate
+     *   ที่สร้างมาเพื่อรองรับการกดรัวๆ ไม่มีโอกาสทำงานเลย (ดู DECISIONS.md ข้อ 39)
+     * - ช่องวันที่: เส้นทางพิมพ์มี debounce 800ms ถ้า disable กลางคัน โฟกัสจะหลุด
+     *   แล้วครูพิมพ์ต่อไม่ได้
      */
     function setAttendanceDateLoading_(isLoading, requestedDate) {
       var page = document.getElementById('page-attendance');
@@ -2184,11 +2189,6 @@
 
       if (isLoading) page.classList.add('is-date-loading');
       else page.classList.remove('is-date-loading');
-
-      var buttons = page.querySelectorAll('.attendance-date-nav .date-btn');
-      for (var i = 0; i < buttons.length; i++) {
-        buttons[i].disabled = !!isLoading;
-      }
 
       // ตอบสนองทันทีที่ตัวควบคุมที่ครูเพิ่งใช้ — input[type=date] จัดรูปแบบวันที่ให้เอง
       var input = page.querySelector('.attendance-date-nav .date-input');
