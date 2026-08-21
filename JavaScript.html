@@ -3542,7 +3542,7 @@
       html += '<div class="settings-section-actions"><button class="btn btn-primary" onclick="App.doSaveSettings(this)">บันทึกข้อมูลชั้นเรียน</button></div>';
       html += '</section>';
 
-      html += '<section id="settings-step-semester" class="settings-surface">';
+      html += '<section id="settings-step-semester" class="settings-surface settings-section-wide">';
       html += '<div class="settings-section-head">';
       html += '<div><p class="settings-section-kicker">ขั้นตอนที่ 2</p><h3 class="settings-section-title">' + renderUiIcon('calendar') + ' สร้างภาคเรียน</h3><p class="settings-section-text">รายงานและข้อมูลสถิติจะอ้างอิงวันที่ของภาคเรียนที่เปิดใช้งานอยู่</p></div>';
       html += '<div class="settings-section-actions"><button class="btn btn-primary btn-sm" onclick="App.showCreateSemesterModal()">สร้างภาคเรียนใหม่</button></div>';
@@ -3651,7 +3651,7 @@
       }
       html += '</section>';
 
-      html += '<section id="settings-step-photo" class="settings-surface">';
+      html += '<section id="settings-step-photo" class="settings-surface settings-section-wide">';
       html += '<div class="settings-section-head">';
       html += '<div><p class="settings-section-kicker">ขั้นตอนที่ 3</p><h3 class="settings-section-title">' + renderUiIcon('photo') + ' เชื่อมรูปนักเรียน</h3><p class="settings-section-text">ใช้โฟลเดอร์ Google Drive เดียวเพื่อให้รูปแสดงในรายชื่อ โปรไฟล์ และการเช็คชื่อ</p></div>';
       html += settingsStepBadge(photoReady, 'เชื่อมแล้ว', 'ยังไม่เชื่อม');
@@ -4954,11 +4954,9 @@
         } else if (item.parent_email) {
           html += '<div class="email-recipient-mail">' + esc(item.parent_email) + '</div>';
         }
-        // หมายเหตุที่ครูพิมพ์ถูกใส่ลงในอีเมลที่ส่งถึงผู้ปกครองด้วย [EmailService.js]
-        // จึงต้องโชว์ตรงนี้ ไม่งั้นครูไม่มีทางรู้ว่ามันจะถูกส่งออกไป
-        if (kind === 'send' && item.note) {
-          html += '<div class="email-recipient-note">หมายเหตุที่จะถูกส่งไปด้วย: ' + esc(item.note) + '</div>';
-        }
+        // ★ ไม่โชว์ `item.note` ตรงนี้ เพราะอีเมลไม่ส่งหมายเหตุแล้วตั้งแต่ 21 ส.ค. 2569
+        // ถ้าเอาหมายเหตุกลับเข้าอีเมลเมื่อไหร่ ต้องเอาบรรทัดนี้กลับมาพร้อมกัน
+        // ไม่งั้นกล่องยืนยันจะโกหกครูว่าไม่ได้ส่ง ทั้งที่ส่ง · `DECISIONS.md` ข้อ 52
         html += '</div>';
       });
       html += '</div>';

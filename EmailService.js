@@ -89,9 +89,12 @@ function sendParentEmails(date, auth) {
       body += '<table style="width:100%;font-size:14px;color:#57534e;border-collapse:collapse">';
       body += '<tr><td style="padding:6px 0;font-weight:600">วันที่</td><td style="padding:6px 0">' + escEmail_(dateTh) + '</td></tr>';
       body += '<tr><td style="padding:6px 0;font-weight:600">เลขที่</td><td style="padding:6px 0">' + student.student_number + '</td></tr>';
-      if (record.note) {
-        body += '<tr><td style="padding:6px 0;font-weight:600">หมายเหตุ</td><td style="padding:6px 0">' + escEmail_(record.note) + '</td></tr>';
-      }
+      // ★ ห้ามใส่ `record.note` ลงในอีเมลนี้ — ตัดออกแล้ว 21 ส.ค. 2569
+      // ช่องหมายเหตุบนหน้าเช็คชื่อเขียนแค่ "หมายเหตุ (ถ้ามี)" ครูจึงใช้จดเรื่องของตัวเอง
+      // เช่น "โทรหาผู้ปกครองแล้วไม่รับ" โดยไม่มีอะไรบอกว่าข้อความจะออกไปนอกระบบ
+      // และ**หน้าผู้ปกครองไม่เคยแสดงหมายเหตุอยู่แล้ว** (`ParentService` / `ParentView`
+      // ไม่มีคำว่า note เลยสักที่) การใส่ในอีเมลจึงขัดกับช่องทางที่ทำมาเพื่อผู้ปกครองโดยตรง
+      // ถ้าจะเอากลับ ต้องแก้ช่องกรอกให้บอกครูก่อนว่าผู้ปกครองจะเห็น · `DECISIONS.md` ข้อ 52
       body += '</table><hr style="border:none;border-top:1px solid #e7e5e4;margin:16px 0">';
       body += '<p style="font-size:12px;color:#a8a29e;text-align:center">';
       body += 'ส่งโดย ' + escEmail_(teacherName) + ' - ' + escEmail_(schoolName);
