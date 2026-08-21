@@ -769,6 +769,12 @@ function clearTempDriveFileRegistration_(fileId) {
   try { getSecurityCache_().remove(getTempDriveFileCacheKey_(fileId)); } catch (e) {}
 }
 
+/**
+ * เก็บ session ครูลง CacheService
+ * ★ ปกติกลืน error เงียบโดยตั้งใจ เพราะ `touchTeacherSession_` เรียกตัวนี้ทุกคำขอ
+ *   ถ้า cache สะดุดชั่วคราวแล้วโยน error ครูจะหลุดออกจากระบบทั้งที่ session ยังดีอยู่
+ * ★ แต่ตอน**สร้าง** session ต้อง `verify` เสมอ — ดู `saveNewTeacherSessionOrThrow_`
+ */
 function saveTeacherSession_(session) {
   try {
     getSecurityCache_().put(
@@ -776,7 +782,37 @@ function saveTeacherSession_(session) {
       JSON.stringify(session),
       SECURITY.SESSION_TTL_SEC
     );
-  } catch (e) {}
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * ใช้ตอนออก session ใหม่เท่านั้น — เขียนแล้วอ่านกลับมายืนยันว่าเก็บติดจริง
+ * ★★ ทำไมต้องมี: เดิม `saveTeacherSession_` กลืน exception ทิ้งทั้งหมด ถ้า `put` พลาด
+ *    ระบบจะ**ตอบว่าล็อกอินสำเร็จพร้อมส่ง token กลับไป** ทั้งที่ไม่มี session อยู่จริง
+ *    ครูจึงเห็นป้ายเขียว "เข้าสู่ระบบสำเร็จ" แล้วโดนเด้งออกในคำขอถัดไป
+ *    ด้วยข้อความ "เซสชันหมดอายุ" ซึ่ง**ชี้ไปผิดทางสนิท** เพราะไม่ใช่เรื่องหมดอายุเลย
+ *    ล้มตั้งแต่ตอนล็อกอินพร้อมบอกเหตุผลตรงๆ ดีกว่าปล่อยให้ไปตายทีหลังแบบงงๆ
+ */
+function saveNewTeacherSessionOrThrow_(session) {
+  saveTeacherSession_(session);
+
+  var stored = null;
+  try {
+    stored = getSecurityCache_().get(getTeacherSessionCacheKey_(session.session_token));
+  } catch (e) {
+    stored = null;
+  }
+
+  if (!stored) {
+    throw new Error(
+      'SESSION_STORE_FAILED|ระบบเก็บเซสชันไม่สำเร็จ จึงยังเข้าใช้งานไม่ได้ ' +
+      'กรุณาลองใหม่อีกครั้ง ถ้ายังไม่ได้ให้รอสัก 1-2 นาทีแล้วลองอีกครั้ง'
+    );
+  }
+  return session;
 }
 
 function saveParentSession_(session) {
@@ -911,8 +947,8 @@ function createTeacherSession_(meta) {
     expires_at: Date.now() + (SECURITY.SESSION_TTL_SEC * 1000)
   };
 
-  saveTeacherSession_(session);
-  return session;
+  // ★ ต้องยืนยันว่าเก็บติดจริง ห้ามใช้ `saveTeacherSession_` เปล่าๆ ตรงนี้
+  return saveNewTeacherSessionOrThrow_(session);
 }
 
 function createParentSession_(studentNumber, meta) {
