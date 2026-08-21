@@ -349,6 +349,74 @@ function runP0Diagnostics_() {
       };
     }));
 
+    // ★★★ ตัวชี้ขาดว่า CacheService ยังเขียนติดไหม — เพิ่ม 21 ส.ค. 2569
+    // เหตุ: ครูล็อกอินสำเร็จแล้วถูกเด้งออกทันที execution log ชี้ว่า
+    // `saveNewTeacherSessionOrThrow_` โยน `SESSION_STORE_FAILED` แปลว่า
+    // **put แล้ว get กลับมาไม่เจอ ในการรันเดียวกัน** (ไม่ใช่ถูก evict ทีหลัง)
+    // ★ session ครู/ผู้ปกครอง/พิมพ์ ใช้ `CacheService.getScriptCache()` ตัวเดียวกับ
+    //   ของก้อนใหญ่ทั้งหมด: archive เช็คชื่อ (TTL 21,600 วิ) · โมดูล client 6 ตัว (900 วิ)
+    //   · derived cache (180 วิ) → ถ้าที่เก็บเต็ม ของเล็กๆ อย่าง session จะเขียนไม่ติดตามไปด้วย
+    // ★ เช็คนี้เขียนค่าจิ๋ว 3 ขนาดแล้วอ่านกลับทันที **ถ้าขนาดจิ๋วยังไม่ติด = ที่เก็บมีปัญหาทั้งก้อน
+    //   ไม่ใช่เรื่องของ session โดยเฉพาะ** · ถ้าจิ๋วติดแต่ก้อนใหญ่ไม่ติด = ชนเพดานขนาด
+    checks.push(runPreReleaseSmokeCheck_('cache:script_cache_alive', function() {
+      var cache = CacheService.getScriptCache();
+      var stamp = String(Utilities.getUuid()).replace(/-/g, '').substring(0, 12);
+      var sizes = [
+        { label: 'tiny_40b', text: new Array(41).join('x') },
+        { label: 'session_like_600b', text: new Array(601).join('y') },
+        { label: 'medium_20kb', text: new Array(20481).join('z') }
+      ];
+      var rows = [];
+      var failed = [];
+
+      sizes.forEach(function(item) {
+        var key = 'p0_alive|' + stamp + '|' + item.label;
+        var putThrew = '';
+        try {
+          cache.put(key, item.text, 60);
+        } catch (e) {
+          putThrew = String(e && e.message ? e.message : e);
+        }
+        var back = null;
+        try { back = cache.get(key); } catch (e2) { back = null; }
+        var ok = back !== null && String(back).length === item.text.length;
+        rows.push({
+          label: item.label,
+          bytes: item.text.length,
+          put_threw: putThrew,
+          read_back_ok: ok
+        });
+        if (!ok) failed.push(item.label);
+        try { cache.remove(key); } catch (e3) {}
+      });
+
+      // เขียนด้วยคีย์หน้าตาเหมือน session จริง เพื่อตัดเรื่องรูปแบบคีย์ออกไปให้สิ้นสงสัย
+      var sessionShapedKey = 'teacher_session:' + stamp + new Array(37).join('a');
+      var sessionShapedOk = false;
+      var sessionShapedThrew = '';
+      try {
+        cache.put(sessionShapedKey, '{"probe":true}', 60);
+        sessionShapedOk = cache.get(sessionShapedKey) !== null;
+      } catch (e4) {
+        sessionShapedThrew = String(e4 && e4.message ? e4.message : e4);
+      }
+      try { cache.remove(sessionShapedKey); } catch (e5) {}
+
+      if (failed.length || !sessionShapedOk) {
+        throw new Error(
+          'CacheService เขียนไม่ติด: ' + (failed.join(', ') || 'session_shaped_key') +
+          ' | rows=' + JSON.stringify(rows) +
+          ' | session_shaped_ok=' + sessionShapedOk + ' ' + sessionShapedThrew
+        );
+      }
+
+      return {
+        rows: rows,
+        session_shaped_key_ok: sessionShapedOk,
+        note: 'ถ้าเช็คนี้เขียวแต่ครูยังล็อกอินไม่ได้ แปลว่าที่เก็บไม่ได้พังทั้งก้อน ให้ไปดูทางอื่นต่อ'
+      };
+    }));
+
     // ★★ วัดว่าโมดูล client แต่ละตัวใหญ่แค่ไหน และ **เขียน cache ติดจริงไหม**
     // เทียบทางคีย์เดียวกับทางแบ่ง chunk ตามไบต์ ในรอบเดียว
     // ★ ผลรอบ 19 ส.ค. 2569: `single_key_cached` เป็น true ทั้ง 6 ตัว รวม JsReports ที่ 107,972 ไบต์
