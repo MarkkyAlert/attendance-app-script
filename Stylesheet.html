@@ -1727,6 +1727,77 @@
     color: var(--stone-600);
   }
 
+  /* รายชื่อผู้รับในกล่องยืนยันส่งอีเมลผู้ปกครอง */
+  .email-recipient-list {
+    display: flex;
+    flex-direction: column;
+    gap: .4rem;
+  }
+
+  .email-recipient-row {
+    padding: .6rem .75rem;
+    border-radius: .85rem;
+    border: 1px solid rgba(168, 142, 114, .18);
+    background: rgba(255, 255, 255, .92);
+  }
+
+  .email-recipient-row-send { border-left: 3px solid var(--green-600, #16a34a); }
+  .email-recipient-row-missing { border-left: 3px solid var(--amber-600, #d97706); }
+  .email-recipient-row-sent { border-left: 3px solid rgba(168, 142, 114, .45); }
+
+  .email-recipient-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .4rem;
+  }
+
+  .email-recipient-number {
+    min-width: 1.6rem;
+    padding: .05rem .35rem;
+    border-radius: .45rem;
+    background: rgba(168, 142, 114, .14);
+    font-size: .72rem;
+    font-weight: 800;
+    text-align: center;
+    color: var(--brown-800);
+  }
+
+  .email-recipient-name {
+    font-size: .87rem;
+    font-weight: 700;
+    color: var(--stone-800);
+  }
+
+  .email-recipient-status {
+    font-size: .72rem;
+    font-weight: 700;
+    color: var(--stone-600);
+  }
+
+  /* ที่อยู่ปลายทางต้องอ่านง่ายและตัดบรรทัดได้ ครูจะได้ตรวจตัวสะกดทัน */
+  .email-recipient-mail {
+    margin-top: .2rem;
+    font-size: .8rem;
+    font-weight: 600;
+    line-height: 1.5;
+    word-break: break-all;
+    color: var(--brown-800);
+  }
+
+  .email-recipient-missing {
+    margin-top: .2rem;
+    font-size: .78rem;
+    color: var(--amber-700, #b45309);
+  }
+
+  .email-recipient-note {
+    margin-top: .25rem;
+    font-size: .76rem;
+    line-height: 1.5;
+    color: var(--stone-600);
+  }
+
   .modal-story-note {
     margin-top: 0;
     padding: .85rem .95rem;

@@ -201,6 +201,15 @@ function previewParentEmails(date, auth) {
         has_parent_email: isValidEmailValue_(student.parent_email)
       };
 
+      // ★ ส่งที่อยู่ปลายทางกลับไปให้จอด้วย ครูจะได้ตรวจก่อนกดส่ง
+      // เดิมคืนแค่ has_parent_email จริง/เท็จ จอเลยวาดได้แต่ตัวนับ
+      // ครูจึงกดส่งโดยไม่เคยเห็นว่าข้อมูลเด็กจะไปถึงที่อยู่ไหน
+      // ปลอดภัยเพราะ previewParentEmails อยู่หลัง runAsTeacher_ อยู่แล้ว
+      // และหน้าแก้ไขนักเรียนก็แสดงที่อยู่นี้ให้ครูเห็นอยู่แล้วเช่นกัน
+      if (item.has_parent_email) {
+        item.parent_email = String(student.parent_email || '').trim();
+      }
+
       if (!item.has_parent_email) {
         noEmail.push(item);
       } else if (isLegacyFullyNotified) {

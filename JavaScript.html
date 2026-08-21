@@ -4923,6 +4923,48 @@
       });
     }
 
+    /**
+     * รายชื่อผู้รับในกล่องยืนยันส่งอีเมล
+     * ★ เดิมกล่องนี้มีแต่ตัวนับ 4 ช่อง ครูจึงกดส่งโดยไม่เคยเห็นว่า
+     *   ข้อมูลการมาโรงเรียนของเด็กจะไปถึงที่อยู่ไหน ถ้าอีเมลในชีตพิมพ์ผิด
+     *   หรือเป็นของเก่า ไม่มีจังหวะไหนให้ครูทักท้วงเลย
+     *   ข้อมูลชุดนี้ server ส่งมาให้ครบอยู่แล้ว แค่ไม่เคยถูกวาด
+     * ★ กลุ่ม missing ตั้งใจไม่โชว์ช่องอีเมล เพราะไม่มีอยู่แล้วตามนิยาม
+     *   แต่ต้องโชว์ "ใคร" เพราะข้อความเดิมบอกให้ไปเติมอีเมลโดยไม่บอกว่าใคร
+     */
+    function renderParentEmailRecipientList_(items, title, kind) {
+      items = items || [];
+      if (!items.length) return '';
+
+      var html = '<div class="modal-section-label">' + esc(title) + ' (' + items.length + ')</div>';
+      html += '<div class="email-recipient-list">';
+      items.forEach(function (item) {
+        var number = item.student_number === 0 || item.student_number ? String(item.student_number) : '';
+        var nickname = item.nickname ? ' (' + item.nickname + ')' : '';
+        html += '<div class="email-recipient-row email-recipient-row-' + esc(kind) + '">';
+        html += '<div class="email-recipient-head">';
+        if (number) html += '<span class="email-recipient-number">' + esc(number) + '</span>';
+        html += '<span class="email-recipient-name">' + esc(String(item.full_name || '') + nickname) + '</span>';
+        if (item.status_label) {
+          html += '<span class="email-recipient-status">' + esc(item.status_label) + '</span>';
+        }
+        html += '</div>';
+        if (kind === 'missing') {
+          html += '<div class="email-recipient-missing">ยังไม่มีอีเมลผู้ปกครองในระบบ</div>';
+        } else if (item.parent_email) {
+          html += '<div class="email-recipient-mail">' + esc(item.parent_email) + '</div>';
+        }
+        // หมายเหตุที่ครูพิมพ์ถูกใส่ลงในอีเมลที่ส่งถึงผู้ปกครองด้วย [EmailService.js]
+        // จึงต้องโชว์ตรงนี้ ไม่งั้นครูไม่มีทางรู้ว่ามันจะถูกส่งออกไป
+        if (kind === 'send' && item.note) {
+          html += '<div class="email-recipient-note">หมายเหตุที่จะถูกส่งไปด้วย: ' + esc(item.note) + '</div>';
+        }
+        html += '</div>';
+      });
+      html += '</div>';
+      return html;
+    }
+
     function sendEmails() {
       serverCall('previewParentEmails', [state.currentDate], function (result) {
         if (result && result.success === false) {
@@ -4957,7 +4999,10 @@
         body += '<div class="modal-stat-card modal-stat-card-warning"><div class="modal-stat-eyebrow">ยังขาดอีเมล</div><div class="modal-stat-value">' + esc(String(missingCount)) + '</div><div class="modal-stat-label">รายที่ควรเติมอีเมลในหน้านักเรียนก่อน</div></div>';
         body += '<div class="modal-stat-card modal-stat-card-total"><div class="modal-stat-eyebrow">นักเรียนทั้งหมด</div><div class="modal-stat-value">' + esc(String(totalStudents)) + '</div><div class="modal-stat-label">จำนวนรายชื่อที่อยู่ในห้องเรียนของวันนั้น</div></div>';
         body += '</div>';
-        body += '<div class="modal-story-note">' + esc(infoMessage || (readyCount > 0 ? 'หากต้องการให้การแจ้งผลครบขึ้น ให้เติมอีเมลผู้ปกครองของรายที่ยังขาดไว้ก่อน แล้วค่อยส่งซ้ำอีกครั้ง' : 'วันนี้ไม่มีรายการคงค้างสำหรับการส่งเพิ่มเติม')) + '</div>';
+        body += renderParentEmailRecipientList_(data.will_send, 'จะส่งถึงผู้ปกครองเหล่านี้', 'send');
+        body += renderParentEmailRecipientList_(data.no_email, 'ยังขาดอีเมล จึงจะไม่ถูกส่ง', 'missing');
+        body += renderParentEmailRecipientList_(data.already_sent, 'ส่งไปแล้ว ไม่ส่งซ้ำ', 'sent');
+        body += '<div class="modal-story-note">' + esc(infoMessage || (readyCount > 0 ? 'ตรวจที่อยู่ปลายทางให้ครบก่อนกดส่ง ถ้ามีที่อยู่ผิดให้ไปแก้ในหน้านักเรียนก่อน' : 'วันนี้ไม่มีรายการคงค้างสำหรับการส่งเพิ่มเติม')) + '</div>';
         if (isLegacyFullyNotified) {
           body += '<div class="modal-story-note">พบข้อมูลการแจ้งผู้ปกครองแบบเก่าที่ไม่มีรายชื่อผู้รับรายคน เลือกย้ายสถานะเดิมหากต้องการเก็บประวัติเดิมไว้ หรือรีเซ็ตเพื่อส่งใหม่ทั้งชุด</div>';
         }
