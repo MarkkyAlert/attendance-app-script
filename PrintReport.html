@@ -442,7 +442,11 @@ body {
     var pipeIndex = message.indexOf('|');
     var code = pipeIndex > 0 ? message.substring(0, pipeIndex) : '';
     var kind = PRINT_ERROR_KIND_BY_CODE_[code] || '';
-    if (kind) {
+    // ★ ตัดคำนำหน้า CODE| ออกทุกกรณีที่หน้าตาเป็น code จริงๆ **ไม่ใช่เฉพาะ code ที่รู้จัก**
+    //   เดิมตัดเฉพาะตอนหา kind เจอ พอ server เพิ่ม code ใหม่ที่ยังไม่ได้ใส่ในตาราง
+    //   ผู้ใช้จะเห็นข้อความดิบแบบ "PRINT_SESSION_STORE_FAILED|..." บนจอ
+    //   (หน้าผู้ปกครองเคยเจอปัญหาเดียวกันนี้มาแล้ว ดู ParentView.html)
+    if (code && /^[A-Z][A-Z0-9_]*$/.test(code)) {
       message = message.substring(pipeIndex + 1) || 'เซสชันหมดอายุ กรุณาเปิดหน้าพิมพ์ใหม่จากระบบครู';
     }
     showError({ message: message }, kind);

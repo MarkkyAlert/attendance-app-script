@@ -822,7 +822,10 @@ function saveParentSession_(session) {
       JSON.stringify(session),
       SECURITY.PARENT_SESSION_TTL_SEC
     );
-  } catch (e) {}
+    return true;
+  } catch (e) {
+    return false;
+  }
 }
 
 function savePrintSession_(session) {
@@ -832,7 +835,33 @@ function savePrintSession_(session) {
       JSON.stringify(session),
       Math.max(1, Math.ceil((parseInt(session.expires_at, 10) - Date.now()) / 1000))
     );
-  } catch (e) {}
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * เขียน session ลง cache แล้วอ่านกลับมายืนยันว่าเก็บติดจริง
+ * ★★ ทำไมต้องมี — บทเรียนจริงจาก 21 ส.ค. 2569
+ *    ตอนนั้นตัวเก็บ session ครูกลืน exception ทิ้ง ระบบจึง**ตอบว่าสำเร็จพร้อมส่ง token กลับ**
+ *    ทั้งที่ไม่มี session อยู่จริง อาการที่โผล่มาคือ "เซสชันหมดอายุ" ในคำขอถัดไป
+ *    ซึ่งชี้ผิดทางสนิท เสียเวลาไล่ generation / อุปกรณ์ / oauthScopes ไปทั้งวัน
+ *    → ออก token ให้ใครก็ตาม **ต้องยืนยันก่อนว่าอีกฝั่งเก็บได้จริง**
+ * ★ ใช้เฉพาะตอน**สร้าง** session เท่านั้น — ตัวต่ออายุ (`touch*`) ต้องกลืน error ต่อไป
+ *   เพราะมันรันทุกคำขอ ถ้าโยน error ตรงนั้น cache สะดุดแวบเดียวจะเตะคนใช้ออกทั้งที่ session ยังดี
+ */
+function verifyCachedSessionOrThrow_(cacheKey, errorCode, message) {
+  var stored = null;
+  try {
+    stored = getSecurityCache_().get(cacheKey);
+  } catch (e) {
+    stored = null;
+  }
+  if (!stored) {
+    throw new Error(errorCode + '|' + message);
+  }
+  return true;
 }
 
 function invalidateTeacherSession_(token) {
@@ -961,6 +990,11 @@ function createParentSession_(studentNumber, meta) {
     expires_at: Date.now() + (SECURITY.PARENT_SESSION_TTL_SEC * 1000)
   };
   saveParentSession_(session);
+  verifyCachedSessionOrThrow_(
+    getParentSessionCacheKey_(session.session_token),
+    'PARENT_SESSION_STORE_FAILED',
+    'ระบบเปิดลิงก์ให้ไม่สำเร็จในขณะนี้ กรุณาลองกดลิงก์เดิมอีกครั้งในอีก 1-2 นาที'
+  );
   return session;
 }
 
@@ -1308,6 +1342,11 @@ function resolvePrintSession(printToken) {
     expires_at: Date.now() + (SECURITY.PRINT_TOKEN_TTL_SEC * 1000)
   };
   savePrintSession_(printSession);
+  verifyCachedSessionOrThrow_(
+    getPrintSessionCacheKey_(printSession.print_session_token),
+    'PRINT_SESSION_STORE_FAILED',
+    'ระบบเตรียมหน้าพิมพ์ไม่สำเร็จในขณะนี้ กรุณากดพิมพ์ใหม่อีกครั้งในอีก 1-2 นาที'
+  );
 
   return {
     success: true,
