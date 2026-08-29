@@ -650,6 +650,12 @@ function runP0Diagnostics_() {
     //   เพราะมาจากครูใช้งานจริง ไม่ใช่การจำลองใน Diagnostics
     // ★ บันทึกเฉพาะที่เกิน threshold (ดู `TIMING_LOG_THRESHOLDS_MS` [Utils.js])
     //   จึงเป็นรายการ "ครั้งที่ช้า" ไม่ใช่ค่าเฉลี่ยของทุกครั้ง **อย่าตีความว่าเป็นค่ากลาง**
+    // ★★ สรุป `_timing_log` **แยกตามวัน** ไม่ใช่รวมทั้งกอง
+    // เหตุ: ค่ารวมย้อนหลังตอบคำถามที่ต้องการไม่ได้ เช่น `attendance_scan_ms` max 136,098 ms
+    // เป็นของก่อนแก้ archive cache หรือหลังแก้ · `attendance_load_ms` error 20 ครั้งเกิดวันไหน
+    // **ค่า max/median รวมทั้งกองจะค้างอยู่ที่ค่าเก่าตลอดไป แม้แก้จนเร็วแล้วก็ไม่ขยับ**
+    // ⚠️ ชีตนี้เก็บ **เฉพาะครั้งที่ช้าเกินเกณฑ์** (`TIMING_LOG_THRESHOLDS_MS`) กับครั้งที่ error
+    //    ทุกแถวจึงแปลว่า "ช้า" โดยนิยาม **ห้ามอ่านเป็นค่าเฉลี่ยของการใช้งานทั้งหมด**
     checks.push(runPreReleaseSmokeCheck_('perf:timing_log_summary', function() {
       var sheet = getSheetByNameOrNull_(TIMING_LOG_SHEET);
       if (!sheet) return { note: 'ยังไม่มีชีต ' + TIMING_LOG_SHEET + ' (ยังไม่เคยมีครั้งไหนช้าเกินเกณฑ์)' };
@@ -658,15 +664,57 @@ function runP0Diagnostics_() {
       if (lastRow <= 1) return { note: 'ชีตว่าง ยังไม่เคยมีครั้งไหนช้าเกินเกณฑ์' };
 
       var values = sheet.getRange(2, 1, lastRow - 1, 13).getValues();
+
+      function dayOf_(cell) {
+        if (cell instanceof Date) return formatDate_(cell);
+        var text = String(cell || '');
+        var parsed = new Date(text);
+        if (!isNaN(parsed.getTime())) return formatDate_(parsed);
+        return text.substring(0, 10) || '(ไม่ระบุวัน)';
+      }
+
       var byMetric = {};
+      var byDay = {};
+      var rows = [];
+
       for (var i = 0; i < values.length; i++) {
+        var day = dayOf_(values[i][0]);
         var metric = String(values[i][1] || '(ไม่ระบุ)');
         var duration = parseInt(values[i][2], 10) || 0;
         var status = String(values[i][3] || '');
-        if (!byMetric[metric]) byMetric[metric] = { count: 0, errors: 0, durations: [] };
-        byMetric[metric].count++;
-        if (status === 'error') byMetric[metric].errors++;
-        else byMetric[metric].durations.push(duration);
+        var isError = status === 'error';
+
+        rows.push({
+          at: String(values[i][0] || ''),
+          day: day,
+          metric: metric,
+          ms: duration,
+          status: status,
+          fn: String(values[i][5] || ''),
+          detail: String(values[i][12] || '').slice(0, 160)
+        });
+
+        if (!byMetric[metric]) {
+          byMetric[metric] = { errors: 0, durations: [], max_ms: -1, max_at: '', max_day: '', last_day: '' };
+        }
+        var m = byMetric[metric];
+        m.last_day = day;
+        if (isError) {
+          m.errors++;
+        } else {
+          m.durations.push(duration);
+          if (duration > m.max_ms) {
+            m.max_ms = duration;
+            m.max_at = String(values[i][0] || '');
+            m.max_day = day;
+          }
+        }
+
+        if (!byDay[day]) byDay[day] = { rows: 0, errors: 0, worst_ms: -1, worst_metric: '' };
+        var d = byDay[day];
+        d.rows++;
+        if (isError) d.errors++;
+        else if (duration > d.worst_ms) { d.worst_ms = duration; d.worst_metric = metric; }
       }
 
       var summary = Object.keys(byMetric).sort().map(function(metric) {
@@ -678,23 +726,54 @@ function runP0Diagnostics_() {
           slow_count: sorted.length,
           error_count: bucket.errors,
           median_ms: sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0,
-          max_ms: sorted.length ? sorted[sorted.length - 1] : 0
+          max_ms: sorted.length ? sorted[sorted.length - 1] : 0,
+          // ★ วันที่ของค่า max คือตัวชี้ว่าตัวเลขแย่ๆ นี้เป็นของเก่าหรือของใหม่
+          max_on_day: bucket.max_day,
+          last_seen_day: bucket.last_day
         };
       });
 
-      // 10 แถวล่าสุด เอาไว้ดูว่าอะไรช้าล่าสุดและช้าตอนทำอะไร
-      var recent = values.slice(Math.max(0, values.length - 10)).map(function(row) {
+      var dayKeys = Object.keys(byDay).sort();
+      var DAY_LIMIT = 20;
+      var shownDayKeys = dayKeys.slice(Math.max(0, dayKeys.length - DAY_LIMIT));
+      var dayRows = shownDayKeys.map(function(day) {
         return {
-          at: String(row[0] || ''),
-          metric: String(row[1] || ''),
-          ms: parseInt(row[2], 10) || 0,
-          status: String(row[3] || ''),
-          fn: String(row[5] || ''),
-          detail: String(row[12] || '').slice(0, 160)
+          day: day,
+          rows: byDay[day].rows,
+          errors: byDay[day].errors,
+          worst_metric: byDay[day].worst_metric,
+          worst_ms: byDay[day].worst_ms < 0 ? 0 : byDay[day].worst_ms
         };
       }).reverse();
 
-      return { total_rows: values.length, by_metric: summary, recent_10: recent };
+      // ★ 5 แถวที่ช้าที่สุดตลอดกาล **พร้อมวันที่** — ตอบตรงๆ ว่าตัวเลขสุดโต่งมาจากวันไหน
+      var worst = rows.filter(function(r) { return r.status !== 'error'; })
+        .slice().sort(function(a, b) { return b.ms - a.ms; }).slice(0, 5);
+
+      // ★ error เกิดวันไหนบ้าง — ค่ารวมบอกแค่ว่ามีกี่ครั้ง ไม่บอกว่าเก่าหรือใหม่
+      var errorDays = {};
+      rows.forEach(function(r) {
+        if (r.status !== 'error') return;
+        if (!errorDays[r.day]) errorDays[r.day] = {};
+        errorDays[r.day][r.metric] = (errorDays[r.day][r.metric] || 0) + 1;
+      });
+      var errorRows = Object.keys(errorDays).sort().reverse().map(function(day) {
+        return { day: day, by_metric: errorDays[day] };
+      });
+
+      return {
+        total_rows: values.length,
+        first_day: dayKeys.length ? dayKeys[0] : '',
+        last_day: dayKeys.length ? dayKeys[dayKeys.length - 1] : '',
+        distinct_days: dayKeys.length,
+        days_omitted: Math.max(0, dayKeys.length - shownDayKeys.length),
+        note: 'ชีตนี้บันทึกเฉพาะครั้งที่ช้าเกินเกณฑ์กับครั้งที่ error ทุกแถวจึงแปลว่าช้าโดยนิยาม',
+        by_metric: summary,
+        by_day: dayRows,
+        errors_by_day: errorRows,
+        worst_5_all_time: worst,
+        recent_10: rows.slice(Math.max(0, rows.length - 10)).reverse()
+      };
     }));
 
     // 2. หัวใจของงานชุดนี้: ลบแถวไม่ติดกัน บนชีตทดสอบที่แยกออกมาต่างหาก
