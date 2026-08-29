@@ -32,11 +32,47 @@ function attachDashboardTimingDetail_(data, detail) {
   return data;
 }
 
+/**
+ * ประกอบสตริง detail ของ `dashboard_build_ms` **พร้อมตรวจว่าชิ้นส่วนรวมแล้วครบไหม**
+ * ★★ ทำไมต้องมี — บทเรียน 29 ส.ค. 2569
+ *    รอบนั้น `dashboard_build_ms` = 5,270 ms แต่ชิ้นส่วนใน detail รวมได้ไม่ถึง 1,350 ms
+ *    **เหลือราว 4,000 ms ที่ไม่มีใครรู้ว่าไปอยู่ตรงไหน** เพราะ `getUniqueLatestRecordsByDate_`
+ *    ถูกเรียกคั่นระหว่าง `prep_ms` กับ `range_fetch_ms` โดยไม่มีจุดวัด
+ *    → breakdown ที่ไม่บอกว่าตัวเองไม่ครบ **หลอกให้คนอ่านไปแก้ผิดจุด**
+ * ★ `unaccounted_ms` จึงสำคัญกว่าตัวเลขรายชิ้น — ถ้ามันโตขึ้น แปลว่ามีคนเพิ่มงานหนัก
+ *   เข้ามาโดยไม่ได้เติมจุดวัด **ให้ไล่หาก่อนจะไปปรับอะไร**
+ * ⚠️ `pre_measure_ms` อยู่นอก `measureTiming_` จึง **ไม่ถูกนับใน `dashboard_build_ms`**
+ *   เก็บไว้ให้เห็นเฉยๆ ห้ามเอาไปรวมกับ `measured_total_ms`
+ */
+function finalizeDashboardTimingDetail_(stepTimings, blockStartedAt) {
+  // ชิ้นส่วนระดับบนเท่านั้น — `context_month_ms` / `context_prev_ms` / `official_students_ms`
+  // เป็นตัวย่อยที่อยู่ใน `context_ms` อยู่แล้ว ถ้าเอามารวมด้วยจะนับซ้ำ
+  var TOP_LEVEL_KEYS = [
+    'head_ms', 'prep_ms', 'today_records_ms', 'range_fetch_ms',
+    'context_ms', 'stats_ms', 'widgets_ms', 'assemble_ms'
+  ];
+  var sum = 0;
+  TOP_LEVEL_KEYS.forEach(function(key) {
+    sum += parseInt(stepTimings[key], 10) || 0;
+  });
+  stepTimings.measured_total_ms = new Date().getTime() - blockStartedAt;
+  stepTimings.parts_sum_ms = sum;
+  stepTimings.unaccounted_ms = Math.max(0, stepTimings.measured_total_ms - sum);
+
+  return Object.keys(stepTimings).map(function(key) {
+    return key + '=' + stepTimings[key];
+  }).join(';');
+}
+
 function buildDashboardData_(month, options) {
   options = options || {};
+  // ★ ส่วนนี้อยู่**นอก** `measureTiming_` จึงไม่ถูกนับใน `dashboard_build_ms`
+  //   วัดไว้ต่างหากเพื่อไม่ให้กลายเป็นเวลาที่หายไปโดยไม่มีใครเห็น
+  var preMeasureStartedAt = new Date().getTime();
   month = normalizeMonth_(month);
   var range = getEffectiveMonthRange_(month);
   var activeSemesterMeta = range && range.active_semester ? range.active_semester : getActiveSemesterRangeSafe_();
+  var preMeasureMs = new Date().getTime() - preMeasureStartedAt;
   var timingMeta = {
     page: 'dashboard',
     fn_name: 'buildDashboardData_',
@@ -46,12 +82,15 @@ function buildDashboardData_(month, options) {
     semester_name: activeSemesterMeta ? String(activeSemesterMeta.name || '') : ''
   };
   return measureTiming_('dashboard_build_ms', timingMeta, function() {
-    var stepTimings = {};
+    var blockStartedAt = new Date().getTime();
+    var stepTimings = { pre_measure_ms: preMeasureMs };
+    var stepStartedAt = new Date().getTime();
     var effectiveMonth = getEffectiveRangeMonth_(range, month);
     var today = todayString_();
     var prevMonth = shiftMonth_(effectiveMonth, -1);
     var prevRange = clampRangeToActiveSemester_(monthRange_(prevMonth));
-    var stepStartedAt = new Date().getTime();
+    stepTimings.head_ms = new Date().getTime() - stepStartedAt;
+    stepStartedAt = new Date().getTime();
     var studentData = getCachedStudentList_();
     var students = studentData.students || [];
     var allStudents = studentData.all_students || [];
@@ -70,15 +109,19 @@ function buildDashboardData_(month, options) {
       schoolCalendarSummary: schoolCalendarSummary
     });
     stepTimings.prep_ms = new Date().getTime() - stepStartedAt;
+
+    // ★★ จุดนี้เคยไม่มีตัวจับเวลา และเป็นต้นเหตุของ "เวลาที่หายไป ~4 วินาที" เมื่อ 29 ส.ค. 2569
+    //    `getUniqueLatestRecordsByDate_` ลากไปถึง `readAttendanceRecordsFromSheets_`
+    //    ซึ่งสแกน archive ทั้งใบตอน cache เย็น (วัดได้ 2,603 + 3,611 ms ในวินาทีเดียวกัน)
+    stepStartedAt = new Date().getTime();
     var thirtyDaysAgo = shiftDate_(today, -30);
     var todayRecords = getUniqueLatestRecordsByDate_(today);
+    stepTimings.today_records_ms = new Date().getTime() - stepStartedAt;
 
     if (isEffectiveRangeEmpty_(range)) {
       var emptyTodaySummary = buildStatusCounts_(todayRecords, students.length, { records_are_unique: true, student_index: studentIndex });
       emptyTodaySummary.date_th = thaiDate(today, 'short', true);
-      timingMeta.detail = Object.keys(stepTimings).map(function(key) {
-        return key + '=' + stepTimings[key];
-      }).join(';');
+      timingMeta.detail = finalizeDashboardTimingDetail_(stepTimings, blockStartedAt);
       var emptyDashboardData = buildEmptyDashboardData_(effectiveMonth, range, today, settings, students.length, emptyTodaySummary, readinessSummary);
       return options.capture_timing_detail ? attachDashboardTimingDetail_(emptyDashboardData, timingMeta.detail) : emptyDashboardData;
     }
@@ -155,10 +198,10 @@ function buildDashboardData_(month, options) {
     var watchlist = buildWatchlist_(studentStats);
     var momDelta = buildMomDelta_(monthlyCounts, prevCounts, effectiveMonth, prevMonth);
     stepTimings.widgets_ms = new Date().getTime() - stepStartedAt;
-    timingMeta.detail = Object.keys(stepTimings).map(function(key) {
-      return key + '=' + stepTimings[key];
-    }).join(';');
 
+    // การประกอบ object ก้อนสุดท้ายยังเรียก builder อีกหลายตัว (`buildSummaryCards_`
+    // `buildDoughnutData_` `thaiMonthLabel`) เดิมอยู่นอกทุกจุดวัด
+    stepStartedAt = new Date().getTime();
     var dashboardData = {
       month: effectiveMonth,
       month_th: thaiMonthLabel(effectiveMonth),
@@ -179,6 +222,8 @@ function buildDashboardData_(month, options) {
       school_calendar_summary: schoolCalendarSummary,
       readiness_summary: readinessSummary
     };
+    stepTimings.assemble_ms = new Date().getTime() - stepStartedAt;
+    timingMeta.detail = finalizeDashboardTimingDetail_(stepTimings, blockStartedAt);
     return options.capture_timing_detail ? attachDashboardTimingDetail_(dashboardData, timingMeta.detail) : dashboardData;
   });
 }
